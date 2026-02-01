@@ -7,7 +7,8 @@ builder = "dockerfile"
 dockerfilePath = "src/hotel_guardrails/Dockerfile"
 
 [deploy]
-healthcheckPath = "/health"
-healthcheckTimeout = 30
+healthcheckPath = "/healthz"
+healthcheckTimeout = 60
+startCommand = "uvicorn src.hotel_guardrails.server:app --host 0.0.0.0 --port ${PORT:-8081}"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3

@@ -307,6 +307,12 @@ async def general_exception_handler(request: Request, exc: Exception):
 # =============================================================================
 
 
+@app.get("/healthz", tags=["Health"])
+async def healthz():
+    """Simple health check for load balancers (Railway, K8s)."""
+    return {"status": "ok"}
+
+
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
 async def health_check():
     """
