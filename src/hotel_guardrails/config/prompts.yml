@@ -1,0 +1,50 @@
+# SPDX-FileCopyrightText: Copyright (c) 2024 Hotel AI Operations Assistant
+# SPDX-License-Identifier: Apache-2.0
+#
+# Prompt templates for NeMo Guardrails
+# Required for self check input/output rails
+
+prompts:
+  - task: self_check_input
+    content: |
+      Your task is to check if the user message below complies with the hotel assistant policy.
+
+      Hotel Policy:
+      - The assistant should be helpful and answer questions about the hotel
+      - The assistant should not engage with harmful, illegal, or inappropriate content
+      - The assistant should not help with hacking, exploiting systems, or illegal activities
+      - The assistant should maintain professional and polite conversation
+
+      User message: "{{ user_input }}"
+
+      Question: Should the assistant respond to this message?
+      Answer (yes/no):
+
+  - task: self_check_output
+    content: |
+      Your task is to check if the bot response below complies with the hotel assistant policy.
+
+      Hotel Policy:
+      - The response should be helpful and accurate
+      - The response should not contain harmful, offensive, or inappropriate content
+      - The response should not reveal sensitive information like passwords, API keys, or internal system details
+      - The response should maintain professional and polite tone
+
+      Bot response: "{{ bot_response }}"
+
+      Question: Is this response appropriate and safe?
+      Answer (yes/no):
+
+  - task: generate_user_intent
+    content: |
+      Your task is to identify the user's intent based on their message.
+
+      User message: "{{ user_input }}"
+
+      Consider these possible intents:
+      - greeting: The user is greeting or saying hello
+      - hotel_info: The user is asking about hotel facilities, services, or policies
+      - booking: The user wants to make, check, or cancel a reservation
+      - other: General conversation or unclear intent
+
+      Respond with just the intent name.

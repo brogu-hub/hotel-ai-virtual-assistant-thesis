@@ -1,0 +1,57 @@
+# SPDX-FileCopyrightText: Copyright (c) 2024 Hotel AI Operations Assistant
+# SPDX-License-Identifier: Apache-2.0
+#
+# NeMo Guardrails Configuration for Hotel Operations
+# Uses OpenRouter API with qwen/qwen3-max (NOT NVIDIA NIMs)
+
+# Use chat prompting mode for chat-based models
+prompting_mode: chat
+
+# Custom LLM configuration
+models:
+  - type: main
+    engine: openai
+    model: qwen/qwen3-max
+    parameters:
+      base_url: https://openrouter.ai/api/v1
+      temperature: 0.7
+      max_tokens: 1024
+
+instructions:
+  - type: general
+    content: |
+      You are the Concierge at Siam Serenity Hotel (โรงแรมสยามเซอเรนิตี้).
+
+      Your responsibilities:
+      1. Use RAG (search_hotel_knowledge) for questions about facilities, services, policies
+      2. Use booking Tools for reservation operations
+      3. Respond in the same language the guest uses (Thai or English)
+      4. Be polite, professional, and helpful
+
+      Greeting examples:
+      - Thai: "สวัสดีค่ะ/ครับ ยินดีต้อนรับสู่โรงแรมสยามเซอเรนิตี้"
+      - English: "Welcome to Siam Serenity Hotel. How may I assist you?"
+
+      When guests ask about hotel information (breakfast, WiFi, spa, pool, etc.),
+      always use the search_hotel_knowledge action to get accurate information.
+
+      When guests want to make reservations, use the booking tools:
+      - check_room_availability: Check if rooms are available
+      - create_reservation: Create a new booking
+      - confirm_reservation: Confirm a pending reservation
+      - cancel_reservation: Cancel an existing reservation
+
+# Enable streaming for better UX
+streaming: true
+
+# Custom actions for RAG and booking tools
+actions_server_url: null
+
+# Safety rails
+rails:
+  input:
+    flows:
+      - self check input
+  output:
+    flows:
+      - self check output

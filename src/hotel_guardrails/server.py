@@ -79,7 +79,7 @@ logger = logging.getLogger(__name__)
 # OpenAPI tags metadata
 tags_metadata = [
     {"name": "Health", "description": "Service health monitoring"},
-    {"name": "Chat", "description": "AI conversation with hybrid routing"},
+    {"name": "Chat", "description": "AI conversation powered by LangGraph Agent"},
     {"name": "Booking", "description": "Room reservation operations"},
     {"name": "Sessions", "description": "Conversation session management"},
     {"name": "Settings", "description": "LLM and server configuration"},
@@ -194,14 +194,20 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Siam Serenity Hotel Concierge API",
     description="""
-    Hotel Operations AI with NeMo Guardrails
+    Hotel Operations AI powered by LangGraph Agent
+
+    ## Architecture
+    - **LangGraph Agent**: Primary handler for ALL queries
+    - **Safety Router**: Filters blocked/unsafe content
+    - **RAG**: Hotel knowledge retrieval for context
+    - **LangChain Fallback**: Backup if LangGraph unavailable
 
     ## Features
     - Bilingual Thai/English conversation
     - RAG-powered hotel knowledge retrieval
     - Room booking operations
     - Safety guardrails for input/output
-    - Configurable LLM settings
+    - Continuous improvement via feedback loop
 
     ## Headers
     - `X-Request-ID`: Optional request tracking ID (auto-generated if not provided)
@@ -362,24 +368,19 @@ async def health_check():
 @app.post("/chat", response_model=ChatResponse, tags=["Chat"])
 async def chat(request: ChatRequest):
     """
-    General AI conversation with hybrid routing.
+    General AI conversation powered by LangGraph Agent.
 
-    Routes requests between NeMo Guardrails (fast path) and LangGraph Agent
-    (complex path) based on query complexity and historical performance.
+    All queries are processed by LangGraph for consistent, high-quality responses.
+    Safety checks filter blocked content before processing.
 
     ## Features
     - Automatic language detection (Thai/English)
-    - Smart routing based on query complexity
+    - LangGraph Agent for all query types
     - RAG-powered responses using hotel knowledge base
-    - Optional per-request LLM settings override
     - Continuous improvement via feedback loop
 
     ## Headers
     - `X-Request-ID`: Request tracking ID (returned in response)
-
-    ## Routing
-    - Simple queries (greetings, basic Q&A) → NeMo Guardrails (fast)
-    - Complex queries (bookings, multi-step) → LangGraph Agent (reasoning)
 
     Example:
         ```json
@@ -397,11 +398,11 @@ async def chat(request: ChatRequest):
     sources = None
     tool_calls = None
     retrieval_context = None
-    routing_path = "nemo"
-    routing_reason = "default"
-    complexity = "simple"
+    routing_path = "langgraph"
+    routing_reason = "LangGraph primary"
+    complexity = "moderate"
 
-    # Step 1: Get routing decision from hybrid router
+    # Step 1: Safety check and routing
     if hybrid_router:
         try:
             # Check input safety first
@@ -434,66 +435,46 @@ async def chat(request: ChatRequest):
                     complexity=complexity,
                 )
 
-            # Route to LangGraph for complex queries
-            if routing.path == RoutingPath.LANGGRAPH_AGENT and langgraph_adapter:
-                result = await langgraph_adapter.invoke(
-                    message=request.message,
-                    session_id=session_id,
-                )
+        except Exception as e:
+            logger.warning(f"Safety check failed: {e}")
+            # Continue with LangGraph anyway
 
-                if result["success"]:
-                    content = result["response"]
-                    tool_calls = result.get("tool_calls")
-                else:
-                    # Fallback to NeMo if LangGraph fails
-                    logger.warning(f"LangGraph failed: {result.get('error')}, falling back to NeMo")
-                    routing_path = "nemo"
-                    routing_reason = f"Fallback: LangGraph failed ({result.get('error', 'unknown')[:50]})"
+    # Step 2: Process with LangGraph Agent (primary)
+    if langgraph_adapter:
+        try:
+            result = await langgraph_adapter.invoke(
+                message=request.message,
+                session_id=session_id,
+            )
+
+            if result["success"]:
+                content = result["response"]
+                tool_calls = result.get("tool_calls")
+                routing_path = "langgraph"
+            else:
+                logger.warning(f"LangGraph failed: {result.get('error')}")
+                routing_reason = f"LangGraph failed: {result.get('error', 'unknown')[:50]}"
 
         except Exception as e:
-            logger.warning(f"Hybrid routing failed: {e}")
-            routing_path = "nemo"
-            routing_reason = f"Fallback: routing error"
+            logger.warning(f"LangGraph invocation failed: {e}")
+            routing_reason = f"LangGraph error: {str(e)[:50]}"
 
-    # Step 2: Use NeMo/LangChain for simple queries or fallback
-    if not content:
-        # Try NeMo Guardrails first
-        if rails:
+    # Step 3: Fallback to LangChain (RAG + LLM) if LangGraph fails
+    if not content and langchain_llm:
+        try:
+            routing_path = "langchain_fallback"
+            rag_context = ""
+            rag_sources = []
             try:
-                response = await rails.generate_async(
-                    messages=[{"role": "user", "content": request.message}],
-                    options={"session_id": session_id},
-                )
+                rag_result = await search_hotel_knowledge_with_sources(request.message)
+                if rag_result and len(rag_result) >= 3:
+                    rag_context = rag_result[0]
+                    rag_sources = rag_result[1]
+                    retrieval_context = rag_result[2]
+            except Exception as rag_error:
+                logger.warning(f"RAG search failed: {rag_error}")
 
-                if isinstance(response, dict):
-                    content = response.get("content", "")
-                    sources = response.get("sources")
-                    tool_calls = response.get("tool_calls")
-                elif hasattr(response, "content"):
-                    content = response.content
-                    sources = getattr(response, "sources", None)
-                    tool_calls = getattr(response, "tool_calls", None)
-                else:
-                    content = str(response)
-
-            except Exception as e:
-                logger.warning(f"NeMo Guardrails failed: {e}")
-
-        # Fallback to LangChain if NeMo fails
-        if not content and langchain_llm:
-            try:
-                rag_context = ""
-                rag_sources = []
-                try:
-                    rag_result = await search_hotel_knowledge_with_sources(request.message)
-                    if rag_result and len(rag_result) >= 3:
-                        rag_context = rag_result[0]
-                        rag_sources = rag_result[1]
-                        retrieval_context = rag_result[2]
-                except Exception as rag_error:
-                    logger.warning(f"RAG search failed: {rag_error}")
-
-                system_prompt = """You are the Concierge at Siam Serenity Hotel (โรงแรมสยามเซอเรนิตี้).
+            system_prompt = """You are the Concierge at Siam Serenity Hotel (โรงแรมสยามเซอเรนิตี้).
 Your responsibilities:
 1. Answer questions about the hotel using the provided context
 2. Respond in the same language the guest uses (Thai or English)
@@ -503,23 +484,23 @@ Greeting examples:
 - Thai: "สวัสดีค่ะ/ครับ ยินดีต้อนรับสู่โรงแรมสยามเซอเรนิตี้"
 - English: "Welcome to Siam Serenity Hotel. How may I assist you?"
 """
-                if rag_context:
-                    system_prompt += f"\n\nHotel Information Context:\n{rag_context}"
+            if rag_context:
+                system_prompt += f"\n\nHotel Information Context:\n{rag_context}"
 
-                from langchain_core.messages import SystemMessage, HumanMessage
+            from langchain_core.messages import SystemMessage, HumanMessage
 
-                messages = [
-                    SystemMessage(content=system_prompt),
-                    HumanMessage(content=request.message),
-                ]
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=request.message),
+            ]
 
-                response = await langchain_llm.ainvoke(messages)
-                content = response.content
-                sources = rag_sources if rag_sources else None
+            response = await langchain_llm.ainvoke(messages)
+            content = response.content
+            sources = rag_sources if rag_sources else None
 
-            except Exception as e:
-                logger.error(f"LangChain fallback failed: {e}")
-                raise HTTPException(status_code=500, detail=str(e))
+        except Exception as e:
+            logger.error(f"LangChain fallback failed: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
     if not content:
         raise HTTPException(status_code=503, detail="No LLM available")

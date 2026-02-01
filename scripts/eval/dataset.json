@@ -1,0 +1,1151 @@
+{
+  "version": "1.0.0",
+  "generated_at": "2026-02-02T05:20:19.067955",
+  "total_pairs": 64,
+  "pairs": [
+    {
+      "id": "dining_en_01",
+      "question": "What time is breakfast?",
+      "expected_answer": "Breakfast is served at The Grand Dining Room from 6:30 AM to 10:30 AM daily, including holidays. It's complimentary for all in-house guests.",
+      "expected_context": [
+        "dining_services.md"
+      ],
+      "expected_keywords": [
+        "6:30",
+        "10:30",
+        "Grand Dining",
+        "complimentary",
+        "free"
+      ],
+      "language": "en",
+      "category": "dining",
+      "difficulty": "easy"
+    },
+    {
+      "id": "dining_th_01",
+      "question": "อาหารเช้าเสิร์ฟกี่โมง?",
+      "expected_answer": "อาหารเช้าเสิร์ฟที่ห้อง The Grand Dining Room ตั้งแต่ 06:30 - 10:30 น. ทุกวัน รวมวันหยุด ฟรีสำหรับผู้เข้าพักทุกท่าน",
+      "expected_context": [
+        "dining_services.md"
+      ],
+      "expected_keywords": [
+        "06:30",
+        "10:30",
+        "Grand Dining",
+        "ฟรี"
+      ],
+      "language": "th",
+      "category": "dining",
+      "difficulty": "easy"
+    },
+    {
+      "id": "dining_en_02",
+      "question": "Is room service available 24 hours?",
+      "expected_answer": "Yes, room service is available 24 hours a day, 7 days a week. Delivery time is 30-45 minutes and there's a 100 THB service charge per order.",
+      "expected_context": [
+        "dining_services.md"
+      ],
+      "expected_keywords": [
+        "24 hours",
+        "30-45",
+        "100 THB",
+        "service charge"
+      ],
+      "language": "en",
+      "category": "dining",
+      "difficulty": "easy"
+    },
+    {
+      "id": "dining_th_02",
+      "question": "รูมเซอร์วิสเปิด 24 ชั่วโมงไหม?",
+      "expected_answer": "รูมเซอร์วิสเปิดให้บริการ 24 ชั่วโมง 7 วัน เวลาจัดส่ง 30-45 นาที ค่าบริการ 100 บาทต่อออเดอร์",
+      "expected_context": [
+        "dining_services.md"
+      ],
+      "expected_keywords": [
+        "24 ชั่วโมง",
+        "30-45",
+        "100 บาท"
+      ],
+      "language": "th",
+      "category": "dining",
+      "difficulty": "easy"
+    },
+    {
+      "id": "facilities_en_01",
+      "question": "What is the WiFi password?",
+      "expected_answer": "The WiFi network name is 'HotelGuest' and the password is 'HOTEL2024GUEST'. Speed is 100 Mbps and it's complimentary for all guests throughout the hotel.",
+      "expected_context": [
+        "facilities_amenities.md"
+      ],
+      "expected_keywords": [
+        "HotelGuest",
+        "HOTEL2024GUEST",
+        "100 Mbps",
+        "complimentary"
+      ],
+      "language": "en",
+      "category": "facilities",
+      "difficulty": "easy"
+    },
+    {
+      "id": "facilities_th_01",
+      "question": "รหัส WiFi คืออะไร?",
+      "expected_answer": "ชื่อเครือข่าย WiFi คือ 'HotelGuest' รหัสผ่านคือ 'HOTEL2024GUEST' ความเร็ว 100 Mbps ใช้ได้ฟรีทั่วทั้งโรงแรม",
+      "expected_context": [
+        "facilities_amenities.md"
+      ],
+      "expected_keywords": [
+        "HotelGuest",
+        "HOTEL2024GUEST",
+        "100 Mbps",
+        "ฟรี"
+      ],
+      "language": "th",
+      "category": "facilities",
+      "difficulty": "easy"
+    },
+    {
+      "id": "facilities_en_02",
+      "question": "What are the swimming pool hours?",
+      "expected_answer": "The swimming pool is on the 5th Floor Rooftop and is open from 6:00 AM to 9:00 PM daily. The pool is 25x10 meters with depths from 1.2 to 1.8 meters. Pool towels are available for free.",
+      "expected_context": [
+        "facilities_amenities.md"
+      ],
+      "expected_keywords": [
+        "5th Floor",
+        "6:00 AM",
+        "9:00 PM",
+        "25",
+        "free"
+      ],
+      "language": "en",
+      "category": "facilities",
+      "difficulty": "easy"
+    },
+    {
+      "id": "facilities_th_02",
+      "question": "สระว่ายน้ำเปิดกี่โมง?",
+      "expected_answer": "สระว่ายน้ำอยู่ดาดฟ้าชั้น 5 เปิดให้บริการ 06:00 - 21:00 น. ทุกวัน ขนาดสระ 25x10 เมตร ลึก 1.2-1.8 เมตร มีผ้าเช็ดตัวฟรี",
+      "expected_context": [
+        "facilities_amenities.md"
+      ],
+      "expected_keywords": [
+        "ชั้น 5",
+        "06:00",
+        "21:00",
+        "25",
+        "ฟรี"
+      ],
+      "language": "th",
+      "category": "facilities",
+      "difficulty": "easy"
+    },
+    {
+      "id": "facilities_en_03",
+      "question": "Is the gym open 24 hours?",
+      "expected_answer": "Yes, the Fitness Center on the 4th Floor is open 24 hours with keycard access. It's complimentary for all guests. Personal training is available at 1,000 THB per session.",
+      "expected_context": [
+        "facilities_amenities.md"
+      ],
+      "expected_keywords": [
+        "24 hours",
+        "4th Floor",
+        "keycard",
+        "complimentary",
+        "1,000"
+      ],
+      "language": "en",
+      "category": "facilities",
+      "difficulty": "medium"
+    },
+    {
+      "id": "facilities_th_03",
+      "question": "ฟิตเนสเปิด 24 ชั่วโมงไหม?",
+      "expected_answer": "ใช่ค่ะ ฟิตเนสเซ็นเตอร์อยู่ชั้น 4 เปิด 24 ชั่วโมง เข้าด้วยคีย์การ์ด ฟรีสำหรับผู้เข้าพัก เทรนเนอร์ส่วนตัว 1,000 บาทต่อครั้ง",
+      "expected_context": [
+        "facilities_amenities.md"
+      ],
+      "expected_keywords": [
+        "24 ชั่วโมง",
+        "ชั้น 4",
+        "ฟรี",
+        "1,000"
+      ],
+      "language": "th",
+      "category": "facilities",
+      "difficulty": "medium"
+    },
+    {
+      "id": "spa_en_01",
+      "question": "What are the spa operating hours?",
+      "expected_answer": "The Serenity Spa is open daily from 10:00 AM to 10:00 PM, located on the 3rd Floor. Last booking is at 8:30 PM. Advance booking is recommended, especially on weekends.",
+      "expected_context": [
+        "spa_wellness.md"
+      ],
+      "expected_keywords": [
+        "10:00 AM",
+        "10:00 PM",
+        "3rd Floor",
+        "8:30 PM"
+      ],
+      "language": "en",
+      "category": "spa",
+      "difficulty": "easy"
+    },
+    {
+      "id": "spa_th_01",
+      "question": "สปาเปิดกี่โมง?",
+      "expected_answer": "สปา Serenity เปิดทุกวัน 10:00 - 22:00 น. อยู่ชั้น 3 รับจองคิวสุดท้าย 20:30 น. แนะนำให้จองล่วงหน้าโดยเฉพาะวันหยุดสุดสัปดาห์",
+      "expected_context": [
+        "spa_wellness.md"
+      ],
+      "expected_keywords": [
+        "10:00",
+        "22:00",
+        "ชั้น 3",
+        "20:30"
+      ],
+      "language": "th",
+      "category": "spa",
+      "difficulty": "easy"
+    },
+    {
+      "id": "spa_en_02",
+      "question": "How much is a Thai massage?",
+      "expected_answer": "Thai Traditional Massage prices are: 60 minutes for 1,500 THB, 90 minutes for 2,000 THB, and 120 minutes for 2,500 THB. It combines acupressure, stretching, and energy work.",
+      "expected_context": [
+        "spa_wellness.md"
+      ],
+      "expected_keywords": [
+        "1,500",
+        "2,000",
+        "2,500",
+        "THB",
+        "60",
+        "90",
+        "120"
+      ],
+      "language": "en",
+      "category": "spa",
+      "difficulty": "medium"
+    },
+    {
+      "id": "spa_th_02",
+      "question": "นวดแผนไทยราคาเท่าไหร่?",
+      "expected_answer": "นวดแผนไทยโบราณ: 60 นาที 1,500 บาท, 90 นาที 2,000 บาท, 120 นาที 2,500 บาท ผสมผสานการกดจุด การยืดเหยียด และการปรับพลังงาน",
+      "expected_context": [
+        "spa_wellness.md"
+      ],
+      "expected_keywords": [
+        "1,500",
+        "2,000",
+        "2,500",
+        "บาท",
+        "60",
+        "90",
+        "120"
+      ],
+      "language": "th",
+      "category": "spa",
+      "difficulty": "medium"
+    },
+    {
+      "id": "spa_en_03",
+      "question": "What is the Royal Thai Experience package?",
+      "expected_answer": "The Royal Thai Experience is a 3-hour signature package for 5,500 THB. It includes Thai herbal steam (30 min), Thai traditional massage (90 min), Thai facial treatment (60 min), plus herbal tea and light refreshments.",
+      "expected_context": [
+        "spa_wellness.md"
+      ],
+      "expected_keywords": [
+        "3 hours",
+        "5,500",
+        "herbal steam",
+        "massage",
+        "facial"
+      ],
+      "language": "en",
+      "category": "spa",
+      "difficulty": "medium"
+    },
+    {
+      "id": "spa_th_03",
+      "question": "แพ็คเกจราชาไทยคืออะไร?",
+      "expected_answer": "แพ็คเกจราชาไทยเป็นแพ็คเกจพิเศษ 3 ชั่วโมง ราคา 5,500 บาท รวมอบไอน้ำสมุนไพร 30 นาที นวดแผนไทย 90 นาที ทรีตเมนต์หน้า 60 นาที พร้อมชาสมุนไพรและของว่าง",
+      "expected_context": [
+        "spa_wellness.md"
+      ],
+      "expected_keywords": [
+        "3 ชั่วโมง",
+        "5,500",
+        "อบไอน้ำ",
+        "นวด",
+        "ทรีตเมนต์"
+      ],
+      "language": "th",
+      "category": "spa",
+      "difficulty": "medium"
+    },
+    {
+      "id": "policy_en_01",
+      "question": "What is the cancellation policy?",
+      "expected_answer": "Free cancellation is available more than 48 hours before check-in. Within 48 hours, 1 night charge applies. No-show incurs full stay charge. Early departure has no refund for unused nights.",
+      "expected_context": [
+        "policies_rules.md"
+      ],
+      "expected_keywords": [
+        "48 hours",
+        "free",
+        "1 night",
+        "no-show",
+        "full"
+      ],
+      "language": "en",
+      "category": "policy",
+      "difficulty": "medium"
+    },
+    {
+      "id": "policy_th_01",
+      "question": "นโยบายยกเลิกการจองเป็นอย่างไร?",
+      "expected_answer": "ยกเลิกฟรีล่วงหน้ามากกว่า 48 ชั่วโมงก่อนเช็คอิน ภายใน 48 ชั่วโมงคิดค่าห้อง 1 คืน ไม่มาเข้าพักคิดค่าห้องทั้งหมด ออกก่อนกำหนดไม่คืนเงินคืนที่ไม่ได้ใช้",
+      "expected_context": [
+        "policies_rules.md"
+      ],
+      "expected_keywords": [
+        "48 ชั่วโมง",
+        "ฟรี",
+        "1 คืน",
+        "ไม่มา",
+        "ทั้งหมด"
+      ],
+      "language": "th",
+      "category": "policy",
+      "difficulty": "medium"
+    },
+    {
+      "id": "policy_en_02",
+      "question": "Can I bring my pet to the hotel?",
+      "expected_answer": "Small pets under 5 kg are allowed. There's a pet fee of 500 THB per night and a refundable deposit of 2,000 THB. Pet-friendly rooms have limited availability. Pets must be leashed in public areas and are not allowed in restaurants, spa, pool, or fitness center.",
+      "expected_context": [
+        "policies_rules.md"
+      ],
+      "expected_keywords": [
+        "5 kg",
+        "500 THB",
+        "2,000",
+        "leashed",
+        "not allowed"
+      ],
+      "language": "en",
+      "category": "policy",
+      "difficulty": "medium"
+    },
+    {
+      "id": "policy_th_02",
+      "question": "พาสัตว์เลี้ยงมาได้ไหม?",
+      "expected_answer": "อนุญาตเฉพาะสัตว์เลี้ยงขนาดเล็กน้ำหนักไม่เกิน 5 กก. ค่าสัตว์เลี้ยง 500 บาท/คืน เงินประกัน 2,000 บาท (คืนให้เมื่อเช็คเอาท์) ต้องใส่สายจูงในพื้นที่สาธารณะ ห้ามนำเข้าร้านอาหาร สปา สระว่ายน้ำ ฟิตเนส",
+      "expected_context": [
+        "policies_rules.md"
+      ],
+      "expected_keywords": [
+        "5 กก",
+        "500 บาท",
+        "2,000",
+        "สายจูง",
+        "ห้าม"
+      ],
+      "language": "th",
+      "category": "policy",
+      "difficulty": "medium"
+    },
+    {
+      "id": "policy_en_03",
+      "question": "Is smoking allowed in the hotel?",
+      "expected_answer": "The hotel is 100% non-smoking. Smoking is only allowed at the designated outdoor area on the ground floor terrace. There's a 5,000 THB cleaning fee for smoking in the room.",
+      "expected_context": [
+        "policies_rules.md"
+      ],
+      "expected_keywords": [
+        "non-smoking",
+        "ground floor",
+        "terrace",
+        "5,000 THB"
+      ],
+      "language": "en",
+      "category": "policy",
+      "difficulty": "easy"
+    },
+    {
+      "id": "policy_th_03",
+      "question": "สูบบุหรี่ในโรงแรมได้ไหม?",
+      "expected_answer": "โรงแรมปลอดบุหรี่ 100% สูบบุหรี่ได้เฉพาะบริเวณระเบียงชั้น 1 ที่กำหนดเท่านั้น หากสูบบุหรี่ในห้องพักมีค่าปรับ 5,000 บาท",
+      "expected_context": [
+        "policies_rules.md"
+      ],
+      "expected_keywords": [
+        "ปลอดบุหรี่",
+        "ชั้น 1",
+        "ระเบียง",
+        "5,000 บาท"
+      ],
+      "language": "th",
+      "category": "policy",
+      "difficulty": "easy"
+    },
+    {
+      "id": "faq_en_01",
+      "question": "What time is check-in and check-out?",
+      "expected_answer": "Check-in time is 2:00 PM (14:00). Check-out time is 12:00 PM (noon). Early check-in and late check-out may be available upon request, subject to availability.",
+      "expected_context": [
+        "hotel_faq.md"
+      ],
+      "expected_keywords": [
+        "2:00 PM",
+        "14:00",
+        "12:00",
+        "noon",
+        "early",
+        "late"
+      ],
+      "language": "en",
+      "category": "faq",
+      "difficulty": "easy"
+    },
+    {
+      "id": "faq_th_01",
+      "question": "เช็คอินและเช็คเอาท์กี่โมง?",
+      "expected_answer": "เช็คอินได้ตั้งแต่ 14:00 น. เช็คเอาท์ภายใน 12:00 น. สามารถขอเช็คอินก่อนเวลาหรือเช็คเอาท์ล่าช้าได้หากห้องว่าง",
+      "expected_context": [
+        "hotel_faq.md"
+      ],
+      "expected_keywords": [
+        "14:00",
+        "12:00",
+        "เช็คอิน",
+        "เช็คเอาท์"
+      ],
+      "language": "th",
+      "category": "faq",
+      "difficulty": "easy"
+    },
+    {
+      "id": "room_en_01",
+      "question": "What room types are available?",
+      "expected_answer": "We offer 4 room types: Standard Room (28 sqm, 2,500 THB), Deluxe Room (35 sqm, 3,500 THB), Suite (55 sqm, 5,500 THB), and Penthouse Suite (120 sqm, 15,000 THB). All rooms include breakfast, WiFi, and minibar.",
+      "expected_context": [
+        "room_types.md"
+      ],
+      "expected_keywords": [
+        "Standard",
+        "Deluxe",
+        "Suite",
+        "Penthouse",
+        "sqm"
+      ],
+      "language": "en",
+      "category": "room",
+      "difficulty": "medium"
+    },
+    {
+      "id": "room_th_01",
+      "question": "มีห้องพักประเภทไหนบ้าง?",
+      "expected_answer": "เรามีห้องพัก 4 ประเภท: Standard Room (28 ตร.ม. 2,500 บาท), Deluxe Room (35 ตร.ม. 3,500 บาท), Suite (55 ตร.ม. 5,500 บาท), Penthouse Suite (120 ตร.ม. 15,000 บาท) ทุกห้องรวมอาหารเช้า WiFi และมินิบาร์",
+      "expected_context": [
+        "room_types.md"
+      ],
+      "expected_keywords": [
+        "Standard",
+        "Deluxe",
+        "Suite",
+        "Penthouse",
+        "ตร.ม."
+      ],
+      "language": "th",
+      "category": "room",
+      "difficulty": "medium"
+    },
+    {
+      "id": "room_en_02",
+      "question": "Does the Deluxe room have a bathtub?",
+      "expected_answer": "Yes, the Deluxe Room features a separate bathtub and rain shower. It also includes a work desk, sitting area, and city or garden view balcony.",
+      "expected_context": [
+        "room_types.md"
+      ],
+      "expected_keywords": [
+        "bathtub",
+        "rain shower",
+        "balcony",
+        "Deluxe"
+      ],
+      "language": "en",
+      "category": "room",
+      "difficulty": "easy"
+    },
+    {
+      "id": "room_th_02",
+      "question": "ห้อง Deluxe มีอ่างอาบน้ำไหม?",
+      "expected_answer": "มีค่ะ ห้อง Deluxe มีอ่างอาบน้ำแยกและฝักบัวเรนชาวเวอร์ มีโต๊ะทำงาน มุมนั่งเล่น และระเบียงวิวเมืองหรือสวน",
+      "expected_context": [
+        "room_types.md"
+      ],
+      "expected_keywords": [
+        "อ่างอาบน้ำ",
+        "ฝักบัว",
+        "ระเบียง",
+        "Deluxe"
+      ],
+      "language": "th",
+      "category": "room",
+      "difficulty": "easy"
+    },
+    {
+      "id": "room_en_03",
+      "question": "What is the size of the Penthouse Suite?",
+      "expected_answer": "The Penthouse Suite is 120 square meters, located on the top floor. It features a private terrace with panoramic views, separate living and dining areas, kitchenette, jacuzzi, and 24-hour butler service.",
+      "expected_context": [
+        "room_types.md"
+      ],
+      "expected_keywords": [
+        "120",
+        "terrace",
+        "panoramic",
+        "butler",
+        "Penthouse"
+      ],
+      "language": "en",
+      "category": "room",
+      "difficulty": "medium"
+    },
+    {
+      "id": "room_th_03",
+      "question": "ห้อง Penthouse ใหญ่แค่ไหน?",
+      "expected_answer": "Penthouse Suite กว้าง 120 ตร.ม. อยู่ชั้นบนสุด มีระเบียงส่วนตัววิวพาโนรามา ห้องนั่งเล่นและห้องอาหารแยก ครัวเล็ก อ่างจากุซซี่ และบัตเลอร์ 24 ชั่วโมง",
+      "expected_context": [
+        "room_types.md"
+      ],
+      "expected_keywords": [
+        "120",
+        "ระเบียง",
+        "พาโนรามา",
+        "บัตเลอร์",
+        "Penthouse"
+      ],
+      "language": "th",
+      "category": "room",
+      "difficulty": "medium"
+    },
+    {
+      "id": "room_en_04",
+      "question": "Can I request extra beds?",
+      "expected_answer": "Extra beds are available for 800 THB per night. Maximum 1 extra bed per room for Standard and Deluxe, 2 for Suite, and 3 for Penthouse. Baby cots are complimentary upon request.",
+      "expected_context": [
+        "room_types.md"
+      ],
+      "expected_keywords": [
+        "800",
+        "extra bed",
+        "baby cot",
+        "complimentary"
+      ],
+      "language": "en",
+      "category": "room",
+      "difficulty": "medium"
+    },
+    {
+      "id": "room_th_04",
+      "question": "ขอเตียงเสริมได้ไหม?",
+      "expected_answer": "เตียงเสริมมีให้บริการ 800 บาท/คืน เพิ่มได้สูงสุด 1 เตียงสำหรับ Standard/Deluxe, 2 เตียงสำหรับ Suite, 3 เตียงสำหรับ Penthouse เปลเด็กฟรีเมื่อแจ้งล่วงหน้า",
+      "expected_context": [
+        "room_types.md"
+      ],
+      "expected_keywords": [
+        "800",
+        "เตียงเสริม",
+        "เปล",
+        "ฟรี"
+      ],
+      "language": "th",
+      "category": "room",
+      "difficulty": "medium"
+    },
+    {
+      "id": "transport_en_01",
+      "question": "Is there airport shuttle?",
+      "expected_answer": "Yes, we offer airport shuttle service. From Suvarnabhumi Airport: 1,200 THB (45-60 min), from Don Mueang: 1,000 THB (30-45 min). Advance booking 24 hours recommended. Complimentary shuttle to nearby BTS station hourly.",
+      "expected_context": [
+        "transportation.md"
+      ],
+      "expected_keywords": [
+        "1,200",
+        "1,000",
+        "Suvarnabhumi",
+        "Don Mueang",
+        "shuttle"
+      ],
+      "language": "en",
+      "category": "transportation",
+      "difficulty": "medium"
+    },
+    {
+      "id": "transport_th_01",
+      "question": "มีรถรับส่งสนามบินไหม?",
+      "expected_answer": "มีค่ะ รถรับส่งสนามบิน: สุวรรณภูมิ 1,200 บาท (45-60 นาที), ดอนเมือง 1,000 บาท (30-45 นาที) แนะนำจองล่วงหน้า 24 ชม. มีรถฟรีไป BTS ใกล้เคียงทุกชั่วโมง",
+      "expected_context": [
+        "transportation.md"
+      ],
+      "expected_keywords": [
+        "1,200",
+        "1,000",
+        "สุวรรณภูมิ",
+        "ดอนเมือง",
+        "ฟรี"
+      ],
+      "language": "th",
+      "category": "transportation",
+      "difficulty": "medium"
+    },
+    {
+      "id": "transport_en_02",
+      "question": "Can you arrange a tour to Grand Palace?",
+      "expected_answer": "Yes, we offer half-day Grand Palace and Temple tour at 1,500 THB per person. Includes air-conditioned van, English-speaking guide, entrance fees, and bottled water. Tours depart at 8:30 AM and 1:00 PM daily.",
+      "expected_context": [
+        "transportation.md"
+      ],
+      "expected_keywords": [
+        "Grand Palace",
+        "1,500",
+        "guide",
+        "entrance",
+        "8:30"
+      ],
+      "language": "en",
+      "category": "transportation",
+      "difficulty": "medium"
+    },
+    {
+      "id": "transport_th_02",
+      "question": "จัดทัวร์พระบรมมหาราชวังได้ไหม?",
+      "expected_answer": "ได้ค่ะ มีทัวร์ครึ่งวันพระบรมมหาราชวังและวัด 1,500 บาท/ท่าน รวมรถตู้ปรับอากาศ ไกด์พูดอังกฤษ ค่าเข้าชม และน้ำดื่ม ออกเดินทาง 08:30 และ 13:00 น. ทุกวัน",
+      "expected_context": [
+        "transportation.md"
+      ],
+      "expected_keywords": [
+        "พระบรมมหาราชวัง",
+        "1,500",
+        "ไกด์",
+        "ค่าเข้า",
+        "08:30"
+      ],
+      "language": "th",
+      "category": "transportation",
+      "difficulty": "medium"
+    },
+    {
+      "id": "transport_en_03",
+      "question": "Is there parking available?",
+      "expected_answer": "Yes, we have underground parking with 24-hour security. Rates: hotel guests 200 THB/day, visitors 50 THB/hour (first 30 minutes free). Valet parking available for 300 THB.",
+      "expected_context": [
+        "transportation.md"
+      ],
+      "expected_keywords": [
+        "parking",
+        "200",
+        "50",
+        "valet",
+        "300"
+      ],
+      "language": "en",
+      "category": "transportation",
+      "difficulty": "easy"
+    },
+    {
+      "id": "transport_th_03",
+      "question": "มีที่จอดรถไหม?",
+      "expected_answer": "มีค่ะ ที่จอดรถใต้ดินมีรปภ. 24 ชม. ผู้เข้าพัก 200 บาท/วัน ผู้มาเยือน 50 บาท/ชม. (30 นาทีแรกฟรี) บริการ Valet 300 บาท",
+      "expected_context": [
+        "transportation.md"
+      ],
+      "expected_keywords": [
+        "ที่จอดรถ",
+        "200",
+        "50",
+        "Valet",
+        "300"
+      ],
+      "language": "th",
+      "category": "transportation",
+      "difficulty": "easy"
+    },
+    {
+      "id": "emergency_en_01",
+      "question": "What is the emergency contact number?",
+      "expected_answer": "For emergencies, call Front Desk at extension 0 or direct line 02-123-4567 (24 hours). For medical emergency, our in-house clinic is on the 2nd floor (8 AM - 8 PM) or call 1669 for ambulance.",
+      "expected_context": [
+        "emergency_contacts.md"
+      ],
+      "expected_keywords": [
+        "02-123-4567",
+        "extension 0",
+        "1669",
+        "2nd floor",
+        "clinic"
+      ],
+      "language": "en",
+      "category": "emergency",
+      "difficulty": "easy"
+    },
+    {
+      "id": "emergency_th_01",
+      "question": "เบอร์ฉุกเฉินคือเบอร์อะไร?",
+      "expected_answer": "กรณีฉุกเฉินโทรหา Front Desk กด 0 หรือสายตรง 02-123-4567 (24 ชม.) ฉุกเฉินทางการแพทย์ คลินิกในโรงแรมชั้น 2 (8:00-20:00 น.) หรือโทร 1669 เรียกรถพยาบาล",
+      "expected_context": [
+        "emergency_contacts.md"
+      ],
+      "expected_keywords": [
+        "02-123-4567",
+        "กด 0",
+        "1669",
+        "ชั้น 2",
+        "คลินิก"
+      ],
+      "language": "th",
+      "category": "emergency",
+      "difficulty": "easy"
+    },
+    {
+      "id": "emergency_en_02",
+      "question": "Is there a doctor on call?",
+      "expected_answer": "Yes, we have an in-house clinic on the 2nd floor open 8 AM - 8 PM with a nurse. A doctor is on-call 24 hours and can be in the hotel within 30 minutes. Consultation fee is 1,500 THB.",
+      "expected_context": [
+        "emergency_contacts.md"
+      ],
+      "expected_keywords": [
+        "doctor",
+        "on-call",
+        "24 hours",
+        "30 minutes",
+        "1,500"
+      ],
+      "language": "en",
+      "category": "emergency",
+      "difficulty": "medium"
+    },
+    {
+      "id": "emergency_th_02",
+      "question": "มีหมอประจำโรงแรมไหม?",
+      "expected_answer": "มีคลินิกในโรงแรมชั้น 2 เปิด 8:00-20:00 น. มีพยาบาลประจำ แพทย์เวรตลอด 24 ชม. มาถึงภายใน 30 นาที ค่าตรวจ 1,500 บาท",
+      "expected_context": [
+        "emergency_contacts.md"
+      ],
+      "expected_keywords": [
+        "แพทย์",
+        "24 ชม.",
+        "30 นาที",
+        "1,500",
+        "คลินิก"
+      ],
+      "language": "th",
+      "category": "emergency",
+      "difficulty": "medium"
+    },
+    {
+      "id": "complex_en_01",
+      "question": "I'm arriving at 10 AM, can I check in early and have breakfast?",
+      "expected_answer": "Check-in is normally at 2 PM, but early check-in may be available based on room availability. Breakfast is served until 10:30 AM at The Grand Dining Room. We recommend contacting us in advance to arrange early check-in and late breakfast.",
+      "expected_context": [
+        "hotel_faq.md",
+        "dining_services.md"
+      ],
+      "expected_keywords": [
+        "2 PM",
+        "14:00",
+        "10:30",
+        "early",
+        "availability"
+      ],
+      "language": "en",
+      "category": "faq",
+      "difficulty": "hard"
+    },
+    {
+      "id": "complex_th_01",
+      "question": "ผมจะมาถึง 10 โมงเช้า เช็คอินก่อนได้ไหม แล้วทันกินข้าวเช้าไหม?",
+      "expected_answer": "เช็คอินปกติ 14:00 น. แต่สามารถขอเช็คอินก่อนได้ขึ้นอยู่กับห้องว่าง อาหารเช้าเสิร์ฟถึง 10:30 น. ที่ The Grand Dining Room แนะนำแจ้งล่วงหน้าเพื่อจัดเตรียมเช็คอินก่อนและอาหารเช้าพิเศษ",
+      "expected_context": [
+        "hotel_faq.md",
+        "dining_services.md"
+      ],
+      "expected_keywords": [
+        "14:00",
+        "10:30",
+        "ก่อน",
+        "ห้องว่าง"
+      ],
+      "language": "th",
+      "category": "faq",
+      "difficulty": "hard"
+    },
+    {
+      "id": "complex_en_02",
+      "question": "What's included in the Suite and can I book a spa treatment?",
+      "expected_answer": "The Suite (55 sqm, 5,500 THB) includes separate living area, kitchenette, premium minibar, breakfast, and butler service. Spa is on 3rd floor, open 10 AM - 10 PM. Thai massage from 1,500 THB (60 min). Advance booking recommended.",
+      "expected_context": [
+        "room_types.md",
+        "spa_wellness.md"
+      ],
+      "expected_keywords": [
+        "55",
+        "5,500",
+        "Suite",
+        "spa",
+        "1,500",
+        "massage"
+      ],
+      "language": "en",
+      "category": "room",
+      "difficulty": "hard"
+    },
+    {
+      "id": "complex_th_02",
+      "question": "ห้อง Suite มีอะไรบ้าง แล้วจองสปาได้ไหม?",
+      "expected_answer": "Suite (55 ตร.ม. 5,500 บาท) มีห้องนั่งเล่นแยก ครัวเล็ก มินิบาร์พรีเมียม อาหารเช้า และบัตเลอร์ สปาอยู่ชั้น 3 เปิด 10:00-22:00 น. นวดแผนไทยเริ่ม 1,500 บาท (60 นาที) แนะนำจองล่วงหน้า",
+      "expected_context": [
+        "room_types.md",
+        "spa_wellness.md"
+      ],
+      "expected_keywords": [
+        "55",
+        "5,500",
+        "Suite",
+        "สปา",
+        "1,500",
+        "นวด"
+      ],
+      "language": "th",
+      "category": "room",
+      "difficulty": "hard"
+    },
+    {
+      "id": "edge_en_01",
+      "question": "Do you have gluten-free breakfast options?",
+      "expected_answer": "Yes, we accommodate dietary requirements including gluten-free, vegetarian, vegan, and halal options. Please inform the restaurant staff or note it during booking. Our chef can prepare special meals upon request.",
+      "expected_context": [
+        "dining_services.md"
+      ],
+      "expected_keywords": [
+        "gluten-free",
+        "dietary",
+        "vegetarian",
+        "halal",
+        "special"
+      ],
+      "language": "en",
+      "category": "dining",
+      "difficulty": "medium"
+    },
+    {
+      "id": "edge_th_01",
+      "question": "มีอาหารเช้าสำหรับคนแพ้กลูเตนไหม?",
+      "expected_answer": "มีค่ะ เรารองรับความต้องการด้านอาหารรวมถึงปลอดกลูเตน มังสวิรัติ วีแกน และฮาลาล กรุณาแจ้งพนักงานร้านอาหารหรือระบุตอนจอง เชฟสามารถเตรียมอาหารพิเศษได้",
+      "expected_context": [
+        "dining_services.md"
+      ],
+      "expected_keywords": [
+        "กลูเตน",
+        "มังสวิรัติ",
+        "วีแกน",
+        "ฮาลาล",
+        "พิเศษ"
+      ],
+      "language": "th",
+      "category": "dining",
+      "difficulty": "medium"
+    },
+    {
+      "id": "edge_en_02",
+      "question": "Is the pool heated?",
+      "expected_answer": "The rooftop pool maintains a comfortable temperature year-round. Water temperature is kept at 28-30°C. The pool also has a children's section (0.6m depth) and poolside bar service.",
+      "expected_context": [
+        "facilities_amenities.md"
+      ],
+      "expected_keywords": [
+        "temperature",
+        "28",
+        "30",
+        "children",
+        "poolside"
+      ],
+      "language": "en",
+      "category": "facilities",
+      "difficulty": "medium"
+    },
+    {
+      "id": "edge_th_02",
+      "question": "สระว่ายน้ำอุ่นไหม?",
+      "expected_answer": "สระบนดาดฟ้ามีอุณหภูมิน้ำเหมาะสมตลอดปี รักษาอุณหภูมิที่ 28-30°C มีโซนเด็ก (ลึก 0.6 ม.) และบริการบาร์ริมสระ",
+      "expected_context": [
+        "facilities_amenities.md"
+      ],
+      "expected_keywords": [
+        "อุณหภูมิ",
+        "28",
+        "30",
+        "เด็ก",
+        "บาร์"
+      ],
+      "language": "th",
+      "category": "facilities",
+      "difficulty": "medium"
+    },
+    {
+      "id": "negative_en_01",
+      "question": "Can I cook in my room?",
+      "expected_answer": "Cooking appliances are not allowed in Standard and Deluxe rooms for safety reasons. Suite and Penthouse have a kitchenette with microwave and electric kettle. Room service is available 24 hours as an alternative.",
+      "expected_context": [
+        "policies_rules.md",
+        "room_types.md"
+      ],
+      "expected_keywords": [
+        "not allowed",
+        "safety",
+        "kitchenette",
+        "microwave",
+        "room service"
+      ],
+      "language": "en",
+      "category": "policy",
+      "difficulty": "medium"
+    },
+    {
+      "id": "negative_th_01",
+      "question": "ทำอาหารในห้องได้ไหม?",
+      "expected_answer": "ห้าม Standard และ Deluxe ใช้เครื่องทำอาหารเพื่อความปลอดภัย Suite และ Penthouse มีครัวเล็กพร้อมไมโครเวฟและกาต้มน้ำ มี Room Service 24 ชม. เป็นทางเลือก",
+      "expected_context": [
+        "policies_rules.md",
+        "room_types.md"
+      ],
+      "expected_keywords": [
+        "ห้าม",
+        "ปลอดภัย",
+        "ครัวเล็ก",
+        "ไมโครเวฟ",
+        "Room Service"
+      ],
+      "language": "th",
+      "category": "policy",
+      "difficulty": "medium"
+    },
+    {
+      "id": "greeting_en_01",
+      "question": "Hello, I just arrived at the hotel",
+      "expected_answer": "Welcome to Siam Serenity Hotel! We're delighted to have you. Our front desk is available 24/7 to assist you. Is there anything specific you'd like to know about our facilities or services?",
+      "expected_context": [],
+      "expected_keywords": [
+        "welcome",
+        "Siam Serenity",
+        "front desk",
+        "assist"
+      ],
+      "language": "en",
+      "category": "faq",
+      "difficulty": "easy"
+    },
+    {
+      "id": "greeting_th_01",
+      "question": "สวัสดีครับ เพิ่งมาถึงโรงแรม",
+      "expected_answer": "สวัสดีค่ะ ยินดีต้อนรับสู่โรงแรมสยามเซอเรนิตี้ ทีม Front Desk พร้อมให้บริการ 24 ชั่วโมง มีอะไรให้ช่วยเหลือไหมคะ?",
+      "expected_context": [],
+      "expected_keywords": [
+        "ยินดีต้อนรับ",
+        "สยามเซอเรนิตี้",
+        "Front Desk",
+        "ช่วยเหลือ"
+      ],
+      "language": "th",
+      "category": "faq",
+      "difficulty": "easy"
+    },
+    {
+      "id": "booking_en_01",
+      "question": "I want to book a Deluxe room for next Friday",
+      "expected_answer": "I can help you book a Deluxe Room. The Deluxe Room is 35 sqm at 3,500 THB per night, featuring a bathtub, work desk, and balcony. Could you please provide your check-out date and number of guests?",
+      "expected_context": [
+        "room_types.md"
+      ],
+      "expected_keywords": [
+        "book",
+        "Deluxe",
+        "3,500",
+        "35",
+        "check-out"
+      ],
+      "language": "en",
+      "category": "room",
+      "difficulty": "hard"
+    },
+    {
+      "id": "booking_th_01",
+      "question": "อยากจองห้อง Deluxe ศุกร์หน้า",
+      "expected_answer": "ยินดีช่วยจองห้อง Deluxe ค่ะ ห้อง Deluxe 35 ตร.ม. ราคา 3,500 บาท/คืน มีอ่างอาบน้ำ โต๊ะทำงาน และระเบียง ขอทราบวันเช็คเอาท์และจำนวนผู้เข้าพักค่ะ?",
+      "expected_context": [
+        "room_types.md"
+      ],
+      "expected_keywords": [
+        "จอง",
+        "Deluxe",
+        "3,500",
+        "35",
+        "เช็คเอาท์"
+      ],
+      "language": "th",
+      "category": "room",
+      "difficulty": "hard"
+    },
+    {
+      "id": "booking_en_02",
+      "question": "Can you cancel my reservation?",
+      "expected_answer": "I can help with cancellation. Free cancellation is available more than 48 hours before check-in. Within 48 hours, 1 night charge applies. Could you please provide your reservation number or guest name?",
+      "expected_context": [
+        "policies_rules.md"
+      ],
+      "expected_keywords": [
+        "cancel",
+        "48 hours",
+        "free",
+        "reservation",
+        "1 night"
+      ],
+      "language": "en",
+      "category": "policy",
+      "difficulty": "hard"
+    },
+    {
+      "id": "booking_th_02",
+      "question": "ช่วยยกเลิกการจองได้ไหม?",
+      "expected_answer": "ยินดีช่วยยกเลิกค่ะ ยกเลิกฟรีล่วงหน้ามากกว่า 48 ชม. ภายใน 48 ชม. คิดค่าห้อง 1 คืน ขอหมายเลขการจองหรือชื่อผู้จองค่ะ?",
+      "expected_context": [
+        "policies_rules.md"
+      ],
+      "expected_keywords": [
+        "ยกเลิก",
+        "48 ชม.",
+        "ฟรี",
+        "การจอง",
+        "1 คืน"
+      ],
+      "language": "th",
+      "category": "policy",
+      "difficulty": "hard"
+    },
+    {
+      "id": "compare_en_01",
+      "question": "What's the difference between Deluxe and Suite?",
+      "expected_answer": "Deluxe Room: 35 sqm, 3,500 THB, bathtub, work desk, balcony. Suite: 55 sqm, 5,500 THB, separate living area, kitchenette, premium minibar, butler service. Suite is 20 sqm larger with more amenities and butler service.",
+      "expected_context": [
+        "room_types.md"
+      ],
+      "expected_keywords": [
+        "35",
+        "55",
+        "3,500",
+        "5,500",
+        "butler",
+        "kitchenette"
+      ],
+      "language": "en",
+      "category": "room",
+      "difficulty": "hard"
+    },
+    {
+      "id": "compare_th_01",
+      "question": "Deluxe กับ Suite ต่างกันยังไง?",
+      "expected_answer": "Deluxe: 35 ตร.ม. 3,500 บาท มีอ่างอาบน้ำ โต๊ะทำงาน ระเบียง Suite: 55 ตร.ม. 5,500 บาท มีห้องนั่งเล่นแยก ครัวเล็ก มินิบาร์พรีเมียม บัตเลอร์ Suite ใหญ่กว่า 20 ตร.ม. มีสิ่งอำนวยความสะดวกและบัตเลอร์มากกว่า",
+      "expected_context": [
+        "room_types.md"
+      ],
+      "expected_keywords": [
+        "35",
+        "55",
+        "3,500",
+        "5,500",
+        "บัตเลอร์",
+        "ครัวเล็ก"
+      ],
+      "language": "th",
+      "category": "room",
+      "difficulty": "hard"
+    },
+    {
+      "id": "time_en_01",
+      "question": "When is happy hour at the bar?",
+      "expected_answer": "Happy Hour at the Lobby Bar is from 5:00 PM to 7:00 PM daily. Enjoy 50% off selected cocktails and wines. The bar is open from 11:00 AM to midnight.",
+      "expected_context": [
+        "dining_services.md"
+      ],
+      "expected_keywords": [
+        "5:00",
+        "7:00",
+        "50%",
+        "cocktails",
+        "midnight"
+      ],
+      "language": "en",
+      "category": "dining",
+      "difficulty": "medium"
+    },
+    {
+      "id": "time_th_01",
+      "question": "บาร์มี Happy Hour ตอนไหน?",
+      "expected_answer": "Happy Hour ที่ Lobby Bar 17:00-19:00 น. ทุกวัน ลดราคา 50% เครื่องดื่มค็อกเทลและไวน์ที่เลือก บาร์เปิด 11:00-24:00 น.",
+      "expected_context": [
+        "dining_services.md"
+      ],
+      "expected_keywords": [
+        "17:00",
+        "19:00",
+        "50%",
+        "ค็อกเทล",
+        "24:00"
+      ],
+      "language": "th",
+      "category": "dining",
+      "difficulty": "medium"
+    },
+    {
+      "id": "payment_en_01",
+      "question": "What payment methods do you accept?",
+      "expected_answer": "We accept cash (THB only), credit cards (Visa, Mastercard, AMEX, JCB), debit cards, and mobile payments (PromptPay, TrueMoney). For bills over 10,000 THB, we also accept bank transfer.",
+      "expected_context": [
+        "policies_rules.md"
+      ],
+      "expected_keywords": [
+        "Visa",
+        "Mastercard",
+        "PromptPay",
+        "cash",
+        "bank transfer"
+      ],
+      "language": "en",
+      "category": "policy",
+      "difficulty": "medium"
+    },
+    {
+      "id": "payment_th_01",
+      "question": "รับชำระเงินวิธีไหนบ้าง?",
+      "expected_answer": "รับเงินสด (บาทเท่านั้น) บัตรเครดิต (Visa, Mastercard, AMEX, JCB) บัตรเดบิต และชำระผ่านมือถือ (พร้อมเพย์, ทรูมันนี่) บิลมากกว่า 10,000 บาทรับโอนธนาคาร",
+      "expected_context": [
+        "policies_rules.md"
+      ],
+      "expected_keywords": [
+        "Visa",
+        "Mastercard",
+        "พร้อมเพย์",
+        "เงินสด",
+        "โอน"
+      ],
+      "language": "th",
+      "category": "policy",
+      "difficulty": "medium"
+    }
+  ]
+}

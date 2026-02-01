@@ -1,0 +1,74 @@
+# =============================================================================
+# Hotel AI Operations Assistant - Development Dependencies
+# Adapted from original requirements, replacing NVIDIA-specific packages
+# =============================================================================
+
+# Core Framework
+fastapi==0.115.2
+uvicorn[standard]==0.27.1
+starlette==0.40.0
+python-multipart==0.0.18
+
+# LangChain & Agents (using OpenRouter-compatible packages)
+langchain==0.3.0
+langgraph==0.2.32
+langchain-community==0.3.0
+langchain-openai>=0.1.0
+
+# Data Processing
+dataclass-wizard==0.22.3
+pandas>=2.0.0
+numpy>=1.24.0
+pyyaml>=6.0
+
+# Database - PostgreSQL
+psycopg2-binary==2.9.9
+psycopg-binary==3.2.3
+psycopg-pool==3.2.2
+SQLAlchemy==2.0.31
+langgraph-checkpoint-postgres==2.0.0
+
+# Vector Database - Qdrant (replacing Milvus)
+qdrant-client>=1.7.0
+langchain-qdrant>=0.1.0
+
+# Cache - Redis
+redis==5.0.8
+
+# Embeddings & Reranking
+# - OpenRouter embeddings via langchain-openai
+# - Qwen3-0.6B reranker via sentence-transformers CrossEncoder
+sentence-transformers>=3.0.0
+langchain-openai>=0.2.0
+
+# Document Processing (for PDF/MD loading)
+langchain-text-splitters>=0.3.0
+unstructured>=0.12.0
+
+# HTTP & API
+requests>=2.31.0
+httpx>=0.25.0
+
+# Utilities
+bleach==6.1.0
+prometheus_client==0.21.0
+nest-asyncio==1.6.0
+python-dotenv>=1.0.0
+
+# Data Generation (for hotel dataset)
+faker>=22.0.0
+
+# NeMo Guardrails
+nemoguardrails>=0.10.0
+
+# SSE Streaming
+sse-starlette>=1.8.0
+
+# RAG Evaluation - DeepEval
+deepeval>=0.21.0
+jinja2>=3.0.0
+openai>=1.0.0
+
+# Development Tools
+pytest>=7.4.0
+pytest-asyncio>=0.21.0

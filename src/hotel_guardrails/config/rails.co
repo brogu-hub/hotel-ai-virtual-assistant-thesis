@@ -1,0 +1,212 @@
+# SPDX-FileCopyrightText: Copyright (c) 2024 Hotel AI Operations Assistant
+# SPDX-License-Identifier: Apache-2.0
+#
+# Siam Serenity Hotel Guardrails
+# Bilingual Thai/English dialog flows
+
+# === SAFETY RAILS ===
+
+define subflow self check input
+  """Check user input for inappropriate content."""
+  $is_safe = execute check_input_safety(user_message=$last_user_message)
+  if not $is_safe
+    bot refuse to respond
+    stop
+
+define subflow self check output
+  """Check bot output for safety."""
+  $is_safe = execute check_output_safety(bot_message=$last_bot_message)
+  if not $is_safe
+    bot apologize and offer alternative
+    stop
+
+define bot refuse to respond
+  "ขออภัยค่ะ ดิฉันไม่สามารถช่วยเหลือในเรื่องนี้ได้ / I'm sorry, I cannot assist with that request."
+
+define bot apologize and offer alternative
+  "ขออภัยค่ะ มีปัญหาเกิดขึ้น สามารถถามคำถามอื่นได้ค่ะ / I apologize, there was an issue. Please feel free to ask something else."
+
+# === GREETING FLOWS ===
+
+define user greeting
+  "hello"
+  "hi"
+  "hey"
+  "สวัสดี"
+  "หวัดดี"
+  "good morning"
+  "good afternoon"
+  "good evening"
+  "สวัสดีครับ"
+  "สวัสดีค่ะ"
+
+define flow greeting
+  user greeting
+  bot welcome guest
+
+define bot welcome guest
+  "สวัสดีค่ะ/ครับ ยินดีต้อนรับสู่โรงแรมสยามเซอเรนิตี้ มีอะไรให้ช่วยเหลือคะ? Welcome to Siam Serenity Hotel. How may I assist you today?"
+
+# === HOTEL INFORMATION FLOWS ===
+
+define user ask hotel info
+  "what time is breakfast"
+  "breakfast time"
+  "when is breakfast"
+  "อาหารเช้ากี่โมง"
+  "อาหารเช้า"
+  "what is the wifi password"
+  "wifi password"
+  "รหัส wifi"
+  "รหัสไวไฟ"
+  "check in time"
+  "check out time"
+  "เช็คอิน"
+  "เช็คเอาท์"
+  "spa hours"
+  "spa services"
+  "สปา"
+  "นวด"
+  "swimming pool"
+  "pool hours"
+  "สระว่ายน้ำ"
+  "gym"
+  "fitness"
+  "ฟิตเนส"
+  "room service"
+  "รูมเซอร์วิส"
+  "cancellation policy"
+  "นโยบายยกเลิก"
+  "pet policy"
+  "สัตว์เลี้ยง"
+
+define flow hotel info query
+  user ask hotel info
+  $knowledge = execute search_hotel_knowledge(query=$last_user_message)
+  bot provide hotel info
+
+define bot provide hotel info
+  "{{ $knowledge }}"
+
+# === BOOKING FLOWS ===
+
+define user ask availability
+  "is there a room available"
+  "check availability"
+  "any rooms available"
+  "มีห้องว่างไหม"
+  "อยากจองห้อง"
+  "i want to book a room"
+  "reserve a room"
+  "book a room"
+  "จองห้อง"
+
+define flow check availability
+  user ask availability
+  bot ask for dates
+
+define bot ask for dates
+  "เพื่อตรวจสอบห้องว่าง กรุณาแจ้งวันเช็คอินและเช็คเอาท์ด้วยค่ะ / To check availability, please provide your check-in and check-out dates."
+
+define user provide dates
+  "from ... to ..."
+  "วันที่ ... ถึง ..."
+  "check in ... check out ..."
+
+define flow process availability
+  user provide dates
+  $availability = execute check_room_availability(check_in=$check_in, check_out=$check_out, room_type=$room_type)
+  bot show availability
+
+define bot show availability
+  "{{ $availability }}"
+
+define user make reservation
+  "book this room"
+  "จองห้องนี้"
+  "confirm booking"
+  "ยืนยันการจอง"
+  "i want to reserve"
+  "จองเลย"
+  "book it"
+
+define flow create booking
+  user make reservation
+  $reservation = execute create_reservation(guest_id=$guest_id, room_id=$room_id, check_in=$check_in, check_out=$check_out)
+  bot confirm booking
+
+define bot confirm booking
+  "{{ $reservation }}"
+
+define user cancel booking
+  "cancel my reservation"
+  "ยกเลิกการจอง"
+  "i need to cancel"
+  "cancel booking"
+  "ยกเลิก"
+
+define flow cancel booking
+  user cancel booking
+  bot ask reservation id for cancel
+
+define bot ask reservation id for cancel
+  "กรุณาแจ้งหมายเลขการจองที่ต้องการยกเลิกค่ะ / Please provide your reservation ID to cancel."
+
+define user provide reservation id
+  "reservation ..."
+  "หมายเลข ..."
+  "booking ..."
+
+define flow process cancellation
+  user provide reservation id
+  $result = execute cancel_reservation(reservation_id=$reservation_id, reason=$reason)
+  bot confirm cancellation
+
+define bot confirm cancellation
+  "{{ $result }}"
+
+# === THANK YOU FLOWS ===
+
+define user express thanks
+  "thank you"
+  "thanks"
+  "ขอบคุณ"
+  "ขอบคุณครับ"
+  "ขอบคุณค่ะ"
+
+define flow thanks
+  user express thanks
+  bot respond to thanks
+
+define bot respond to thanks
+  "ยินดีค่ะ/ครับ หากมีอะไรให้ช่วยเหลือเพิ่มเติม สามารถสอบถามได้ตลอดเวลาค่ะ / You're welcome! If you need any further assistance, please don't hesitate to ask."
+
+# === GOODBYE FLOWS ===
+
+define user say goodbye
+  "bye"
+  "goodbye"
+  "see you"
+  "ลาก่อน"
+  "บาย"
+  "ไปก่อนนะ"
+
+define flow goodbye
+  user say goodbye
+  bot farewell
+
+define bot farewell
+  "ขอบคุณที่ใช้บริการค่ะ/ครับ หวังว่าจะได้ต้อนรับท่านอีกครั้ง / Thank you for choosing Siam Serenity Hotel. We look forward to welcoming you again!"
+
+# === FALLBACK ===
+
+define flow fallback
+  user ...
+  $response = execute search_hotel_knowledge(query=$last_user_message)
+  if $response
+    bot provide hotel info
+  else
+    bot offer help
+
+define bot offer help
+  "ขออภัยค่ะ ไม่แน่ใจว่าเข้าใจถูกต้อง รบกวนอธิบายเพิ่มเติมได้ไหมคะ? I'm not sure I understood. Could you please clarify?"
