@@ -35,7 +35,7 @@ EXPOSE 8081
 
 # Health check (simple endpoint for faster startup)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-8081}/healthz || exit 1
+    CMD curl -f http://localhost:8081/healthz || exit 1
 
-# Run the server
-CMD ["uvicorn", "src.hotel_guardrails.server:app", "--host", "0.0.0.0", "--port", "8081"]
+# Run the server - Railway sets PORT env var
+CMD ["sh", "-c", "uvicorn src.hotel_guardrails.server:app --host 0.0.0.0 --port ${PORT:-8081}"]
