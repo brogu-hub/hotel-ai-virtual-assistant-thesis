@@ -1,0 +1,13 @@
+# =============================================================================
+# Railway Deployment Configuration - Hotel Guardrails API
+# =============================================================================
+
+[build]
+builder = "dockerfile"
+dockerfilePath = "src/hotel_guardrails/Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

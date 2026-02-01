@@ -1,0 +1,47 @@
+# =============================================================================
+# Hotel Guardrails API Server - Railway Deployment
+# =============================================================================
+
+# Core Framework
+fastapi==0.115.2
+uvicorn[standard]==0.27.1
+starlette==0.40.0
+python-multipart==0.0.18
+
+# LangChain & Agents
+langchain==0.3.0
+langgraph==0.2.32
+langchain-community==0.3.0
+langchain-openai>=0.2.0
+
+# Data Processing
+pyyaml>=6.0
+python-dotenv>=1.0.0
+
+# Database - PostgreSQL (for LangGraph checkpointing)
+psycopg2-binary==2.9.9
+psycopg-binary==3.2.3
+psycopg-pool==3.2.2
+langgraph-checkpoint-postgres==2.0.0
+
+# Vector Database - Qdrant
+qdrant-client>=1.7.0
+langchain-qdrant>=0.1.0
+
+# Embeddings & Reranking
+sentence-transformers>=3.0.0
+langchain-text-splitters>=0.3.0
+
+# HTTP & API
+requests>=2.31.0
+httpx>=0.25.0
+
+# NeMo Guardrails
+nemoguardrails>=0.10.0
+
+# SSE Streaming
+sse-starlette>=1.8.0
+
+# Utilities
+bleach==6.1.0
+nest-asyncio==1.6.0
