@@ -111,6 +111,257 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /rooms:
+    get:
+      tags:
+      - Rooms
+      summary: List Rooms
+      description: |
+        List all room types with photos, amenities, and base prices.
+
+        Returns room catalog for browsing before booking.
+        Includes availability count for each room type.
+      operationId: list_rooms_rooms_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomListResponse'
+  /rooms/{room_id}:
+    get:
+      tags:
+      - Rooms
+      summary: Get Room
+      description: |
+        Get detailed information for a specific room.
+
+        Includes:
+        - Room details (number, floor, status, view)
+        - Room type information (amenities, pricing)
+        - Pricing breakdown (base price, taxes, service charge)
+      operationId: get_room_rooms__room_id__get
+      parameters:
+      - name: room_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Room Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomDetailResponse'
+        '404':
+          description: Room not found
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /rooms/availability:
+    get:
+      tags:
+      - Rooms
+      summary: Get Room Availability
+      description: |
+        Get room availability for a date range (calendar view).
+
+        Useful for showing availability calendar in the booking UI.
+        Returns daily availability with min price for available rooms.
+      operationId: get_room_availability_rooms_availability_get
+      parameters:
+      - name: start_date
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date
+          title: Start Date
+          examples:
+          - '2025-02-01'
+      - name: end_date
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date
+          title: End Date
+          examples:
+          - '2025-02-28'
+      - name: room_type
+        in: query
+        required: false
+        schema:
+          type: string
+          title: Room Type
+          examples:
+          - Deluxe
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomAvailabilityResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /bookings:
+    get:
+      tags:
+      - Booking
+      summary: List Bookings
+      description: |
+        List bookings with optional filtering.
+
+        Filter by:
+        - guest_id: Guest's ID
+        - guest_email: Guest's email address
+        - status: Reservation status (pending, confirmed, checked_in, checked_out, cancelled)
+
+        Supports pagination with page and page_size parameters.
+      operationId: list_bookings_bookings_get
+      parameters:
+      - name: guest_id
+        in: query
+        required: false
+        schema:
+          type: integer
+          title: Guest Id
+      - name: guest_email
+        in: query
+        required: false
+        schema:
+          type: string
+          title: Guest Email
+          examples:
+          - guest@example.com
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [pending, confirmed, checked_in, checked_out, cancelled]
+          title: Status
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 20
+          maximum: 100
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /bookings/{reservation_id}:
+    get:
+      tags:
+      - Booking
+      summary: Get Booking
+      description: |
+        Get detailed booking information by reservation ID or confirmation number.
+
+        Returns full booking details including guest info, room details, and payment status.
+      operationId: get_booking_bookings__reservation_id__get
+      parameters:
+      - name: reservation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Reservation Id
+          examples:
+          - HTL240215001
+          - '12345'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingInfo'
+        '404':
+          description: Booking not found
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - Booking
+      summary: Update Booking
+      description: |
+        Update booking details without canceling.
+
+        Modifiable fields:
+        - check_in_date: New check-in date
+        - check_out_date: New check-out date
+        - room_number: Change to different room
+        - num_guests: Update guest count
+        - special_requests: Update special requests
+
+        Note: Cannot modify checked_out or cancelled bookings.
+        Returns the updated booking and a summary of changes made.
+      operationId: update_booking_bookings__reservation_id__patch
+      parameters:
+      - name: reservation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Reservation Id
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingUpdateRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingUpdateResponse'
+        '400':
+          description: Cannot modify booking
+        '404':
+          description: Booking not found
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /tools/book:
     post:
       tags:
@@ -206,9 +457,7 @@ paths:
       description: 'Get session information.
 
 
-        Returns session metadata including creation time.
-
-        Note: Full session persistence is not implemented - sessions are stateless.'
+        Returns session metadata including creation time.'
       operationId: get_session_sessions__session_id__get
       parameters:
       - name: session_id
@@ -252,6 +501,56 @@ paths:
           content:
             application/json:
               schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /sessions/{session_id}/messages:
+    get:
+      tags:
+      - Sessions
+      summary: Get Session Messages
+      description: |
+        Get conversation history for a session.
+
+        Retrieves all messages exchanged in a conversation session.
+        Useful for session restoration after page refresh or resuming conversations.
+
+        Returns messages in chronological order (oldest first).
+      operationId: get_session_messages_sessions__session_id__messages_get
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+          examples:
+          - 550e8400-e29b-41d4-a716-446655440000
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 50
+          maximum: 200
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationHistoryResponse'
         '422':
           description: Validation Error
           content:
@@ -741,15 +1040,556 @@ components:
       - msg
       - type
       title: ValidationError
+    RoomTypeResponse:
+      properties:
+        room_type_id:
+          type: integer
+          title: Room Type Id
+          description: Room type ID
+        name:
+          type: string
+          title: Name
+          description: Room type name in English
+        name_th:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name Th
+          description: Room type name in Thai
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+          description: Description in English
+        description_th:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description Th
+          description: Description in Thai
+        base_price:
+          type: number
+          title: Base Price
+          description: Base price per night in THB
+        max_occupancy:
+          type: integer
+          title: Max Occupancy
+          description: Maximum number of guests
+        size_sqm:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Size Sqm
+          description: Room size in square meters
+        amenities:
+          items:
+            type: string
+          type: array
+          title: Amenities
+          description: List of amenities
+        photos:
+          items:
+            type: string
+          type: array
+          title: Photos
+          description: URLs to room photos
+        available_count:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Available Count
+          description: Number of available rooms of this type
+      type: object
+      required:
+      - room_type_id
+      - name
+      - base_price
+      - max_occupancy
+      title: RoomTypeResponse
+      description: Response model for room type information
+    RoomResponse:
+      properties:
+        room_id:
+          type: integer
+          title: Room Id
+          description: Unique room ID
+        room_number:
+          type: string
+          title: Room Number
+          description: "Room number (e.g., '501')"
+        floor:
+          type: integer
+          title: Floor
+          description: Floor number
+        status:
+          type: string
+          title: Status
+          description: "Room status: 'available', 'occupied', 'cleaning', 'maintenance'"
+          examples:
+          - available
+          - occupied
+        view_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: View Type
+          description: View from this specific room
+        last_cleaned:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Cleaned
+          description: Last cleaning timestamp
+        room_type:
+          $ref: '#/components/schemas/RoomTypeResponse'
+      type: object
+      required:
+      - room_id
+      - room_number
+      - floor
+      - status
+      - room_type
+      title: RoomResponse
+      description: Response model for individual room information
+    RoomListResponse:
+      properties:
+        rooms:
+          items:
+            $ref: '#/components/schemas/RoomTypeResponse'
+          type: array
+          title: Rooms
+          description: List of room types
+        total:
+          type: integer
+          title: Total
+          description: Total number of room types
+      type: object
+      required:
+      - rooms
+      - total
+      title: RoomListResponse
+      description: Response model for room listing endpoint
+    RoomDetailResponse:
+      properties:
+        room:
+          $ref: '#/components/schemas/RoomResponse'
+        pricing:
+          additionalProperties: true
+          type: object
+          title: Pricing
+          description: Pricing breakdown (base_price, taxes, fees)
+        availability:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Availability
+          description: Availability info for next 30 days
+      type: object
+      required:
+      - room
+      title: RoomDetailResponse
+      description: Response model for detailed room information
+    RoomAvailabilityDay:
+      properties:
+        date:
+          type: string
+          title: Date
+          description: Date (YYYY-MM-DD)
+        available:
+          type: boolean
+          title: Available
+          description: Whether rooms are available
+        available_count:
+          type: integer
+          title: Available Count
+          description: Number of available rooms
+        min_price:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Min Price
+          description: Minimum price for available rooms
+      type: object
+      required:
+      - date
+      - available
+      - available_count
+      title: RoomAvailabilityDay
+      description: Availability for a single day
+    RoomAvailabilityResponse:
+      properties:
+        room_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Room Type
+          description: Room type filter if applied
+        start_date:
+          type: string
+          title: Start Date
+          description: Start date of range
+        end_date:
+          type: string
+          title: End Date
+          description: End date of range
+        availability:
+          items:
+            $ref: '#/components/schemas/RoomAvailabilityDay'
+          type: array
+          title: Availability
+          description: Daily availability
+      type: object
+      required:
+      - start_date
+      - end_date
+      - availability
+      title: RoomAvailabilityResponse
+      description: Response model for room availability calendar
+    GuestInfo:
+      properties:
+        guest_id:
+          type: integer
+          title: Guest Id
+          description: Guest ID
+        first_name:
+          type: string
+          title: First Name
+          description: First name in English
+        last_name:
+          type: string
+          title: Last Name
+          description: Last name in English
+        first_name_th:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: First Name Th
+          description: First name in Thai
+        last_name_th:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Name Th
+          description: Last name in Thai
+        email:
+          type: string
+          title: Email
+          description: Email address
+        phone:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Phone
+          description: Phone number
+        loyalty_tier:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Loyalty Tier
+          description: Loyalty program tier
+        loyalty_points:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Loyalty Points
+          description: Loyalty points balance
+      type: object
+      required:
+      - guest_id
+      - first_name
+      - last_name
+      - email
+      title: GuestInfo
+      description: Guest information for booking
+    BookingInfo:
+      properties:
+        reservation_id:
+          type: integer
+          title: Reservation Id
+          description: Reservation ID
+        confirmation_number:
+          type: string
+          title: Confirmation Number
+          description: Confirmation number (e.g., HTL240215001)
+          examples:
+          - HTL240215001
+        guest:
+          $ref: '#/components/schemas/GuestInfo'
+        room_number:
+          type: string
+          title: Room Number
+          description: Assigned room number
+        room_type:
+          type: string
+          title: Room Type
+          description: Room type name
+        room_type_th:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Room Type Th
+          description: Room type name in Thai
+        check_in_date:
+          type: string
+          title: Check In Date
+          description: Check-in date (YYYY-MM-DD)
+        check_out_date:
+          type: string
+          title: Check Out Date
+          description: Check-out date (YYYY-MM-DD)
+        num_nights:
+          type: integer
+          title: Num Nights
+          description: Number of nights
+        num_guests:
+          type: integer
+          title: Num Guests
+          description: Number of guests
+        status:
+          type: string
+          title: Status
+          description: Reservation status
+          examples:
+          - pending
+          - confirmed
+          - checked_in
+          - checked_out
+          - cancelled
+        total_amount:
+          type: number
+          title: Total Amount
+          description: Total amount in THB
+        payment_status:
+          type: string
+          title: Payment Status
+          description: Payment status
+          examples:
+          - pending
+          - paid
+          - refunded
+        special_requests:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Special Requests
+          description: Special requests
+        booking_source:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Booking Source
+          description: Booking source
+        cancellation_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cancellation Reason
+          description: Cancellation reason if cancelled
+        created_at:
+          type: string
+          title: Created At
+          description: Booking creation timestamp
+        updated_at:
+          type: string
+          title: Updated At
+          description: Last update timestamp
+      type: object
+      required:
+      - reservation_id
+      - confirmation_number
+      - guest
+      - room_number
+      - room_type
+      - check_in_date
+      - check_out_date
+      - num_nights
+      - num_guests
+      - status
+      - total_amount
+      - payment_status
+      - created_at
+      - updated_at
+      title: BookingInfo
+      description: Detailed booking/reservation information
+    BookingListResponse:
+      properties:
+        bookings:
+          items:
+            $ref: '#/components/schemas/BookingInfo'
+          type: array
+          title: Bookings
+          description: List of bookings
+        total:
+          type: integer
+          title: Total
+          description: Total number of bookings
+        page:
+          type: integer
+          default: 1
+          title: Page
+          description: Current page number
+        page_size:
+          type: integer
+          default: 20
+          title: Page Size
+          description: Items per page
+      type: object
+      required:
+      - bookings
+      - total
+      title: BookingListResponse
+      description: Response model for booking list endpoint
+    BookingUpdateRequest:
+      properties:
+        check_in_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Check In Date
+          description: New check-in date (YYYY-MM-DD)
+          examples:
+          - '2025-02-15'
+        check_out_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Check Out Date
+          description: New check-out date (YYYY-MM-DD)
+          examples:
+          - '2025-02-17'
+        room_number:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Room Number
+          description: New room number
+          examples:
+          - '502'
+        num_guests:
+          anyOf:
+          - type: integer
+            minimum: 1
+            maximum: 10
+          - type: 'null'
+          title: Num Guests
+          description: Updated number of guests
+        special_requests:
+          anyOf:
+          - type: string
+            maxLength: 1000
+          - type: 'null'
+          title: Special Requests
+          description: Updated special requests
+      type: object
+      title: BookingUpdateRequest
+      description: Request model for PATCH /bookings/{reservation_id} endpoint
+    BookingUpdateResponse:
+      properties:
+        success:
+          type: boolean
+          title: Success
+          description: Whether the update was successful
+        message:
+          type: string
+          title: Message
+          description: Human-readable message in Thai/English
+        booking:
+          anyOf:
+          - $ref: '#/components/schemas/BookingInfo'
+          - type: 'null'
+          title: Booking
+          description: Updated booking details
+        changes:
+          additionalProperties: true
+          type: object
+          title: Changes
+          description: Fields that were changed with old and new values
+      type: object
+      required:
+      - success
+      - message
+      title: BookingUpdateResponse
+      description: Response model for PATCH /bookings/{reservation_id} endpoint
+    ConversationMessage:
+      properties:
+        message_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Message Id
+          description: Message ID
+        role:
+          type: string
+          title: Role
+          description: "Message role: 'user' or 'assistant'"
+          examples:
+          - user
+          - assistant
+        content:
+          type: string
+          title: Content
+          description: Message content
+        timestamp:
+          type: string
+          title: Timestamp
+          description: Message timestamp (ISO format)
+        metadata:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Metadata
+          description: Additional metadata (sources, tool_calls, etc.)
+      type: object
+      required:
+      - role
+      - content
+      - timestamp
+      title: ConversationMessage
+      description: A single message in a conversation
+    ConversationHistoryResponse:
+      properties:
+        session_id:
+          type: string
+          title: Session Id
+          description: Session ID
+        messages:
+          items:
+            $ref: '#/components/schemas/ConversationMessage'
+          type: array
+          title: Messages
+          description: List of messages
+        total:
+          type: integer
+          title: Total
+          description: Total number of messages
+        has_more:
+          type: boolean
+          default: false
+          title: Has More
+          description: Whether there are more messages
+      type: object
+      required:
+      - session_id
+      - messages
+      - total
+      title: ConversationHistoryResponse
+      description: Response model for GET /sessions/{session_id}/messages endpoint
 tags:
 - name: Health
   description: Service health monitoring
 - name: Chat
   description: AI conversation powered by LangGraph Agent
+- name: Rooms
+  description: Room catalog, details, and availability
 - name: Booking
-  description: Room reservation operations
+  description: Room reservation operations (list, create, update, cancel)
 - name: Sessions
-  description: Conversation session management
+  description: Conversation session management and history
 - name: Settings
   description: LLM and server configuration
 - name: Feedback
