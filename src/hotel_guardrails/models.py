@@ -95,6 +95,23 @@ class ChatResponse(BaseModel):
         description="Request tracking ID for debugging (from X-Request-ID header)",
     )
 
+    # Hybrid routing metadata
+    routing_path: Optional[str] = Field(
+        None,
+        description="Which path handled the request: 'nemo' (fast) or 'langgraph' (complex)",
+        examples=["nemo", "langgraph"],
+    )
+    routing_reason: Optional[str] = Field(
+        None,
+        description="Human-readable reason for the routing decision",
+        examples=["Simple query - using fast path", "Complex query requiring multi-step reasoning"],
+    )
+    complexity: Optional[str] = Field(
+        None,
+        description="Query complexity classification: 'simple', 'moderate', or 'complex'",
+        examples=["simple", "moderate", "complex"],
+    )
+
 
 class BookingRequest(BaseModel):
     """Request model for /tools/book endpoint."""

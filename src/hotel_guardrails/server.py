@@ -22,7 +22,7 @@ import logging
 import time
 import uuid
 from pathlib import Path
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
@@ -48,6 +48,9 @@ from .models import (
     SessionCreateResponse,
     SessionInfo,
 )
+from .hybrid_router import HybridRouter, RoutingPath
+from .langgraph_adapter import LangGraphAdapter
+from .feedback_collector import FeedbackCollector
 
 # Request ID context variable for tracing
 request_id_ctx: ContextVar[str] = ContextVar("request_id", default="")
@@ -76,10 +79,11 @@ logger = logging.getLogger(__name__)
 # OpenAPI tags metadata
 tags_metadata = [
     {"name": "Health", "description": "Service health monitoring"},
-    {"name": "Chat", "description": "AI conversation with guardrails"},
+    {"name": "Chat", "description": "AI conversation with hybrid routing"},
     {"name": "Booking", "description": "Room reservation operations"},
     {"name": "Sessions", "description": "Conversation session management"},
     {"name": "Settings", "description": "LLM and server configuration"},
+    {"name": "Feedback", "description": "Response quality feedback for continuous improvement"},
     {"name": "Root", "description": "API information"},
 ]
 
@@ -87,12 +91,16 @@ tags_metadata = [
 rails: LLMRails = None
 # Fallback LangChain LLM for when NeMo fails
 langchain_llm: ChatOpenAI = None
+# Hybrid routing components
+hybrid_router: HybridRouter = None
+langgraph_adapter: LangGraphAdapter = None
+feedback_collector: FeedbackCollector = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize NeMo Guardrails on startup."""
-    global rails, langchain_llm
+    """Initialize NeMo Guardrails and hybrid routing on startup."""
+    global rails, langchain_llm, hybrid_router, langgraph_adapter, feedback_collector
 
     # Set OpenRouter API key for NeMo
     api_key = os.getenv("OPENROUTER_API_KEY")
@@ -153,6 +161,17 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to initialize NeMo Guardrails: {e}")
         # Don't raise - allow server to start for health checks
+
+    # Initialize hybrid routing components
+    try:
+        feedback_collector = FeedbackCollector()
+        hybrid_router = HybridRouter(
+            feedback_store=feedback_collector.get_average_score
+        )
+        langgraph_adapter = LangGraphAdapter()
+        logger.info("Hybrid routing components initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize hybrid routing: {e}")
 
     # Export OpenAPI spec on startup
     try:
@@ -343,18 +362,24 @@ async def health_check():
 @app.post("/chat", response_model=ChatResponse, tags=["Chat"])
 async def chat(request: ChatRequest):
     """
-    General AI conversation with guardrails.
+    General AI conversation with hybrid routing.
 
-    Uses RAG for hotel knowledge queries.
-    Responds in the same language as the user's message.
+    Routes requests between NeMo Guardrails (fast path) and LangGraph Agent
+    (complex path) based on query complexity and historical performance.
 
     ## Features
-    - Automatic language detection
+    - Automatic language detection (Thai/English)
+    - Smart routing based on query complexity
     - RAG-powered responses using hotel knowledge base
     - Optional per-request LLM settings override
+    - Continuous improvement via feedback loop
 
     ## Headers
     - `X-Request-ID`: Request tracking ID (returned in response)
+
+    ## Routing
+    - Simple queries (greetings, basic Q&A) → NeMo Guardrails (fast)
+    - Complex queries (bookings, multi-step) → LangGraph Agent (reasoning)
 
     Example:
         ```json
@@ -367,62 +392,108 @@ async def chat(request: ChatRequest):
     """
     session_id = request.session_id or str(uuid.uuid4())
     current_request_id = request_id_ctx.get("")
+    start_time = time.time()
     content = ""
     sources = None
     tool_calls = None
+    retrieval_context = None
+    routing_path = "nemo"
+    routing_reason = "default"
+    complexity = "simple"
 
-    # Try NeMo Guardrails first
-    if rails:
+    # Step 1: Get routing decision from hybrid router
+    if hybrid_router:
         try:
-            # Generate response with guardrails
-            response = await rails.generate_async(
-                messages=[{"role": "user", "content": request.message}],
-                options={"session_id": session_id},
+            # Check input safety first
+            is_safe = True
+            try:
+                safety_result = await check_input_safety(request.message)
+                is_safe = safety_result.return_value if hasattr(safety_result, 'return_value') else True
+            except Exception:
+                pass  # Default to safe if check fails
+
+            routing = await hybrid_router.route(
+                query=request.message,
+                session_id=session_id,
+                is_safe=is_safe,
             )
+            routing_path = routing.path.value
+            routing_reason = routing.reason
+            complexity = routing.complexity.value
 
-            # Handle different response types from NeMo Guardrails
-            if isinstance(response, dict):
-                content = response.get("content", "")
-                sources = response.get("sources")
-                tool_calls = response.get("tool_calls")
-            elif hasattr(response, "content"):
-                content = response.content
-                sources = getattr(response, "sources", None)
-                tool_calls = getattr(response, "tool_calls", None)
-            else:
-                # Fallback: treat response as string
-                content = str(response)
+            logger.info(f"Routing: {routing_path} ({routing_reason})")
 
-            if content:
+            # Handle blocked requests
+            if routing.path == RoutingPath.BLOCKED:
                 return ChatResponse(
-                    response=content,
+                    response="I'm sorry, I cannot process that request. / ขออภัย ไม่สามารถดำเนินการตามคำขอนี้ได้",
                     session_id=session_id,
-                    sources=sources,
-                    tool_calls=tool_calls,
                     request_id=current_request_id,
+                    routing_path=routing_path,
+                    routing_reason=routing_reason,
+                    complexity=complexity,
                 )
 
+            # Route to LangGraph for complex queries
+            if routing.path == RoutingPath.LANGGRAPH_AGENT and langgraph_adapter:
+                result = await langgraph_adapter.invoke(
+                    message=request.message,
+                    session_id=session_id,
+                )
+
+                if result["success"]:
+                    content = result["response"]
+                    tool_calls = result.get("tool_calls")
+                else:
+                    # Fallback to NeMo if LangGraph fails
+                    logger.warning(f"LangGraph failed: {result.get('error')}, falling back to NeMo")
+                    routing_path = "nemo"
+                    routing_reason = f"Fallback: LangGraph failed ({result.get('error', 'unknown')[:50]})"
+
         except Exception as e:
-            logger.warning(f"NeMo Guardrails failed, falling back to LangChain: {e}")
+            logger.warning(f"Hybrid routing failed: {e}")
+            routing_path = "nemo"
+            routing_reason = f"Fallback: routing error"
 
-    # Fallback to direct LangChain LLM if NeMo fails or returns empty
-    if langchain_llm:
-        try:
-            # First, try to get RAG context with sources
-            rag_context = ""
-            rag_sources = []
-            retrieval_context = []
+    # Step 2: Use NeMo/LangChain for simple queries or fallback
+    if not content:
+        # Try NeMo Guardrails first
+        if rails:
             try:
-                rag_result = await search_hotel_knowledge_with_sources(request.message)
-                if rag_result and len(rag_result) >= 3:
-                    rag_context = rag_result[0]
-                    rag_sources = rag_result[1]
-                    retrieval_context = rag_result[2]
-            except Exception as rag_error:
-                logger.warning(f"RAG search failed: {rag_error}")
+                response = await rails.generate_async(
+                    messages=[{"role": "user", "content": request.message}],
+                    options={"session_id": session_id},
+                )
 
-            # Build system prompt
-            system_prompt = """You are the Concierge at Siam Serenity Hotel (โรงแรมสยามเซอเรนิตี้).
+                if isinstance(response, dict):
+                    content = response.get("content", "")
+                    sources = response.get("sources")
+                    tool_calls = response.get("tool_calls")
+                elif hasattr(response, "content"):
+                    content = response.content
+                    sources = getattr(response, "sources", None)
+                    tool_calls = getattr(response, "tool_calls", None)
+                else:
+                    content = str(response)
+
+            except Exception as e:
+                logger.warning(f"NeMo Guardrails failed: {e}")
+
+        # Fallback to LangChain if NeMo fails
+        if not content and langchain_llm:
+            try:
+                rag_context = ""
+                rag_sources = []
+                try:
+                    rag_result = await search_hotel_knowledge_with_sources(request.message)
+                    if rag_result and len(rag_result) >= 3:
+                        rag_context = rag_result[0]
+                        rag_sources = rag_result[1]
+                        retrieval_context = rag_result[2]
+                except Exception as rag_error:
+                    logger.warning(f"RAG search failed: {rag_error}")
+
+                system_prompt = """You are the Concierge at Siam Serenity Hotel (โรงแรมสยามเซอเรนิตี้).
 Your responsibilities:
 1. Answer questions about the hotel using the provided context
 2. Respond in the same language the guest uses (Thai or English)
@@ -432,33 +503,69 @@ Greeting examples:
 - Thai: "สวัสดีค่ะ/ครับ ยินดีต้อนรับสู่โรงแรมสยามเซอเรนิตี้"
 - English: "Welcome to Siam Serenity Hotel. How may I assist you?"
 """
-            if rag_context:
-                system_prompt += f"\n\nHotel Information Context:\n{rag_context}"
+                if rag_context:
+                    system_prompt += f"\n\nHotel Information Context:\n{rag_context}"
 
-            from langchain_core.messages import SystemMessage, HumanMessage
+                from langchain_core.messages import SystemMessage, HumanMessage
 
-            messages = [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=request.message),
-            ]
+                messages = [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=request.message),
+                ]
 
-            response = await langchain_llm.ainvoke(messages)
-            content = response.content
+                response = await langchain_llm.ainvoke(messages)
+                content = response.content
+                sources = rag_sources if rag_sources else None
 
-            return ChatResponse(
-                response=content,
-                session_id=session_id,
-                sources=rag_sources if rag_sources else ["no_rag_sources"],
-                retrieval_context=retrieval_context if retrieval_context else None,
-                tool_calls=None,
+            except Exception as e:
+                logger.error(f"LangChain fallback failed: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+    if not content:
+        raise HTTPException(status_code=503, detail="No LLM available")
+
+    # Step 3: Record feedback for evaluation
+    latency_ms = (time.time() - start_time) * 1000
+    if feedback_collector:
+        try:
+            await feedback_collector.record_response(
                 request_id=current_request_id,
+                session_id=session_id,
+                query=request.message,
+                response=content,
+                routing_path=routing_path,
+                complexity=complexity,
+                latency_ms=latency_ms,
             )
-
         except Exception as e:
-            logger.error(f"LangChain fallback failed: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            logger.warning(f"Failed to record feedback: {e}")
 
-    raise HTTPException(status_code=503, detail="No LLM available")
+    # Step 4: Log routing decision for audit
+    try:
+        from src.common.audit_logger import get_audit_logger
+        audit_logger = get_audit_logger()
+        audit_logger.log_routing_decision(
+            request_id=current_request_id,
+            query=request.message,
+            routing_path=routing_path,
+            complexity=complexity,
+            latency_ms=latency_ms,
+            reason=routing_reason,
+        )
+    except Exception:
+        pass  # Don't fail on audit logging
+
+    return ChatResponse(
+        response=content,
+        session_id=session_id,
+        sources=sources,
+        retrieval_context=retrieval_context,
+        tool_calls=tool_calls,
+        request_id=current_request_id,
+        routing_path=routing_path,
+        routing_reason=routing_reason,
+        complexity=complexity,
+    )
 
 
 @app.post("/chat/stream", tags=["Chat"])
@@ -714,6 +821,80 @@ async def delete_session(session_id: str):
         "message": "Session deleted",
         "session_id": session_id,
     }
+
+
+# =============================================================================
+# Feedback Endpoints
+# =============================================================================
+
+
+@app.post("/feedback", tags=["Feedback"])
+async def submit_feedback(
+    request_id: str,
+    score: float,
+    comment: Optional[str] = None,
+):
+    """
+    Submit feedback for a response.
+
+    Used to rate response quality and improve routing decisions.
+
+    Args:
+        request_id: The request ID from the chat response
+        score: Quality score (0.0 = bad, 1.0 = good)
+        comment: Optional feedback comment
+
+    Example:
+        ```bash
+        curl -X POST "http://localhost:8081/feedback?request_id=abc-123&score=0.9"
+        ```
+    """
+    if score < 0.0 or score > 1.0:
+        raise HTTPException(400, "Score must be between 0.0 and 1.0")
+
+    if feedback_collector:
+        try:
+            success = await feedback_collector.record_explicit_feedback(
+                request_id=request_id,
+                score=score,
+                details={"comment": comment} if comment else None,
+            )
+            if success:
+                return {
+                    "message": "Feedback recorded",
+                    "request_id": request_id,
+                    "score": score,
+                }
+            else:
+                return {
+                    "message": "Request not found (may have been flushed)",
+                    "request_id": request_id,
+                }
+        except Exception as e:
+            logger.error(f"Failed to record feedback: {e}")
+            raise HTTPException(500, f"Failed to record feedback: {e}")
+
+    return {"message": "Feedback collection not enabled"}
+
+
+@app.get("/feedback/stats", tags=["Feedback"])
+async def get_feedback_stats():
+    """
+    Get feedback statistics by routing path.
+
+    Returns performance metrics for NeMo vs LangGraph routing.
+    Useful for monitoring and optimization.
+    """
+    if feedback_collector:
+        nemo_stats = await feedback_collector.get_path_performance("nemo")
+        langgraph_stats = await feedback_collector.get_path_performance("langgraph")
+
+        return {
+            "nemo": nemo_stats,
+            "langgraph": langgraph_stats,
+        }
+
+    return {"message": "Feedback collection not enabled"}
 
 
 # =============================================================================
