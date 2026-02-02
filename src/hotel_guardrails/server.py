@@ -828,6 +828,56 @@ async def list_rooms():
         raise HTTPException(status_code=500, detail=f"Failed to fetch rooms: {str(e)}")
 
 
+# NOTE: /rooms/availability MUST come before /rooms/{room_id} to avoid route conflict
+@app.get("/rooms/availability", response_model=RoomAvailabilityResponse, tags=["Rooms"])
+async def get_room_availability(
+    start_date: str,
+    end_date: str,
+    room_type: Optional[str] = None,
+):
+    """
+    Get room availability for a date range (calendar view).
+
+    Useful for showing availability calendar in the booking UI.
+
+    Args:
+        start_date: Start date (YYYY-MM-DD)
+        end_date: End date (YYYY-MM-DD)
+        room_type: Optional room type filter
+
+    Example:
+        ```
+        GET /rooms/availability?start_date=2025-02-01&end_date=2025-02-28
+        ```
+
+    Returns daily availability with min price for available rooms.
+    """
+    try:
+        from datetime import datetime, timedelta
+
+        start = datetime.strptime(start_date, "%Y-%m-%d").date()
+        end = datetime.strptime(end_date, "%Y-%m-%d").date()
+
+        # Limit range to 90 days
+        if (end - start).days > 90:
+            end = start + timedelta(days=90)
+
+        availability = await db.get_room_availability_calendar(start, end, room_type)
+
+        return RoomAvailabilityResponse(
+            room_type=room_type,
+            start_date=start.isoformat(),
+            end_date=end.isoformat(),
+            availability=availability,
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid date format: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error fetching availability: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch availability: {str(e)}")
+
+
 @app.get("/rooms/{room_id}", response_model=RoomDetailResponse, tags=["Rooms"])
 async def get_room(room_id: int):
     """
@@ -903,56 +953,6 @@ async def get_room(room_id: int):
     except Exception as e:
         logger.error(f"Error fetching room {room_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch room: {str(e)}")
-
-
-@app.get("/rooms/availability", response_model=RoomAvailabilityResponse, tags=["Rooms"])
-async def get_room_availability(
-    start_date: str,
-    end_date: str,
-    room_type: Optional[str] = None,
-):
-    """
-    Get room availability for a date range (calendar view).
-
-    Useful for showing availability calendar in the booking UI.
-
-    Args:
-        start_date: Start date (YYYY-MM-DD)
-        end_date: End date (YYYY-MM-DD)
-        room_type: Optional room type filter
-
-    Example:
-        ```
-        GET /rooms/availability?start_date=2025-02-01&end_date=2025-02-28
-        ```
-
-    Returns daily availability with min price for available rooms.
-    """
-    try:
-        from datetime import datetime
-
-        start = datetime.strptime(start_date, "%Y-%m-%d").date()
-        end = datetime.strptime(end_date, "%Y-%m-%d").date()
-
-        # Limit range to 90 days
-        from datetime import timedelta
-        if (end - start).days > 90:
-            end = start + timedelta(days=90)
-
-        availability = await db.get_room_availability_calendar(start, end, room_type)
-
-        return RoomAvailabilityResponse(
-            room_type=room_type,
-            start_date=start.isoformat(),
-            end_date=end.isoformat(),
-            availability=availability,
-        )
-
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid date format: {str(e)}")
-    except Exception as e:
-        logger.error(f"Error fetching availability: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch availability: {str(e)}")
 
 
 # =============================================================================
