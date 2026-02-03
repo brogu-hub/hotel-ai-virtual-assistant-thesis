@@ -94,13 +94,33 @@ class HandleOtherTalk(BaseModel):
 
 def load_hotel_prompts() -> Dict[str, Any]:
     """Load prompts from hotel_prompt.yaml."""
-    prompt_path = os.path.join(os.path.dirname(__file__), "..", "agent", "hotel_prompt.yaml")
-    try:
-        with open(prompt_path, 'r', encoding='utf-8') as f:
-            return yaml.safe_load(f)
-    except FileNotFoundError:
-        logger.warning(f"Prompt file not found: {prompt_path}, using defaults")
-        return {}
+    # Try multiple paths for Railway compatibility
+    possible_paths = [
+        os.path.join(os.path.dirname(__file__), "..", "agent", "hotel_prompt.yaml"),
+        "/app/src/agent/hotel_prompt.yaml",
+        "src/agent/hotel_prompt.yaml",
+    ]
+
+    for prompt_path in possible_paths:
+        try:
+            if os.path.exists(prompt_path):
+                with open(prompt_path, 'r', encoding='utf-8') as f:
+                    prompts = yaml.safe_load(f)
+                    logger.info(f"Loaded prompts from: {prompt_path}")
+                    return prompts
+        except Exception as e:
+            logger.warning(f"Failed to load prompts from {prompt_path}: {e}")
+
+    logger.warning("Using default prompts - no prompt file found")
+    return {
+        "main_prompt": """You are a professional hotel assistant for The Grand Horizon Hotel.
+You can communicate fluently in both Thai and English.
+Always respond in the same language the guest uses.
+
+For Thai speakers, use polite particles (ครับ/ค่ะ).
+For English speakers, be professional and warm.
+"""
+    }
 
 
 # =============================================================================
@@ -132,10 +152,8 @@ def get_llm(temperature: float = 0.7, max_tokens: int = 1024, streaming: bool = 
 
 def create_tool_node_with_fallback(tools: List) -> ToolNode:
     """Create a tool node with error handling."""
-    return ToolNode(tools).with_fallbacks(
-        [ToolNode(tools)],
-        exception_key="error"
-    )
+    # Simple ToolNode without complex fallback (more compatible)
+    return ToolNode(tools)
 
 
 # =============================================================================
@@ -516,9 +534,15 @@ def get_hotel_graph():
     """Get or create the hotel LangGraph agent."""
     global _hotel_graph
     if _hotel_graph is None:
-        logger.info("Building hotel LangGraph agent...")
-        _hotel_graph = build_hotel_graph()
-        logger.info("Hotel LangGraph agent ready")
+        try:
+            logger.info("Building hotel LangGraph agent...")
+            _hotel_graph = build_hotel_graph()
+            logger.info("Hotel LangGraph agent ready")
+        except Exception as e:
+            logger.error(f"Failed to build hotel LangGraph agent: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
     return _hotel_graph
 
 
