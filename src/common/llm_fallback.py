@@ -18,7 +18,7 @@ Usage:
 import os
 import time
 import logging
-from typing import Optional, List, Any, Dict, Iterator
+from typing import Optional, List, Any, Dict, Iterator, Union
 from collections import deque
 from threading import Lock
 
@@ -83,13 +83,13 @@ class FallbackLLM(BaseChatModel):
     Handles rate limits for NVIDIA API (40 RPM).
     """
 
-    primary_llm: Optional[BaseChatModel] = None
-    fallback_llm: Optional[BaseChatModel] = None
+    primary_llm: Optional[Any] = None
+    fallback_llm: Optional[Any] = None
     primary_provider: str = "openrouter"
     fallback_provider: str = "nvidia"
     _primary_available: bool = True
     _last_failure_time: float = 0
-    _retry_interval: float = 60.0  # Retry primary after 60 seconds
+    _retry_interval: float = 60.0
 
     class Config:
         arbitrary_types_allowed = True
@@ -160,12 +160,15 @@ class FallbackLLM(BaseChatModel):
         # Try primary (OpenRouter)
         if self.primary_llm and self._should_retry_primary():
             try:
-                result = self.primary_llm._generate(
-                    messages, stop=stop, run_manager=run_manager, **kwargs
-                )
+                # Use invoke for compatibility
+                response = self.primary_llm.invoke(messages, stop=stop, **kwargs)
                 self._primary_available = True
                 logger.debug("Response from primary LLM (OpenRouter)")
-                return result
+
+                # Wrap in ChatResult
+                if isinstance(response, AIMessage):
+                    return ChatResult(generations=[ChatGeneration(message=response)])
+                return ChatResult(generations=[ChatGeneration(message=AIMessage(content=str(response)))])
             except Exception as e:
                 logger.warning(f"Primary LLM (OpenRouter) failed: {e}")
                 self._primary_available = False
@@ -177,11 +180,13 @@ class FallbackLLM(BaseChatModel):
                 # Apply rate limiting for NVIDIA
                 nvidia_rate_limiter.wait_and_acquire()
 
-                result = self.fallback_llm._generate(
-                    messages, stop=stop, run_manager=run_manager, **kwargs
-                )
+                response = self.fallback_llm.invoke(messages, stop=stop, **kwargs)
                 logger.info("Response from fallback LLM (NVIDIA)")
-                return result
+
+                # Wrap in ChatResult
+                if isinstance(response, AIMessage):
+                    return ChatResult(generations=[ChatGeneration(message=response)])
+                return ChatResult(generations=[ChatGeneration(message=AIMessage(content=str(response)))])
             except Exception as e:
                 logger.error(f"Fallback LLM (NVIDIA) also failed: {e}")
                 raise
@@ -200,12 +205,15 @@ class FallbackLLM(BaseChatModel):
         # Try primary (OpenRouter)
         if self.primary_llm and self._should_retry_primary():
             try:
-                result = await self.primary_llm._agenerate(
-                    messages, stop=stop, run_manager=run_manager, **kwargs
-                )
+                # Use ainvoke for compatibility
+                response = await self.primary_llm.ainvoke(messages, stop=stop, **kwargs)
                 self._primary_available = True
                 logger.debug("Async response from primary LLM (OpenRouter)")
-                return result
+
+                # Wrap in ChatResult
+                if isinstance(response, AIMessage):
+                    return ChatResult(generations=[ChatGeneration(message=response)])
+                return ChatResult(generations=[ChatGeneration(message=AIMessage(content=str(response)))])
             except Exception as e:
                 logger.warning(f"Primary LLM (OpenRouter) failed: {e}")
                 self._primary_available = False
@@ -217,16 +225,35 @@ class FallbackLLM(BaseChatModel):
                 # Apply rate limiting for NVIDIA
                 nvidia_rate_limiter.wait_and_acquire()
 
-                result = await self.fallback_llm._agenerate(
-                    messages, stop=stop, run_manager=run_manager, **kwargs
-                )
+                response = await self.fallback_llm.ainvoke(messages, stop=stop, **kwargs)
                 logger.info("Async response from fallback LLM (NVIDIA)")
-                return result
+
+                # Wrap in ChatResult
+                if isinstance(response, AIMessage):
+                    return ChatResult(generations=[ChatGeneration(message=response)])
+                return ChatResult(generations=[ChatGeneration(message=AIMessage(content=str(response)))])
             except Exception as e:
                 logger.error(f"Fallback LLM (NVIDIA) also failed: {e}")
                 raise
 
         raise ValueError("No LLM available - both primary and fallback failed")
+
+    def bind_tools(self, tools, **kwargs):
+        """Bind tools to the primary LLM (for function calling)."""
+        if self.primary_llm and hasattr(self.primary_llm, 'bind_tools'):
+            # Return a new instance with bound tools on primary
+            bound = FallbackLLM.__new__(FallbackLLM)
+            bound.primary_llm = self.primary_llm.bind_tools(tools, **kwargs)
+            bound.fallback_llm = self.fallback_llm
+            if self.fallback_llm and hasattr(self.fallback_llm, 'bind_tools'):
+                bound.fallback_llm = self.fallback_llm.bind_tools(tools, **kwargs)
+            bound.primary_provider = self.primary_provider
+            bound.fallback_provider = self.fallback_provider
+            bound._primary_available = self._primary_available
+            bound._last_failure_time = self._last_failure_time
+            bound._retry_interval = self._retry_interval
+            return bound
+        return self
 
     @property
     def _identifying_params(self) -> Dict[str, Any]:
@@ -254,14 +281,6 @@ def get_llm_with_fallback(
 
     Returns:
         FallbackLLM instance
-
-    Example:
-        ```python
-        from src.common.llm_fallback import get_llm_with_fallback
-
-        llm = get_llm_with_fallback(temperature=0.5)
-        response = llm.invoke("What rooms are available?")
-        ```
     """
     return FallbackLLM(
         temperature=temperature,
