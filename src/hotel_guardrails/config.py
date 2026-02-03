@@ -12,6 +12,10 @@ Environment Variables:
     HOTEL_LLM_MAX_TOKENS: Max response tokens (default: 1024)
     HOTEL_CORS_ORIGINS: CORS allowed origins (default: ["*"])
     LOG_LEVEL: Logging level (default: INFO)
+    LANGGRAPH_MODE: LangGraph mode: 'embedded' (default) or 'http'
+    LLM_FALLBACK_ENABLED: Enable OpenRouter -> NVIDIA fallback (default: true)
+    NVIDIA_LLM_MODEL: NVIDIA fallback model (default: meta/llama-3.3-70b-instruct)
+    RERANKER_BACKEND: Reranker backend: 'nvidia' (default) or 'qwen'
 """
 
 import os
@@ -25,7 +29,7 @@ class LLMSettings(BaseSettings):
 
     model: str = Field(
         default="qwen/qwen3-max",
-        description="OpenRouter model name",
+        description="OpenRouter model name (primary)",
     )
     temperature: float = Field(
         default=0.7,
@@ -43,9 +47,61 @@ class LLMSettings(BaseSettings):
         default=True,
         description="Enable streaming responses",
     )
+    fallback_enabled: bool = Field(
+        default=True,
+        description="Enable automatic fallback to NVIDIA if OpenRouter fails",
+    )
+    nvidia_model: str = Field(
+        default="meta/llama-3.3-70b-instruct",
+        description="NVIDIA model for fallback",
+    )
 
     model_config = {
         "env_prefix": "HOTEL_LLM_",
+        "case_sensitive": False,
+    }
+
+
+class LangGraphSettings(BaseSettings):
+    """LangGraph configuration."""
+
+    mode: str = Field(
+        default="embedded",
+        description="LangGraph mode: 'embedded' (default) or 'http'",
+    )
+    endpoint: str = Field(
+        default="http://localhost:8090",
+        description="LangGraph HTTP endpoint (for http mode)",
+    )
+    timeout: float = Field(
+        default=60.0,
+        description="Request timeout in seconds",
+    )
+
+    model_config = {
+        "env_prefix": "LANGGRAPH_",
+        "case_sensitive": False,
+    }
+
+
+class RerankerSettings(BaseSettings):
+    """Reranker configuration."""
+
+    backend: str = Field(
+        default="nvidia",
+        description="Reranker backend: 'nvidia' (fast, API) or 'qwen' (local CPU)",
+    )
+    model: str = Field(
+        default="nvidia/nv-rerankqa-mistral-4b-v3",
+        description="Reranker model name",
+    )
+    top_n: int = Field(
+        default=4,
+        description="Number of documents to return after reranking",
+    )
+
+    model_config = {
+        "env_prefix": "RERANKER_",
         "case_sensitive": False,
     }
 
@@ -107,3 +163,13 @@ def get_llm_settings() -> LLMSettings:
 def get_server_settings() -> ServerSettings:
     """Get server settings from environment."""
     return ServerSettings()
+
+
+def get_langgraph_settings() -> LangGraphSettings:
+    """Get LangGraph settings from environment."""
+    return LangGraphSettings()
+
+
+def get_reranker_settings() -> RerankerSettings:
+    """Get reranker settings from environment."""
+    return RerankerSettings()
