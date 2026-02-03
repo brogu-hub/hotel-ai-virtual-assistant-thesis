@@ -31,6 +31,7 @@ langchain-qdrant>=0.1.0
 # Embeddings & Reranking
 sentence-transformers>=3.0.0
 langchain-text-splitters>=0.3.0
+langchain-nvidia-ai-endpoints>=0.3.0  # NVIDIA NIM reranker (fast, API-based)
 
 # HTTP & API
 requests>=2.31.0

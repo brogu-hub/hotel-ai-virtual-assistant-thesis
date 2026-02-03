@@ -4,7 +4,7 @@
 Hotel Knowledge RAG Chain
 
 Retrieves hotel information from Qdrant using OpenRouter embeddings
-and Qwen3-0.6B reranker. Supports bilingual Thai/English queries.
+and configurable reranker (NVIDIA NIM or local Qwen). Supports bilingual Thai/English queries.
 
 Usage:
     from src.retrievers.hotel_knowledge.chains import HotelKnowledgeRetriever
@@ -12,6 +12,10 @@ Usage:
     retriever = HotelKnowledgeRetriever()
     retriever.ingest_docs("data/hotel/hotel_faq.pdf", "hotel_faq.pdf")
     results = retriever.document_search("What time is breakfast?")
+
+Environment Variables:
+    RERANKER_BACKEND: "nvidia" (default, fast API-based) or "qwen" (local CPU-based)
+    NVIDIA_API_KEY: Required if RERANKER_BACKEND=nvidia
 """
 
 import os
@@ -27,7 +31,6 @@ from src.common.embeddings_openrouter import (
     get_model_token_limit,
     DEFAULT_EMBEDDING_MODEL,
 )
-from src.common.reranker_qwen import get_qwen_reranker
 from src.common.vectorstore_qdrant import (
     create_qdrant_vectorstore,
     get_collection_name,
@@ -35,6 +38,36 @@ from src.common.vectorstore_qdrant import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Reranker selection: NVIDIA NIM (fast, API-based) or Qwen (local, CPU-based)
+RERANKER_BACKEND = os.getenv("RERANKER_BACKEND", "nvidia").lower()
+
+
+def get_reranker(top_n: int = 4):
+    """
+    Get the configured reranker based on RERANKER_BACKEND environment variable.
+
+    Args:
+        top_n: Number of top documents to return
+
+    Returns:
+        Reranker instance (NVIDIA or Qwen)
+
+    Environment Variables:
+        RERANKER_BACKEND: "nvidia" (default) or "qwen"
+        NVIDIA_API_KEY: Required if using nvidia backend
+    """
+    if RERANKER_BACKEND == "qwen":
+        from src.common.reranker_qwen import get_qwen_reranker
+
+        logger.info("Using Qwen reranker (local CPU)")
+        return get_qwen_reranker(top_n=top_n)
+    else:
+        # Default to NVIDIA
+        from src.common.reranker_nvidia import get_nvidia_reranker
+
+        logger.info("Using NVIDIA NIM reranker (API-based)")
+        return get_nvidia_reranker(top_n=top_n)
 
 # Import audit logger
 try:
@@ -98,7 +131,7 @@ class HotelKnowledgeRetriever(BaseExample):
     Uses:
     - OpenRouter qwen-3-embedding-8b for embeddings
     - Qdrant (Railway) for vector storage
-    - Qwen3-0.6B for reranking
+    - Configurable reranker: NVIDIA NIM (fast) or Qwen (local CPU)
 
     Supports bilingual Thai/English queries and documents.
 
@@ -141,7 +174,7 @@ class HotelKnowledgeRetriever(BaseExample):
         # Initialize components
         logger.info("Initializing Hotel Knowledge Retriever")
         self.embeddings = get_openrouter_embeddings()
-        self.reranker = get_qwen_reranker(top_n=top_k_rerank)
+        self.reranker = get_reranker(top_n=top_k_rerank)
         self.vectorstore = create_qdrant_vectorstore(self.embeddings)
         self.text_splitter = self._get_text_splitter()
 
@@ -336,7 +369,7 @@ class HotelKnowledgeRetriever(BaseExample):
                 except Exception as log_error:
                     logger.debug(f"Audit logging failed: {log_error}")
 
-            # Rerank with Qwen3
+            # Rerank with configured reranker (NVIDIA or Qwen)
             reranking_start = time.time()
             self.reranker.top_n = num_docs
             reranked_docs = self.reranker.compress_documents(
