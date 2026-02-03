@@ -189,9 +189,13 @@ class NVIDIARerankerWrapper(BaseDocumentCompressor):
                 documents=list(documents), query=query
             )
 
+            scores_str = ", ".join(
+                f"{doc.metadata.get('relevance_score', 0):.3f}"
+                for doc in reranked_docs
+            )
             logger.info(
                 f"Reranked {len(documents)} docs to top {len(reranked_docs)}, "
-                f"scores: [{', '.join(f'{doc.metadata.get(\"relevance_score\", 0):.3f}' for doc in reranked_docs)}]"
+                f"scores: [{scores_str}]"
             )
 
             # Audit logging
