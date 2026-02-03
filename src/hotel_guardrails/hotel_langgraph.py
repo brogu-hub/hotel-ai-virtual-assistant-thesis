@@ -124,26 +124,36 @@ For English speakers, be professional and warm.
 
 
 # =============================================================================
-# LLM Initialization with Fallback
+# LLM Initialization
 # =============================================================================
 
 def get_llm(temperature: float = 0.7, max_tokens: int = 1024, streaming: bool = False):
-    """Get LLM with OpenRouter -> NVIDIA fallback."""
+    """Get LLM - using OpenRouter directly for better LangGraph compatibility."""
     try:
-        from src.common.llm_fallback import get_llm_with_fallback
-        return get_llm_with_fallback(
-            temperature=temperature,
-            max_tokens=max_tokens,
-            streaming=streaming,
-        )
-    except Exception as e:
-        logger.warning(f"Fallback LLM init failed: {e}, trying OpenRouter directly")
         from src.common.llm_openrouter import get_openrouter_llm
         return get_openrouter_llm(
             temperature=temperature,
             max_tokens=max_tokens,
             streaming=streaming,
         )
+    except Exception as e:
+        logger.error(f"Failed to initialize OpenRouter LLM: {e}")
+        # Try NVIDIA as fallback
+        try:
+            nvidia_api_key = os.getenv("NVIDIA_API_KEY")
+            if nvidia_api_key:
+                from langchain_nvidia_ai_endpoints import ChatNVIDIA
+                nvidia_model = os.getenv("NVIDIA_LLM_MODEL", "meta/llama-3.3-70b-instruct")
+                logger.info(f"Using NVIDIA fallback LLM: {nvidia_model}")
+                return ChatNVIDIA(
+                    model=nvidia_model,
+                    api_key=nvidia_api_key,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+        except Exception as nvidia_error:
+            logger.error(f"NVIDIA fallback also failed: {nvidia_error}")
+        raise e
 
 
 # =============================================================================
