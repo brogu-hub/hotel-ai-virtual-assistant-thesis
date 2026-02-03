@@ -160,12 +160,15 @@ class LangGraphAdapter:
             return result
 
         except Exception as e:
-            logger.error(f"Embedded LangGraph invocation failed: {e}")
+            import traceback
+            error_msg = str(e) if str(e) else type(e).__name__
+            logger.error(f"Embedded LangGraph invocation failed: {error_msg}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return {
                 "success": False,
                 "response": None,
                 "path": "langgraph",
-                "error": str(e),
+                "error": f"{type(e).__name__}: {error_msg}" if error_msg else type(e).__name__,
             }
 
     async def _invoke_http(

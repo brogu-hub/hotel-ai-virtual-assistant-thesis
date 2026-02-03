@@ -637,10 +637,13 @@ async def invoke_hotel_agent(
         }
 
     except Exception as e:
-        logger.error(f"Hotel LangGraph agent error: {e}")
+        import traceback
+        error_msg = str(e) if str(e) else type(e).__name__
+        logger.error(f"Hotel LangGraph agent error: {error_msg}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return {
             "success": False,
             "response": None,
             "path": "langgraph",
-            "error": str(e),
+            "error": f"{type(e).__name__}: {error_msg}" if error_msg else type(e).__name__,
         }
