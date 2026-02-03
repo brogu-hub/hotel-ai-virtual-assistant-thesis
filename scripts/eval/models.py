@@ -32,6 +32,7 @@ class Category(str, Enum):
     TRANSPORTATION = "transportation"
     EMERGENCY = "emergency"
     FAQ = "faq"
+    BOOKING = "booking"  # CRUD operations for reservations
 
 
 class Difficulty(str, Enum):

@@ -32,7 +32,7 @@ class LLMSettings(BaseSettings):
         description="OpenRouter model name (primary)",
     )
     temperature: float = Field(
-        default=0.7,
+        default=0.3,
         ge=0.0,
         le=2.0,
         description="Sampling temperature",

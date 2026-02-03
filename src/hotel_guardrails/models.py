@@ -533,3 +533,99 @@ class RoomAvailabilityResponse(BaseModel):
     start_date: str = Field(..., description="Start date of range")
     end_date: str = Field(..., description="End date of range")
     availability: List[RoomAvailabilityDay] = Field(..., description="Daily availability")
+
+
+# =============================================================================
+# Guest Registration Models
+# =============================================================================
+
+
+class GuestCreateRequest(BaseModel):
+    """Request model for POST /guests endpoint (guest registration)."""
+
+    email: str = Field(
+        ...,
+        description="Guest email address (used as unique identifier)",
+        examples=["guest@example.com"],
+    )
+    first_name: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="First name",
+        examples=["John"],
+    )
+    last_name: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="Last name",
+        examples=["Smith"],
+    )
+
+
+class GuestResponse(BaseModel):
+    """Response model for guest information."""
+
+    guest_id: int = Field(..., description="Unique guest ID")
+    email: str = Field(..., description="Guest email address")
+    first_name: str = Field(..., description="First name in English")
+    last_name: str = Field(..., description="Last name in English")
+    first_name_th: Optional[str] = Field(None, description="First name in Thai")
+    last_name_th: Optional[str] = Field(None, description="Last name in Thai")
+    phone: Optional[str] = Field(None, description="Phone number")
+    nationality: Optional[str] = Field(None, description="Nationality")
+    loyalty_tier: Optional[str] = Field(None, description="Loyalty program tier")
+    loyalty_points: Optional[int] = Field(None, description="Loyalty points balance")
+    created_at: str = Field(..., description="Registration timestamp (ISO format)")
+    updated_at: Optional[str] = Field(None, description="Last update timestamp")
+
+
+class GuestUpdateRequest(BaseModel):
+    """Request model for PATCH /guests/{guest_id} endpoint."""
+
+    first_name: Optional[str] = Field(
+        None,
+        min_length=1,
+        max_length=100,
+        description="First name in English",
+    )
+    last_name: Optional[str] = Field(
+        None,
+        min_length=1,
+        max_length=100,
+        description="Last name in English",
+    )
+    first_name_th: Optional[str] = Field(
+        None,
+        max_length=100,
+        description="First name in Thai",
+    )
+    last_name_th: Optional[str] = Field(
+        None,
+        max_length=100,
+        description="Last name in Thai",
+    )
+    phone: Optional[str] = Field(
+        None,
+        max_length=20,
+        description="Phone number",
+    )
+    nationality: Optional[str] = Field(
+        None,
+        max_length=50,
+        description="Nationality",
+    )
+    address: Optional[str] = Field(
+        None,
+        max_length=500,
+        description="Full address",
+    )
+
+
+class GuestCreateResponse(BaseModel):
+    """Response model for POST /guests endpoint."""
+
+    success: bool = Field(..., description="Whether registration was successful")
+    message: str = Field(..., description="Human-readable message in Thai/English")
+    guest: Optional[GuestResponse] = Field(None, description="Registered guest details")

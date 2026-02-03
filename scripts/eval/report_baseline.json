@@ -1,0 +1,201 @@
+{
+  "timestamp": "2026-02-04T04:26:33.427307",
+  "total_conversations": 5,
+  "passed": 2,
+  "failed": 3,
+  "pass_rate": 0.4,
+  "conversational_metrics": {
+    "knowledge_retention": 0.7,
+    "conversation_completeness": 0.7,
+    "conversation_relevancy": 0.7,
+    "role_adherence": 0.7
+  },
+  "agentic_metrics": {
+    "task_completion": 0.7,
+    "tool_correctness": 0.6
+  },
+  "rag_metrics": {
+    "faithfulness": 0.6433333333333333
+  },
+  "avg_latency_ms": 10054.902648925781,
+  "category_scores": {
+    "dining": 0.700595238095238,
+    "facilities": 0.5857142857142856
+  },
+  "english_pass_rate": 0.3333333333333333,
+  "thai_pass_rate": 0.5,
+  "improvement_recommendations": [
+    "Improve RAG grounding - responses should cite retrieved context",
+    "Focus on improving facilities category (score: 0.59)"
+  ],
+  "results": [
+    {
+      "id": "dining_en_01",
+      "category": "dining",
+      "language": "en",
+      "difficulty": "easy",
+      "turns": [
+        {
+          "role": "user",
+          "content": "What time is breakfast?",
+          "tool_calls": null,
+          "retrieval_context": null
+        },
+        {
+          "role": "assistant",
+          "content": "Breakfast at The Grand Horizon Hotel is served daily from **6:30 AM to 10:30 AM** at **The Grand Dining Room** on the **1st floor**, near the main lobby. It’s complimentary for all in-house guests and features an international buffet with over 50 dishes, including Thai, Western, and Japanese stations, fresh tropical fruits, and vegetarian/vegan options upon request.\n\nWould you like help with anything else, such as making a reservation for a guest or arranging a special dietary request?",
+          "tool_calls": [],
+          "retrieval_context": null
+        }
+      ],
+      "knowledge_retention": 0.7,
+      "conversation_completeness": 0.7,
+      "conversation_relevancy": 0.7,
+      "role_adherence": 0.7,
+      "task_completion": 0.7,
+      "tool_correctness": 0.6,
+      "faithfulness": 0.8,
+      "average_score": 0.7,
+      "passed": true,
+      "latency_ms": 12552.364110946655,
+      "failure_reasons": [],
+      "recommendations": []
+    },
+    {
+      "id": "dining_th_01",
+      "category": "dining",
+      "language": "th",
+      "difficulty": "easy",
+      "turns": [
+        {
+          "role": "user",
+          "content": "อาหารเช้าเสิร์ฟกี่โมง?",
+          "tool_calls": null,
+          "retrieval_context": null
+        },
+        {
+          "role": "assistant",
+          "content": "อาหารเช้าที่ The Grand Horizon Hotel เสิร์ฟทุกวันตั้งแต่ **06:30 น. ถึง 10:30 น.** ที่ **The Grand Dining Room ชั้น 1 ใกล้ล็อบบี้หลัก**  \nเป็นบริการ **ฟรีสำหรับผู้เข้าพักทุกท่าน** และมีทั้งเมนูไทย ตะวันตก ญี่ปุ่น รวมถึงตัวเลือกมังสวิรัติ ฮาลาล และปลอดกลูเตนตามคำขอค่ะ\n\nหากต้องการข้อมูลเมนูเพิ่มเติมหรือความช่วยเหลืออื่น ๆ แจ้งได้เลยนะคะ! 😊",
+          "tool_calls": [],
+          "retrieval_context": null
+        }
+      ],
+      "knowledge_retention": 0.7,
+      "conversation_completeness": 0.7,
+      "conversation_relevancy": 0.7,
+      "role_adherence": 0.7,
+      "task_completion": 0.7,
+      "tool_correctness": 0.6,
+      "faithfulness": 1.0,
+      "average_score": 0.7285714285714285,
+      "passed": true,
+      "latency_ms": 11530.307054519653,
+      "failure_reasons": [],
+      "recommendations": []
+    },
+    {
+      "id": "dining_en_02",
+      "category": "dining",
+      "language": "en",
+      "difficulty": "easy",
+      "turns": [
+        {
+          "role": "user",
+          "content": "Is room service available 24 hours?",
+          "tool_calls": null,
+          "retrieval_context": null
+        },
+        {
+          "role": "assistant",
+          "content": "Yes, room service is available 24 hours a day, 7 days a week.  \n\n- **Delivery time:** 30–45 minutes  \n- **Minimum order:** None  \n- **Service charge:** 100 THB per order  \n\nYou can place your order by:  \n- Dialing **0** on your room phone  \n- Pressing the **\"Room Service\"** button  \n- Using the **in-room dining menu**  \n- Ordering through the **hotel app**  \n\nWould you like me to help you place an order or share the menu highlights?",
+          "tool_calls": [],
+          "retrieval_context": null
+        }
+      ],
+      "knowledge_retention": 0.7,
+      "conversation_completeness": 0.7,
+      "conversation_relevancy": 0.7,
+      "role_adherence": 0.7,
+      "task_completion": 0.7,
+      "tool_correctness": 0.6,
+      "faithfulness": 0.75,
+      "average_score": 0.6928571428571428,
+      "passed": false,
+      "latency_ms": 10586.134195327759,
+      "failure_reasons": [],
+      "recommendations": []
+    },
+    {
+      "id": "dining_th_02",
+      "category": "dining",
+      "language": "th",
+      "difficulty": "easy",
+      "turns": [
+        {
+          "role": "user",
+          "content": "รูมเซอร์วิสเปิด 24 ชั่วโมงไหม?",
+          "tool_calls": null,
+          "retrieval_context": null
+        },
+        {
+          "role": "assistant",
+          "content": "ใช่ค่ะ รูมเซอร์วิสของโรงแรมเปิดให้บริการ **24 ชั่วโมงทุกวัน** ค่ะ  \n- เวลาจัดส่ง: ประมาณ 30–45 นาทีหลังสั่ง  \n- ไม่มีขั้นต่ำในการสั่งอาหาร  \n- มีค่าบริการ 100 บาทต่อออเดอร์  \n\nท่านสามารถสั่งได้โดย:  \n- กด 0 หรือปุ่ม \"Room Service\" บนโทรศัพท์ในห้อง  \n- ดูเมนูจากสมุดเมนูในห้อง  \n- หรือสั่งผ่านแอปของโรงแรม  \n\nต้องการให้ช่วยสั่งอาหารหรือแนะนำเมนูเด็ดจากรูมเซอร์วิสไหมคะ? 😊",
+          "tool_calls": [],
+          "retrieval_context": null
+        }
+      ],
+      "knowledge_retention": 0.7,
+      "conversation_completeness": 0.7,
+      "conversation_relevancy": 0.7,
+      "role_adherence": 0.7,
+      "task_completion": 0.7,
+      "tool_correctness": 0.6,
+      "faithfulness": 0.6666666666666666,
+      "average_score": 0.680952380952381,
+      "passed": false,
+      "latency_ms": 12560.895919799805,
+      "failure_reasons": [
+        "Low faithfulness - possible hallucination"
+      ],
+      "recommendations": [
+        "Ground responses more closely to retrieved context"
+      ]
+    },
+    {
+      "id": "facilities_en_01",
+      "category": "facilities",
+      "language": "en",
+      "difficulty": "easy",
+      "turns": [
+        {
+          "role": "user",
+          "content": "What is the WiFi password?",
+          "tool_calls": null,
+          "retrieval_context": null
+        },
+        {
+          "role": "assistant",
+          "content": "The WiFi network name is **GrandHorizon_Guest** and the password is **Welcome2024**. You'll have high-speed fiber internet access throughout the entire hotel.\n\nIs there anything else I can help you with during your stay?",
+          "tool_calls": [],
+          "retrieval_context": null
+        }
+      ],
+      "knowledge_retention": 0.7,
+      "conversation_completeness": 0.7,
+      "conversation_relevancy": 0.7,
+      "role_adherence": 0.7,
+      "task_completion": 0.7,
+      "tool_correctness": 0.6,
+      "faithfulness": 0.0,
+      "average_score": 0.5857142857142856,
+      "passed": false,
+      "latency_ms": 3044.811964035034,
+      "failure_reasons": [
+        "Low faithfulness - possible hallucination"
+      ],
+      "recommendations": [
+        "Ground responses more closely to retrieved context"
+      ]
+    }
+  ]
+}

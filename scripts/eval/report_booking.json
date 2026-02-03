@@ -1,0 +1,380 @@
+{
+  "timestamp": "2026-02-04T04:38:41.758479",
+  "total_conversations": 10,
+  "passed": 1,
+  "failed": 9,
+  "pass_rate": 0.1,
+  "conversational_metrics": {
+    "knowledge_retention": 0.7,
+    "conversation_completeness": 0.7,
+    "conversation_relevancy": 0.7,
+    "role_adherence": 0.7
+  },
+  "agentic_metrics": {
+    "task_completion": 0.7,
+    "tool_correctness": 0.6
+  },
+  "rag_metrics": {
+    "faithfulness": 0.62
+  },
+  "avg_latency_ms": 10588.123536109924,
+  "category_scores": {
+    "booking": 0.6742857142857143
+  },
+  "english_pass_rate": 0.16666666666666666,
+  "thai_pass_rate": 0.0,
+  "improvement_recommendations": [
+    "Improve RAG grounding - responses should cite retrieved context",
+    "Focus on improving booking category (score: 0.67)"
+  ],
+  "results": [
+    {
+      "id": "booking_create_en_01",
+      "category": "booking",
+      "language": "en",
+      "difficulty": "hard",
+      "turns": [
+        {
+          "role": "user",
+          "content": "I'd like to make a reservation for 2 adults from March 15 to March 18",
+          "tool_calls": null,
+          "retrieval_context": null
+        },
+        {
+          "role": "assistant",
+          "content": "Great! I have several Standard Room options available for your stay from March 15-18, 2026 (3 nights) for 2 adults. All rooms are priced at 2,500 THB per night (7,500 THB total for 3 nights).\n\nHere are your available options:\n\n**Ocean View Rooms:**\n- Room 101 (1st Floor)\n- Room 102 (1st Floor) \n- Room 115 (1st Floor)\n\n**Pool View Room:**\n- Room 110 (1st Floor)\n\n**Garden View Rooms:**\n- Room 106 (1st Floor)\n- Room 113 (1st Floor)\n\n**Mountain View Rooms:**\n- Room 105 (1st Floor)\n- Room 108 (1st Floor)\n- Room 112 (1st Floor)\n- Room 202 (2nd Floor)\n\nTo proceed with your reservation, I'll need:\n1. Your email address for the booking confirmation\n2. Your preferred room choice from the options above\n3. Any special requests you might have\n\nWhich room would you prefer, and could you please provide your email address?",
+          "tool_calls": [],
+          "retrieval_context": null
+        }
+      ],
+      "knowledge_retention": 0.7,
+      "conversation_completeness": 0.7,
+      "conversation_relevancy": 0.7,
+      "role_adherence": 0.7,
+      "task_completion": 0.7,
+      "tool_correctness": 0.6,
+      "faithfulness": 0.4,
+      "average_score": 0.6428571428571429,
+      "passed": false,
+      "latency_ms": 18513.75102996826,
+      "failure_reasons": [
+        "Low faithfulness - possible hallucination"
+      ],
+      "recommendations": [
+        "Ground responses more closely to retrieved context"
+      ]
+    },
+    {
+      "id": "booking_create_th_01",
+      "category": "booking",
+      "language": "th",
+      "difficulty": "hard",
+      "turns": [
+        {
+          "role": "user",
+          "content": "อยากจองห้องพักสำหรับ 2 คน วันที่ 15-18 มีนาคม",
+          "tool_calls": null,
+          "retrieval_context": null
+        },
+        {
+          "role": "assistant",
+          "content": "ค่ะ ดิฉันตรวจสอบห้องว่างให้เรียบร้อยแล้วค่ะ สำหรับวันที่ 15-18 มีนาคม 2026 มีห้องสแตนดาร์ดว่างหลายห้องค่ะ:\n\n**ห้องสแตนดาร์ด (Standard Room) - 2,500 บาท/คืน (รวม 7,500 บาท 3 คืน)**\n\n**วิวทะเล (Ocean View):**\n- ห้อง 101, 102, 115 (ชั้น 1)\n\n**วิวสระว่ายน้ำ (Pool View):**\n- ห้อง 110 (ชั้น 1)\n\n**วิวสวน (Garden View):**\n- ห้อง 106, 113 (ชั้น 1)\n\n**วิวภูเขา (Mountain View):**\n- ห้อง 105, 108, 112, 202 (ชั้น 1-2)\n\nทุกห้องรองรับได้ 2 ท่านค่ะ\n\nกรุณาแจ้งอีเมลของคุณเพื่อทำการจอง และแจ้งว่าต้องการห้องใดเป็นพิเศษค่ะ? นอกจากนี้ หากมีความต้องการพิเศษอื่นๆ เช่น เตียงเสริม หมอนพิเศษ หรือการจัดห้องแบบพิเศษ ก็สามารถแจ้งได้เลยค่ะ",
+          "tool_calls": [],
+          "retrieval_context": null
+        }
+      ],
+      "knowledge_retention": 0.7,
+      "conversation_completeness": 0.7,
+      "conversation_relevancy": 0.7,
+      "role_adherence": 0.7,
+      "task_completion": 0.7,
+      "tool_correctness": 0.6,
+      "faithfulness": 0.4,
+      "average_score": 0.6428571428571429,
+      "passed": false,
+      "latency_ms": 17938.40503692627,
+      "failure_reasons": [
+        "Low faithfulness - possible hallucination"
+      ],
+      "recommendations": [
+        "Ground responses more closely to retrieved context"
+      ]
+    },
+    {
+      "id": "booking_create_en_02",
+      "category": "booking",
+      "language": "en",
+      "difficulty": "hard",
+      "turns": [
+        {
+          "role": "user",
+          "content": "Book a Suite for my anniversary weekend, I need a room with a view",
+          "tool_calls": null,
+          "retrieval_context": null
+        },
+        {
+          "role": "assistant",
+          "content": "Thank you for your patience! I'm ready to help you book the perfect Suite for your anniversary celebration.\n\nTo proceed with checking availability for a Suite room with a view, I need you to provide:\n\n1. **Your specific check-in and check-out dates** (for example: March 15-17, or April 5-7)\n\n2. **Your email address** (so I can create the reservation for you)\n\nOur Suite rooms are 65 sqm and can accommodate up to 4 guests, and I'll make sure to note your request for a room with a beautiful view for your special anniversary weekend.\n\nWhat dates would you like to book?",
+          "tool_calls": [],
+          "retrieval_context": null
+        }
+      ],
+      "knowledge_retention": 0.7,
+      "conversation_completeness": 0.7,
+      "conversation_relevancy": 0.7,
+      "role_adherence": 0.7,
+      "task_completion": 0.7,
+      "tool_correctness": 0.6,
+      "faithfulness": 0.6,
+      "average_score": 0.6714285714285714,
+      "passed": false,
+      "latency_ms": 13964.203119277954,
+      "failure_reasons": [
+        "Low faithfulness - possible hallucination"
+      ],
+      "recommendations": [
+        "Ground responses more closely to retrieved context"
+      ]
+    },
+    {
+      "id": "booking_read_en_01",
+      "category": "booking",
+      "language": "en",
+      "difficulty": "medium",
+      "turns": [
+        {
+          "role": "user",
+          "content": "Can you check my reservation? My name is John Smith",
+          "tool_calls": null,
+          "retrieval_context": null
+        },
+        {
+          "role": "assistant",
+          "content": "I'd be happy to help you check your reservation, Mr. Smith! To look up your reservation details, I'll need your email address that was used when making the booking.\n\nCould you please provide the email address associated with your reservation?",
+          "tool_calls": [],
+          "retrieval_context": null
+        }
+      ],
+      "knowledge_retention": 0.7,
+      "conversation_completeness": 0.7,
+      "conversation_relevancy": 0.7,
+      "role_adherence": 0.7,
+      "task_completion": 0.7,
+      "tool_correctness": 0.6,
+      "faithfulness": 0.75,
+      "average_score": 0.6928571428571428,
+      "passed": false,
+      "latency_ms": 6221.0118770599365,
+      "failure_reasons": [],
+      "recommendations": []
+    },
+    {
+      "id": "booking_read_th_01",
+      "category": "booking",
+      "language": "th",
+      "difficulty": "medium",
+      "turns": [
+        {
+          "role": "user",
+          "content": "ช่วยเช็คการจองให้หน่อย ชื่อสมชาย ใจดี",
+          "tool_calls": null,
+          "retrieval_context": null
+        },
+        {
+          "role": "assistant",
+          "content": "สวัสดีค่ะคุณสมชาย! ยินดีต้อนรับสู่ The Grand Horizon Hotel ค่ะ\n\nเพื่อช่วยตรวจสอบการจองของคุณได้ รบกวนขออีเมลที่ใช้ในการจองค่ะ เนื่องจากระบบของเราใช้อีเมลเป็นตัวระบุการจองค่ะ\n\nกรุณาแจ้งอีเมลที่คุณใช้ตอนทำการจอง แล้วดิฉันจะช่วยตรวจสอบการจองทั้งหมดให้ทันทีค่ะ 😊",
+          "tool_calls": [],
+          "retrieval_context": null
+        }
+      ],
+      "knowledge_retention": 0.7,
+      "conversation_completeness": 0.7,
+      "conversation_relevancy": 0.7,
+      "role_adherence": 0.7,
+      "task_completion": 0.7,
+      "tool_correctness": 0.6,
+      "faithfulness": 0.5,
+      "average_score": 0.6571428571428571,
+      "passed": false,
+      "latency_ms": 7385.09202003479,
+      "failure_reasons": [
+        "Low faithfulness - possible hallucination"
+      ],
+      "recommendations": [
+        "Ground responses more closely to retrieved context"
+      ]
+    },
+    {
+      "id": "booking_read_en_02",
+      "category": "booking",
+      "language": "en",
+      "difficulty": "medium",
+      "turns": [
+        {
+          "role": "user",
+          "content": "What's the status of booking confirmation BK-2024-001234?",
+          "tool_calls": null,
+          "retrieval_context": null
+        },
+        {
+          "role": "assistant",
+          "content": "I'd be happy to help you check the status of your booking confirmation BK-2024-001234. However, I notice that the confirmation number format you provided (BK-2024-001234) doesn't match our standard reservation ID format, which typically looks like \"HTL\" followed by numbers (e.g., HTL240215001).\n\nCould you please double-check your confirmation number? It should be found in your booking confirmation email. If you have the correct reservation ID or confirmation number, I'll be able to retrieve all the details for you right away.\n\nAlternatively, if you remember the email address used for the booking, I can look up all your reservations using that information.",
+          "tool_calls": [],
+          "retrieval_context": null
+        }
+      ],
+      "knowledge_retention": 0.7,
+      "conversation_completeness": 0.7,
+      "conversation_relevancy": 0.7,
+      "role_adherence": 0.7,
+      "task_completion": 0.7,
+      "tool_correctness": 0.6,
+      "faithfulness": 1.0,
+      "average_score": 0.7285714285714285,
+      "passed": true,
+      "latency_ms": 9831.254005432129,
+      "failure_reasons": [],
+      "recommendations": []
+    },
+    {
+      "id": "booking_update_en_01",
+      "category": "booking",
+      "language": "en",
+      "difficulty": "hard",
+      "turns": [
+        {
+          "role": "user",
+          "content": "I need to change my check-in date from March 15 to March 17",
+          "tool_calls": null,
+          "retrieval_context": null
+        },
+        {
+          "role": "assistant",
+          "content": "I'd be happy to help you change your check-in date from March 15 to March 17. To update your reservation, I'll need your reservation ID or confirmation number. Could you please provide that information?",
+          "tool_calls": [],
+          "retrieval_context": null
+        }
+      ],
+      "knowledge_retention": 0.7,
+      "conversation_completeness": 0.7,
+      "conversation_relevancy": 0.7,
+      "role_adherence": 0.7,
+      "task_completion": 0.7,
+      "tool_correctness": 0.6,
+      "faithfulness": 0.6,
+      "average_score": 0.6714285714285714,
+      "passed": false,
+      "latency_ms": 6129.676103591919,
+      "failure_reasons": [
+        "Low faithfulness - possible hallucination"
+      ],
+      "recommendations": [
+        "Ground responses more closely to retrieved context"
+      ]
+    },
+    {
+      "id": "booking_update_th_01",
+      "category": "booking",
+      "language": "th",
+      "difficulty": "hard",
+      "turns": [
+        {
+          "role": "user",
+          "content": "อยากเปลี่ยนวันเช็คอินจาก 15 มีนา เป็น 17 มีนา",
+          "tool_calls": null,
+          "retrieval_context": null
+        },
+        {
+          "role": "assistant",
+          "content": "สวัสดีค่ะ! ยินดีช่วยเหลือค่ะ\n\nเพื่อช่วยเปลี่ยนวันเช็คอินจาก 15 มีนาคม เป็น 17 มีนาคม ได้ถูกต้อง รบกวนขอ **หมายเลขการจอง (Reservation ID หรือ Confirmation Number)** หรือ **อีเมลที่ใช้จอง** ค่ะ\n\nเมื่อได้ข้อมูลแล้ว ดิฉันจะตรวจสอบการจองและดำเนินการเปลี่ยนแปลงให้ทันทีค่ะ 🙏",
+          "tool_calls": [],
+          "retrieval_context": null
+        }
+      ],
+      "knowledge_retention": 0.7,
+      "conversation_completeness": 0.7,
+      "conversation_relevancy": 0.7,
+      "role_adherence": 0.7,
+      "task_completion": 0.7,
+      "tool_correctness": 0.6,
+      "faithfulness": 0.75,
+      "average_score": 0.6928571428571428,
+      "passed": false,
+      "latency_ms": 7324.956178665161,
+      "failure_reasons": [],
+      "recommendations": []
+    },
+    {
+      "id": "booking_update_en_02",
+      "category": "booking",
+      "language": "en",
+      "difficulty": "hard",
+      "turns": [
+        {
+          "role": "user",
+          "content": "Can I upgrade my Standard room to a Deluxe?",
+          "tool_calls": null,
+          "retrieval_context": null
+        },
+        {
+          "role": "assistant",
+          "content": "I'd be happy to help you upgrade your Standard room to a Deluxe room! To process this upgrade, I'll need your reservation details.\n\nCould you please provide me with either:\n- Your reservation ID or confirmation number, OR\n- The email address you used when making the reservation?\n\nOnce I have this information, I can check the availability of Deluxe rooms for your stay dates and process the upgrade for you.",
+          "tool_calls": [],
+          "retrieval_context": null
+        }
+      ],
+      "knowledge_retention": 0.7,
+      "conversation_completeness": 0.7,
+      "conversation_relevancy": 0.7,
+      "role_adherence": 0.7,
+      "task_completion": 0.7,
+      "tool_correctness": 0.6,
+      "faithfulness": 0.6,
+      "average_score": 0.6714285714285714,
+      "passed": false,
+      "latency_ms": 9489.847898483276,
+      "failure_reasons": [
+        "Low faithfulness - possible hallucination"
+      ],
+      "recommendations": [
+        "Ground responses more closely to retrieved context"
+      ]
+    },
+    {
+      "id": "booking_update_th_02",
+      "category": "booking",
+      "language": "th",
+      "difficulty": "hard",
+      "turns": [
+        {
+          "role": "user",
+          "content": "อยากอัพเกรดจากห้อง Standard เป็น Deluxe ได้ไหม?",
+          "tool_calls": null,
+          "retrieval_context": null
+        },
+        {
+          "role": "assistant",
+          "content": "ได้ค่ะ! ทางเราสามารถช่วยอัพเกรดห้องจาก Standard เป็น Deluxe ให้ได้ค่ะ\n\nแต่เพื่อตรวจสอบความพร้อมของห้อง Deluxe และดำเนินการอัพเกรดให้คุณได้ รบกวนขอ **หมายเลขการจอง (Confirmation Number)** หรือ **อีเมลที่ใช้จอง** ค่ะ\n\nเมื่อได้ข้อมูลแล้ว ทางเราจะ:\n1. ตรวจสอบว่ามีห้อง Deluxe ว่างในช่วงวันที่คุณจองหรือไม่\n2. แจ้งส่วนต่างราคา (ถ้ามี)\n3. ดำเนินการอัพเกรดให้ทันทีค่ะ\n\nกรุณาแจ้งหมายเลขการจองหรืออีเมลของคุณได้เลยค่ะ 🙏",
+          "tool_calls": [],
+          "retrieval_context": null
+        }
+      ],
+      "knowledge_retention": 0.7,
+      "conversation_completeness": 0.7,
+      "conversation_relevancy": 0.7,
+      "role_adherence": 0.7,
+      "task_completion": 0.7,
+      "tool_correctness": 0.6,
+      "faithfulness": 0.6,
+      "average_score": 0.6714285714285714,
+      "passed": false,
+      "latency_ms": 9083.038091659546,
+      "failure_reasons": [
+        "Low faithfulness - possible hallucination"
+      ],
+      "recommendations": [
+        "Ground responses more closely to retrieved context"
+      ]
+    }
+  ]
+}

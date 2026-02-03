@@ -57,6 +57,11 @@ from .models import (
     BookingUpdateRequest,
     BookingUpdateResponse,
     ConversationHistoryResponse,
+    # Guest registration models
+    GuestCreateRequest,
+    GuestResponse,
+    GuestUpdateRequest,
+    GuestCreateResponse,
 )
 from .hybrid_router import HybridRouter, RoutingPath
 from .langgraph_adapter import LangGraphAdapter
@@ -93,6 +98,7 @@ tags_metadata = [
     {"name": "Chat", "description": "AI conversation powered by LangGraph Agent"},
     {"name": "Rooms", "description": "Room catalog and availability"},
     {"name": "Booking", "description": "Room reservation operations"},
+    {"name": "Guests", "description": "Guest registration and management"},
     {"name": "Sessions", "description": "Conversation session management"},
     {"name": "Settings", "description": "LLM and server configuration"},
     {"name": "Feedback", "description": "Response quality feedback for continuous improvement"},
@@ -1106,6 +1112,142 @@ async def update_booking(reservation_id: str, request: BookingUpdateRequest):
     except Exception as e:
         logger.error(f"Error updating booking {reservation_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update booking: {str(e)}")
+
+
+# =============================================================================
+# Guest Endpoints
+# =============================================================================
+
+
+@app.post("/guests", response_model=GuestCreateResponse, tags=["Guests"])
+async def register_guest(request: GuestCreateRequest):
+    """
+    Register a new guest.
+
+    Creates a new guest profile for booking operations.
+    Guests must be registered before making reservations.
+
+    Example:
+        ```json
+        {
+            "email": "guest@example.com",
+            "first_name": "John",
+            "last_name": "Smith"
+        }
+        ```
+
+    Returns guest details with assigned guest_id.
+    """
+    try:
+        success, message, guest_data = await db.create_guest(
+            email=request.email,
+            first_name=request.first_name,
+            last_name=request.last_name,
+        )
+
+        if not success:
+            raise HTTPException(status_code=400, detail=message)
+
+        guest = GuestResponse(**guest_data) if guest_data else None
+
+        return GuestCreateResponse(
+            success=success,
+            message=message,
+            guest=guest,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error registering guest: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to register guest: {str(e)}")
+
+
+@app.get("/guests/{email}", response_model=GuestResponse, tags=["Guests"])
+async def get_guest_by_email(email: str):
+    """
+    Get guest information by email address.
+
+    Args:
+        email: Guest's email address
+
+    Returns guest profile including loyalty tier and points.
+
+    Example:
+        ```
+        GET /guests/guest@example.com
+        ```
+    """
+    try:
+        guest = await db.get_guest_by_email(email)
+
+        if not guest:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Guest with email {email} not found / ไม่พบผู้เข้าพักอีเมล {email}",
+            )
+
+        return GuestResponse(**guest)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching guest {email}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch guest: {str(e)}")
+
+
+@app.patch("/guests/{guest_id}", response_model=GuestCreateResponse, tags=["Guests"])
+async def update_guest(guest_id: int, request: GuestUpdateRequest):
+    """
+    Update guest information.
+
+    Modifiable fields:
+    - first_name, last_name: Names in English
+    - first_name_th, last_name_th: Names in Thai
+    - phone: Contact number
+    - nationality: Guest nationality
+    - address: Full address
+
+    Note: Email cannot be changed (use as unique identifier).
+
+    Example:
+        ```json
+        {
+            "phone": "+66899999999",
+            "address": "123 New Address, Bangkok"
+        }
+        ```
+
+    Returns updated guest profile.
+    """
+    try:
+        success, message, guest_data = await db.update_guest(
+            guest_id=guest_id,
+            first_name=request.first_name,
+            last_name=request.last_name,
+            first_name_th=request.first_name_th,
+            last_name_th=request.last_name_th,
+            phone=request.phone,
+            nationality=request.nationality,
+            address=request.address,
+        )
+
+        if not success:
+            raise HTTPException(status_code=400, detail=message)
+
+        guest = GuestResponse(**guest_data) if guest_data else None
+
+        return GuestCreateResponse(
+            success=success,
+            message=message,
+            guest=guest,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating guest {guest_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update guest: {str(e)}")
 
 
 # =============================================================================

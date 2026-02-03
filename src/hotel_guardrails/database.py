@@ -804,6 +804,311 @@ def _get_room_type_photos(room_type_name: str) -> List[str]:
 
 
 # =============================================================================
+# Guest Operations
+# =============================================================================
+
+
+async def get_guest_by_email(email: str) -> Optional[Dict[str, Any]]:
+    """
+    Get guest information by email.
+
+    Args:
+        email: Guest email address
+
+    Returns:
+        Guest details or None if not found
+    """
+    try:
+        with get_cursor() as (cur, conn):
+            cur.execute("""
+                SELECT
+                    guest_id,
+                    email,
+                    first_name,
+                    last_name,
+                    first_name_th,
+                    last_name_th,
+                    phone,
+                    nationality,
+                    loyalty_tier,
+                    loyalty_points,
+                    created_at,
+                    updated_at
+                FROM guests
+                WHERE LOWER(email) = LOWER(%s)
+            """, (email,))
+
+            row = cur.fetchone()
+
+            if not row:
+                return None
+
+            return {
+                "guest_id": row["guest_id"],
+                "email": row["email"],
+                "first_name": row["first_name"],
+                "last_name": row["last_name"],
+                "first_name_th": row["first_name_th"],
+                "last_name_th": row["last_name_th"],
+                "phone": row["phone"],
+                "nationality": row["nationality"],
+                "loyalty_tier": row["loyalty_tier"],
+                "loyalty_points": row["loyalty_points"],
+                "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+                "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+            }
+
+    except Exception as e:
+        logger.error(f"Error fetching guest by email {email}: {e}")
+        raise
+
+
+async def get_guest_by_id(guest_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Get guest information by ID.
+
+    Args:
+        guest_id: Guest ID
+
+    Returns:
+        Guest details or None if not found
+    """
+    try:
+        with get_cursor() as (cur, conn):
+            cur.execute("""
+                SELECT
+                    guest_id,
+                    email,
+                    first_name,
+                    last_name,
+                    first_name_th,
+                    last_name_th,
+                    phone,
+                    nationality,
+                    loyalty_tier,
+                    loyalty_points,
+                    created_at,
+                    updated_at
+                FROM guests
+                WHERE guest_id = %s
+            """, (guest_id,))
+
+            row = cur.fetchone()
+
+            if not row:
+                return None
+
+            return {
+                "guest_id": row["guest_id"],
+                "email": row["email"],
+                "first_name": row["first_name"],
+                "last_name": row["last_name"],
+                "first_name_th": row["first_name_th"],
+                "last_name_th": row["last_name_th"],
+                "phone": row["phone"],
+                "nationality": row["nationality"],
+                "loyalty_tier": row["loyalty_tier"],
+                "loyalty_points": row["loyalty_points"],
+                "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+                "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+            }
+
+    except Exception as e:
+        logger.error(f"Error fetching guest by id {guest_id}: {e}")
+        raise
+
+
+async def create_guest(
+    email: str,
+    first_name: str,
+    last_name: str,
+    first_name_th: Optional[str] = None,
+    last_name_th: Optional[str] = None,
+    phone: Optional[str] = None,
+    nationality: Optional[str] = None,
+    id_type: Optional[str] = None,
+    id_number: Optional[str] = None,
+    date_of_birth: Optional[str] = None,
+    address: Optional[str] = None,
+) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+    """
+    Create a new guest.
+
+    Args:
+        email: Guest email address
+        first_name: First name in English
+        last_name: Last name in English
+        first_name_th: First name in Thai (optional)
+        last_name_th: Last name in Thai (optional)
+        phone: Phone number (optional)
+        nationality: Nationality (optional)
+        id_type: ID document type (optional)
+        id_number: ID document number (optional)
+        date_of_birth: Date of birth YYYY-MM-DD (optional)
+        address: Full address (optional)
+
+    Returns:
+        Tuple of (success, message, guest_data)
+    """
+    try:
+        with get_cursor() as (cur, conn):
+            # Check if email already exists
+            cur.execute("""
+                SELECT guest_id FROM guests WHERE LOWER(email) = LOWER(%s)
+            """, (email,))
+
+            existing = cur.fetchone()
+            if existing:
+                return False, f"Guest with email {email} already exists / อีเมล {email} มีอยู่แล้ว", None
+
+            # Parse date of birth if provided
+            dob = None
+            if date_of_birth:
+                try:
+                    dob = datetime.strptime(date_of_birth, "%Y-%m-%d").date()
+                except ValueError:
+                    return False, f"Invalid date format: {date_of_birth}. Use YYYY-MM-DD", None
+
+            # Insert new guest
+            cur.execute("""
+                INSERT INTO guests (
+                    email, first_name, last_name, first_name_th, last_name_th,
+                    phone, nationality, id_type, id_number, date_of_birth, address,
+                    loyalty_tier, loyalty_points, created_at, updated_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                RETURNING guest_id, created_at
+            """, (
+                email, first_name, last_name, first_name_th, last_name_th,
+                phone, nationality, id_type, id_number, dob, address,
+                "Bronze", 0  # Default loyalty tier and points
+            ))
+
+            result = cur.fetchone()
+            conn.commit()
+
+            guest_data = {
+                "guest_id": result["guest_id"],
+                "email": email,
+                "first_name": first_name,
+                "last_name": last_name,
+                "first_name_th": first_name_th,
+                "last_name_th": last_name_th,
+                "phone": phone,
+                "nationality": nationality,
+                "loyalty_tier": "Bronze",
+                "loyalty_points": 0,
+                "created_at": result["created_at"].isoformat() if result["created_at"] else None,
+                "updated_at": None,
+            }
+
+            return True, f"Guest {first_name} {last_name} registered successfully / ลงทะเบียน {first_name} {last_name} สำเร็จ", guest_data
+
+    except Exception as e:
+        logger.error(f"Error creating guest: {e}")
+        return False, f"Error creating guest: {str(e)}", None
+
+
+async def update_guest(
+    guest_id: int,
+    first_name: Optional[str] = None,
+    last_name: Optional[str] = None,
+    first_name_th: Optional[str] = None,
+    last_name_th: Optional[str] = None,
+    phone: Optional[str] = None,
+    nationality: Optional[str] = None,
+    address: Optional[str] = None,
+) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+    """
+    Update guest information.
+
+    Args:
+        guest_id: Guest ID
+        first_name: New first name in English
+        last_name: New last name in English
+        first_name_th: New first name in Thai
+        last_name_th: New last name in Thai
+        phone: New phone number
+        nationality: New nationality
+        address: New address
+
+    Returns:
+        Tuple of (success, message, updated_guest_data)
+    """
+    try:
+        with get_cursor() as (cur, conn):
+            # Check if guest exists
+            existing = await get_guest_by_id(guest_id)
+            if not existing:
+                return False, f"Guest {guest_id} not found / ไม่พบผู้เข้าพัก {guest_id}", None
+
+            # Build dynamic update query
+            updates = []
+            params = []
+
+            if first_name is not None:
+                updates.append("first_name = %s")
+                params.append(first_name)
+
+            if last_name is not None:
+                updates.append("last_name = %s")
+                params.append(last_name)
+
+            if first_name_th is not None:
+                updates.append("first_name_th = %s")
+                params.append(first_name_th)
+
+            if last_name_th is not None:
+                updates.append("last_name_th = %s")
+                params.append(last_name_th)
+
+            if phone is not None:
+                updates.append("phone = %s")
+                params.append(phone)
+
+            if nationality is not None:
+                updates.append("nationality = %s")
+                params.append(nationality)
+
+            if address is not None:
+                updates.append("address = %s")
+                params.append(address)
+
+            if not updates:
+                return False, "No fields to update / ไม่มีข้อมูลที่ต้องอัปเดต", existing
+
+            updates.append("updated_at = CURRENT_TIMESTAMP")
+
+            update_sql = f"UPDATE guests SET {', '.join(updates)} WHERE guest_id = %s RETURNING *"
+            params.append(guest_id)
+
+            cur.execute(update_sql, params)
+            row = cur.fetchone()
+            conn.commit()
+
+            updated_guest = {
+                "guest_id": row["guest_id"],
+                "email": row["email"],
+                "first_name": row["first_name"],
+                "last_name": row["last_name"],
+                "first_name_th": row["first_name_th"],
+                "last_name_th": row["last_name_th"],
+                "phone": row["phone"],
+                "nationality": row["nationality"],
+                "loyalty_tier": row["loyalty_tier"],
+                "loyalty_points": row["loyalty_points"],
+                "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+                "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+            }
+
+            return True, f"Guest {guest_id} updated successfully / อัปเดตผู้เข้าพัก {guest_id} สำเร็จ", updated_guest
+
+    except Exception as e:
+        logger.error(f"Error updating guest {guest_id}: {e}")
+        return False, f"Error updating guest: {str(e)}", None
+
+
+# =============================================================================
 # Health Check
 # =============================================================================
 

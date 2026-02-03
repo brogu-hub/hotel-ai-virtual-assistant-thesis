@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
-  "generated_at": "2026-02-02T05:20:19.067955",
-  "total_pairs": 64,
+  "generated_at": "2026-02-04T05:03:07.219309",
+  "total_pairs": 83,
   "pairs": [
     {
       "id": "dining_en_01",
@@ -938,11 +938,11 @@
     {
       "id": "greeting_en_01",
       "question": "Hello, I just arrived at the hotel",
-      "expected_answer": "Welcome to Siam Serenity Hotel! We're delighted to have you. Our front desk is available 24/7 to assist you. Is there anything specific you'd like to know about our facilities or services?",
+      "expected_answer": "Welcome to The Grand Horizon Hotel! We're delighted to have you. Our front desk is available 24/7 to assist you. Is there anything specific you'd like to know about our facilities or services?",
       "expected_context": [],
       "expected_keywords": [
         "welcome",
-        "Siam Serenity",
+        "Grand Horizon",
         "front desk",
         "assist"
       ],
@@ -953,11 +953,11 @@
     {
       "id": "greeting_th_01",
       "question": "สวัสดีครับ เพิ่งมาถึงโรงแรม",
-      "expected_answer": "สวัสดีค่ะ ยินดีต้อนรับสู่โรงแรมสยามเซอเรนิตี้ ทีม Front Desk พร้อมให้บริการ 24 ชั่วโมง มีอะไรให้ช่วยเหลือไหมคะ?",
+      "expected_answer": "สวัสดีค่ะ ยินดีต้อนรับสู่โรงแรม The Grand Horizon Hotel ทีม Front Desk พร้อมให้บริการ 24 ชั่วโมง มีอะไรให้ช่วยเหลือไหมคะ?",
       "expected_context": [],
       "expected_keywords": [
         "ยินดีต้อนรับ",
-        "สยามเซอเรนิตี้",
+        "Grand Horizon",
         "Front Desk",
         "ช่วยเหลือ"
       ],
@@ -1146,6 +1146,317 @@
       "language": "th",
       "category": "policy",
       "difficulty": "medium"
+    },
+    {
+      "id": "booking_create_en_01",
+      "question": "I'd like to make a reservation for 2 adults from March 15 to March 18",
+      "expected_answer": "I'll check available rooms for March 15-18 (3 nights) for 2 adults. Here are the available options with current prices. Please select your preferred room and provide your email to proceed with the reservation.",
+      "expected_context": [],
+      "expected_keywords": [
+        "available",
+        "March",
+        "15",
+        "18",
+        "room",
+        "email"
+      ],
+      "language": "en",
+      "category": "booking",
+      "difficulty": "hard"
+    },
+    {
+      "id": "booking_create_th_01",
+      "question": "อยากจองห้องพักสำหรับ 2 คน วันที่ 15-18 มีนาคม",
+      "expected_answer": "ตรวจสอบห้องว่างสำหรับวันที่ 15-18 มีนาคม (3 คืน) สำหรับ 2 ท่าน มีห้องว่างพร้อมราคาให้เลือก กรุณาเลือกห้องและแจ้งอีเมลเพื่อดำเนินการจอง",
+      "expected_context": [],
+      "expected_keywords": [
+        "ห้องว่าง",
+        "มีนาคม",
+        "15",
+        "18",
+        "เลือก",
+        "อีเมล"
+      ],
+      "language": "th",
+      "category": "booking",
+      "difficulty": "hard"
+    },
+    {
+      "id": "booking_create_en_02",
+      "question": "Book a Suite for my anniversary weekend, I need a room with a view",
+      "expected_answer": "I'd be happy to help you book a Suite for your anniversary! To check Suite availability with a view, please provide your check-in and check-out dates and your email address.",
+      "expected_context": [],
+      "expected_keywords": [
+        "Suite",
+        "anniversary",
+        "view",
+        "dates",
+        "email"
+      ],
+      "language": "en",
+      "category": "booking",
+      "difficulty": "hard"
+    },
+    {
+      "id": "booking_read_en_01",
+      "question": "Can you check my reservation? My name is John Smith",
+      "expected_answer": "I'll look up your reservation, Mr. Smith. Could you please provide your email address used for booking?",
+      "expected_context": [],
+      "expected_keywords": [
+        "reservation",
+        "email",
+        "booking",
+        "happy"
+      ],
+      "language": "en",
+      "category": "booking",
+      "difficulty": "medium"
+    },
+    {
+      "id": "booking_read_th_01",
+      "question": "ช่วยเช็คการจองให้หน่อย ชื่อสมชาย ใจดี",
+      "expected_answer": "ยินดีค่ะคุณสมชาย รบกวนขออีเมลที่ใช้จองค่ะ เพื่อค้นหาข้อมูลการจองของคุณ",
+      "expected_context": [],
+      "expected_keywords": [
+        "สมชาย",
+        "อีเมล",
+        "การจอง",
+        "ค่ะ"
+      ],
+      "language": "th",
+      "category": "booking",
+      "difficulty": "medium"
+    },
+    {
+      "id": "booking_read_en_02",
+      "question": "What's the status of booking confirmation BK-2024-001234?",
+      "expected_answer": "I'll check the booking BK-2024-001234. If not found, please verify the confirmation number or provide email address.",
+      "expected_context": [],
+      "expected_keywords": [
+        "BK-2024",
+        "confirmation",
+        "email",
+        "booking"
+      ],
+      "language": "en",
+      "category": "booking",
+      "difficulty": "medium"
+    },
+    {
+      "id": "booking_update_en_01",
+      "question": "I need to change my check-in date from March 15 to March 17",
+      "expected_answer": "I can help you change your check-in date from March 15 to March 17. Please provide your reservation ID or confirmation number.",
+      "expected_context": [],
+      "expected_keywords": [
+        "change",
+        "check-in",
+        "March",
+        "reservation",
+        "confirmation"
+      ],
+      "language": "en",
+      "category": "booking",
+      "difficulty": "hard"
+    },
+    {
+      "id": "booking_update_th_01",
+      "question": "อยากเปลี่ยนวันเช็คอินจาก 15 มีนา เป็น 17 มีนา",
+      "expected_answer": "ยินดีช่วยเปลี่ยนวันเช็คอินจาก 15 มีนาคม เป็น 17 มีนาคมค่ะ กรุณาแจ้งหมายเลขการจอง",
+      "expected_context": [],
+      "expected_keywords": [
+        "เปลี่ยน",
+        "มีนาคม",
+        "หมายเลข",
+        "การจอง"
+      ],
+      "language": "th",
+      "category": "booking",
+      "difficulty": "hard"
+    },
+    {
+      "id": "booking_update_en_02",
+      "question": "Can I upgrade my Standard room to a Deluxe?",
+      "expected_answer": "I'd be happy to help you upgrade from Standard to Deluxe. Please provide your reservation ID or confirmation number so I can check Deluxe availability for your dates and process the upgrade.",
+      "expected_context": [],
+      "expected_keywords": [
+        "upgrade",
+        "Standard",
+        "Deluxe",
+        "reservation",
+        "confirmation"
+      ],
+      "language": "en",
+      "category": "booking",
+      "difficulty": "hard"
+    },
+    {
+      "id": "booking_update_th_02",
+      "question": "อยากอัพเกรดจากห้อง Standard เป็น Deluxe ได้ไหม?",
+      "expected_answer": "ยินดีช่วยอัพเกรดจาก Standard เป็น Deluxe ค่ะ กรุณาแจ้งหมายเลขการจองหรือ Confirmation Number เพื่อตรวจสอบห้อง Deluxe ว่างและดำเนินการอัพเกรด",
+      "expected_context": [],
+      "expected_keywords": [
+        "อัพเกรด",
+        "Standard",
+        "Deluxe",
+        "หมายเลข",
+        "การจอง"
+      ],
+      "language": "th",
+      "category": "booking",
+      "difficulty": "hard"
+    },
+    {
+      "id": "booking_update_en_03",
+      "question": "I want to add an extra bed to my room",
+      "expected_answer": "Extra beds are available at 800 THB per night. Maximum capacity varies by room: 1 extra bed for Standard/Deluxe, 2 for Suite, 3 for Penthouse. Baby cots are complimentary. Shall I add this to your reservation?",
+      "expected_context": [
+        "room_types.md"
+      ],
+      "expected_keywords": [
+        "extra bed",
+        "800",
+        "maximum",
+        "cot",
+        "reservation"
+      ],
+      "language": "en",
+      "category": "booking",
+      "difficulty": "medium"
+    },
+    {
+      "id": "booking_update_th_03",
+      "question": "อยากเพิ่มเตียงเสริมในห้อง",
+      "expected_answer": "เตียงเสริม 800 บาท/คืน จำนวนสูงสุดตามห้อง: Standard/Deluxe 1 เตียง, Suite 2 เตียง, Penthouse 3 เตียง เปลเด็กฟรี ต้องการเพิ่มในการจองไหมคะ?",
+      "expected_context": [
+        "room_types.md"
+      ],
+      "expected_keywords": [
+        "เตียงเสริม",
+        "800",
+        "สูงสุด",
+        "เปล",
+        "ฟรี"
+      ],
+      "language": "th",
+      "category": "booking",
+      "difficulty": "medium"
+    },
+    {
+      "id": "booking_delete_en_01",
+      "question": "I need to cancel my booking for next week",
+      "expected_answer": "I'll help you cancel your booking. Please note our cancellation policy: Free cancellation more than 48 hours before check-in. Within 48 hours, 1 night charge applies. May I have your confirmation number to proceed?",
+      "expected_context": [
+        "policies_rules.md"
+      ],
+      "expected_keywords": [
+        "cancel",
+        "48 hours",
+        "free",
+        "1 night",
+        "confirmation"
+      ],
+      "language": "en",
+      "category": "booking",
+      "difficulty": "hard"
+    },
+    {
+      "id": "booking_delete_th_01",
+      "question": "ต้องการยกเลิกการจองสัปดาห์หน้า",
+      "expected_answer": "ยินดีช่วยยกเลิกการจองค่ะ นโยบายยกเลิก: ยกเลิกฟรีล่วงหน้ามากกว่า 48 ชม. ภายใน 48 ชม. คิดค่าห้อง 1 คืน ขอหมายเลขยืนยันการจองเพื่อดำเนินการค่ะ",
+      "expected_context": [
+        "policies_rules.md"
+      ],
+      "expected_keywords": [
+        "ยกเลิก",
+        "48 ชม.",
+        "ฟรี",
+        "1 คืน",
+        "หมายเลข"
+      ],
+      "language": "th",
+      "category": "booking",
+      "difficulty": "hard"
+    },
+    {
+      "id": "booking_delete_en_02",
+      "question": "Cancel reservation BK-2024-005678, I won't be able to make it",
+      "expected_answer": "I'll process the cancellation for BK-2024-005678. Checking your check-in date to apply the correct policy. If more than 48 hours away, cancellation is free. I'll confirm the refund amount once processed.",
+      "expected_context": [
+        "policies_rules.md"
+      ],
+      "expected_keywords": [
+        "cancel",
+        "BK-2024",
+        "48 hours",
+        "free",
+        "refund"
+      ],
+      "language": "en",
+      "category": "booking",
+      "difficulty": "hard"
+    },
+    {
+      "id": "booking_list_en_01",
+      "question": "Can you show me all my reservations under this phone number?",
+      "expected_answer": "I'll search for all reservations linked to your phone number. Please provide the number you used for booking. I'll show you upcoming and past reservations with their status.",
+      "expected_context": [],
+      "expected_keywords": [
+        "reservations",
+        "phone",
+        "upcoming",
+        "past",
+        "status"
+      ],
+      "language": "en",
+      "category": "booking",
+      "difficulty": "medium"
+    },
+    {
+      "id": "booking_list_th_01",
+      "question": "ดูการจองทั้งหมดของผม เบอร์โทร 081-234-5678",
+      "expected_answer": "ค้นหาการจองทั้งหมดที่ผูกกับเบอร์ 081-234-5678 ค่ะ จะแสดงการจองที่กำลังจะมาถึงและที่ผ่านมาพร้อมสถานะ",
+      "expected_context": [],
+      "expected_keywords": [
+        "การจอง",
+        "เบอร์",
+        "กำลังจะมา",
+        "สถานะ"
+      ],
+      "language": "th",
+      "category": "booking",
+      "difficulty": "medium"
+    },
+    {
+      "id": "booking_multiturn_en_01",
+      "question": "I booked a Standard room but now I want Suite instead, and also add airport transfer",
+      "expected_answer": "I'll help with both requests: room upgrade to Suite and airport transfer. Please provide your booking confirmation number so I can check Suite availability and arrange the transfer.",
+      "expected_context": [],
+      "expected_keywords": [
+        "upgrade",
+        "Suite",
+        "airport",
+        "transfer",
+        "confirmation"
+      ],
+      "language": "en",
+      "category": "booking",
+      "difficulty": "hard"
+    },
+    {
+      "id": "booking_multiturn_th_01",
+      "question": "จองห้อง Standard ไว้แต่อยากเปลี่ยนเป็น Suite และเพิ่มรถรับสนามบินด้วย",
+      "expected_answer": "ยินดีช่วยทั้ง 2 เรื่องค่ะ: อัพเกรดเป็น Suite และรถรับสนามบิน กรุณาแจ้งหมายเลขการจองเพื่อตรวจสอบห้อง Suite ว่างและจัดรถรับส่ง",
+      "expected_context": [],
+      "expected_keywords": [
+        "อัพเกรด",
+        "Suite",
+        "สนามบิน",
+        "รถรับ",
+        "หมายเลข"
+      ],
+      "language": "th",
+      "category": "booking",
+      "difficulty": "hard"
     }
   ]
 }

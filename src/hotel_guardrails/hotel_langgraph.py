@@ -93,7 +93,7 @@ class HandleOtherTalk(BaseModel):
 # =============================================================================
 
 def load_hotel_prompts() -> Dict[str, Any]:
-    """Load prompts from hotel_prompt.yaml."""
+    """Load prompts from hotel_prompt.yaml and inject current date/time."""
     # Try multiple paths for Railway compatibility
     possible_paths = [
         os.path.join(os.path.dirname(__file__), "..", "agent", "hotel_prompt.yaml"),
@@ -101,33 +101,54 @@ def load_hotel_prompts() -> Dict[str, Any]:
         "src/agent/hotel_prompt.yaml",
     ]
 
+    prompts = None
     for prompt_path in possible_paths:
         try:
             if os.path.exists(prompt_path):
                 with open(prompt_path, 'r', encoding='utf-8') as f:
                     prompts = yaml.safe_load(f)
                     logger.info(f"Loaded prompts from: {prompt_path}")
-                    return prompts
+                    break
         except Exception as e:
             logger.warning(f"Failed to load prompts from {prompt_path}: {e}")
 
-    logger.warning("Using default prompts - no prompt file found")
-    return {
-        "main_prompt": """You are a professional hotel assistant for The Grand Horizon Hotel.
+    if prompts is None:
+        logger.warning("Using default prompts - no prompt file found")
+        prompts = {
+            "main_prompt": """You are a professional hotel assistant for The Grand Horizon Hotel.
 You can communicate fluently in both Thai and English.
 Always respond in the same language the guest uses.
 
 For Thai speakers, use polite particles (ครับ/ค่ะ).
 For English speakers, be professional and warm.
 """
-    }
+        }
+
+    # Inject current date and time into prompts (Bangkok timezone GMT+7)
+    from datetime import timezone, timedelta
+    bangkok_tz = timezone(timedelta(hours=7))
+    now = datetime.now(bangkok_tz)
+    current_date = now.strftime("%Y-%m-%d")  # e.g., 2025-02-04
+    current_time = now.strftime("%H:%M")      # e.g., 14:30
+    current_month = now.strftime("%B %Y")     # e.g., February 2025
+
+    # Replace placeholders in main_prompt
+    if "main_prompt" in prompts and prompts["main_prompt"]:
+        prompts["main_prompt"] = prompts["main_prompt"].format(
+            current_date=current_date,
+            current_time=current_time,
+            current_month=current_month,
+        )
+        logger.info(f"Injected current date into prompts: {current_date} {current_time}")
+
+    return prompts
 
 
 # =============================================================================
 # LLM Initialization
 # =============================================================================
 
-def get_llm(temperature: float = 0.7, max_tokens: int = 1024, streaming: bool = False):
+def get_llm(temperature: float = 0.3, max_tokens: int = 1024, streaming: bool = False):
     """Get LLM - using OpenRouter directly for better LangGraph compatibility."""
     try:
         from src.common.llm_openrouter import get_openrouter_llm
@@ -185,7 +206,7 @@ class HotelAssistant:
 
     async def __call__(self, state: HotelState, config: RunnableConfig) -> Dict:
         llm_settings = config.get('configurable', {}).get('llm_settings', {})
-        temperature = llm_settings.get('temperature', 0.7)
+        temperature = llm_settings.get('temperature', 0.3)
         max_tokens = llm_settings.get('max_tokens', 1024)
 
         llm = get_llm(temperature=temperature, max_tokens=max_tokens)
@@ -257,7 +278,7 @@ async def handle_service(state: HotelState, config: RunnableConfig) -> Dict:
 
     llm_settings = config.get('configurable', {}).get('llm_settings', {})
     llm = get_llm(
-        temperature=llm_settings.get('temperature', 0.5),
+        temperature=llm_settings.get('temperature', 0.3),
         max_tokens=llm_settings.get('max_tokens', 1024)
     )
 
@@ -303,7 +324,7 @@ Retrieved Knowledge:
 
     llm_settings = config.get('configurable', {}).get('llm_settings', {})
     llm = get_llm(
-        temperature=llm_settings.get('temperature', 0.5),
+        temperature=llm_settings.get('temperature', 0.3),
         max_tokens=llm_settings.get('max_tokens', 1024)
     )
 
@@ -337,7 +358,7 @@ For English speakers, be professional and warm.
 
     llm_settings = config.get('configurable', {}).get('llm_settings', {})
     llm = get_llm(
-        temperature=llm_settings.get('temperature', 0.7),
+        temperature=llm_settings.get('temperature', 0.3),
         max_tokens=llm_settings.get('max_tokens', 512)
     )
 
