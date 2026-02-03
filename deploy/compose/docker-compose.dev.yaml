@@ -1,0 +1,180 @@
+# =============================================================================
+# Hotel AI Operations Assistant - Local Development Environment
+# Uses Railway for Qdrant and PostgreSQL, local Redis for session caching
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # Agent Chain Server (Hotel Operations)
+  # ===========================================================================
+  agent-chain-server:
+    container_name: hotel-ai-agent
+    build:
+      context: ../../
+      dockerfile: docker/dev/Dockerfile.dev
+    volumes:
+      # Mount source code for hot-reload
+      - ../../src:/app/src:cached
+      - ../../scripts:/app/scripts:cached
+      - ../../data:/app/data:cached
+    environment:
+      # Application Configuration
+      APP_ENV: development
+      PYTHONPATH: /app
+      EXAMPLE_PATH: './src/agent'
+
+      # LLM Configuration (OpenRouter with Qwen3)
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
+      APP_LLM_MODELNAME: ${APP_LLM_MODELNAME:-qwen/qwen3-max}
+      APP_LLM_MODELENGINE: openrouter
+
+      # Embeddings (local sentence-transformers)
+      APP_EMBEDDINGS_MODELNAME: ${APP_EMBEDDINGS_MODELNAME:-all-MiniLM-L6-v2}
+      APP_EMBEDDINGS_MODELENGINE: sentence-transformers
+
+      # Vector Store - Railway Qdrant
+      APP_VECTORSTORE_NAME: qdrant
+      APP_VECTORSTORE_URL: ${QDRANT_URL:-https://qdrant-production-8938.up.railway.app}
+      QDRANT_URL: ${QDRANT_URL:-https://qdrant-production-8938.up.railway.app}
+
+      # Cache - Local Redis
+      APP_CACHE_NAME: redis
+      APP_CACHE_URL: redis:6379
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_SESSION_EXPIRY: 12
+
+      # Database - Railway PostgreSQL
+      APP_DATABASE_NAME: postgres
+      APP_DATABASE_URL: ${POSTGRES_HOST}:${POSTGRES_PORT}
+      DATABASE_URL: ${DATABASE_URL}
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      CUSTOMER_DATA_DB: ${POSTGRES_DB}
+
+      # Checkpointer - Railway PostgreSQL
+      APP_CHECKPOINTER_NAME: postgres
+      APP_CHECKPOINTER_URL: ${POSTGRES_HOST}:${POSTGRES_PORT}
+
+      # Retriever URLs (internal)
+      CANONICAL_RAG_URL: http://unstructured-retriever:8081
+      STRUCTURED_RAG_URI: http://structured-retriever:8081
+
+      # Graph settings
+      GRAPH_RECURSION_LIMIT: 20
+      GRAPH_TIMEOUT_IN_SEC: 30
+
+      # Logging
+      LOGLEVEL: ${LOGLEVEL:-DEBUG}
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - hotel-ai-network
+    command: ["python", "-m", "uvicorn", "src.hotel_guardrails.server:app", "--host", "0.0.0.0", "--port", "8081", "--reload"]
+
+  # ===========================================================================
+  # API Gateway
+  # ===========================================================================
+  api-gateway-server:
+    container_name: hotel-ai-gateway
+    build:
+      context: ../../
+      dockerfile: ./src/api_gateway/Dockerfile
+    command: --port 9000 --host 0.0.0.0 --workers 1
+    ports:
+      - "9000:9000"
+    environment:
+      AGENT_SERVER_URL: http://agent-chain-server:8081
+      ANALYTICS_SERVER_URL: http://agent-chain-server:8081
+      REQUEST_TIMEOUT: 320
+    depends_on:
+      - agent-chain-server
+    networks:
+      - hotel-ai-network
+
+  # ===========================================================================
+  # Frontend UI (Chat Interface)
+  # ===========================================================================
+  agent-frontend:
+    image: nvcr.io/nvidia/blueprint/aiva-customer-service-ui:1.1.0
+    container_name: hotel-ai-frontend
+    environment:
+      - INFERENCE_ORIGIN=http://api-gateway-server:9000
+    ports:
+      - "3001:3001"
+    depends_on:
+      - api-gateway-server
+    networks:
+      - hotel-ai-network
+
+  # ===========================================================================
+  # Cache - Redis (Local for session management)
+  # ===========================================================================
+  redis:
+    container_name: hotel-ai-redis
+    image: redis:7.0.13-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hotel-ai-network
+
+  # ===========================================================================
+  # Development Container (for running scripts)
+  # ===========================================================================
+  dev:
+    container_name: hotel-ai-dev
+    build:
+      context: ../../
+      dockerfile: docker/dev/Dockerfile.dev
+    volumes:
+      - ../../src:/app/src:cached
+      - ../../scripts:/app/scripts:cached
+      - ../../data:/app/data:cached
+    environment:
+      PYTHONPATH: /app
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
+      APP_LLM_MODELNAME: ${APP_LLM_MODELNAME:-qwen/qwen3-max}
+      DATABASE_URL: ${DATABASE_URL}
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      QDRANT_URL: ${QDRANT_URL:-https://qdrant-production-8938.up.railway.app}
+    networks:
+      - hotel-ai-network
+    stdin_open: true
+    tty: true
+    command: ["tail", "-f", "/dev/null"]
+    profiles:
+      - tools
+
+# ===========================================================================
+# Networks
+# ===========================================================================
+networks:
+  hotel-ai-network:
+    name: hotel-ai-network
+    driver: bridge
+
+# ===========================================================================
+# Volumes
+# ===========================================================================
+volumes:
+  redis-data:
+    name: hotel-ai-redis-data

@@ -1,0 +1,39 @@
+# =============================================================================
+# Hotel AI Operations Assistant - Development Dockerfile
+# No GPU required, optimized for local development with hot-reload
+# =============================================================================
+
+FROM python:3.10-slim-bookworm
+
+# Prevent Python from writing .pyc files and buffering stdout/stderr
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    git \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first for better layer caching
+COPY requirements.dev.txt /app/requirements.dev.txt
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.dev.txt
+
+# Copy source code (will be overridden by volume mount in dev)
+COPY src /app/src
+COPY scripts /app/scripts
+
+# Expose common ports
+EXPOSE 8081 8082 9000
+
+# Default command - run agent server with hot-reload
+CMD ["python", "-m", "uvicorn", "src.agent.server:app", "--host", "0.0.0.0", "--port", "8081", "--reload"]

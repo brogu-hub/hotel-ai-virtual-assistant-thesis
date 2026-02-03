@@ -204,7 +204,7 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app
 app = FastAPI(
-    title="Siam Serenity Hotel Concierge API",
+    title="The Grand Horizon Hotel Concierge API",
     description="""
     Hotel Operations AI powered by LangGraph Agent
 
@@ -520,7 +520,7 @@ async def chat(request: ChatRequest):
             except Exception as rag_error:
                 logger.warning(f"RAG search failed: {rag_error}")
 
-            system_prompt = """You are the Concierge at Siam Serenity Hotel (โรงแรมสยามเซอเรนิตี้).
+            system_prompt = """You are the Concierge at The Grand Horizon Hotel (โรงแรมเดอะแกรนด์ฮอไรซัน).
 Your responsibilities:
 1. Answer questions about the hotel using the provided context
 2. Respond in the same language the guest uses (Thai or English)
@@ -528,7 +528,7 @@ Your responsibilities:
 
 Greeting examples:
 - Thai: "สวัสดีค่ะ/ครับ ยินดีต้อนรับสู่โรงแรมสยามเซอเรนิตี้"
-- English: "Welcome to Siam Serenity Hotel. How may I assist you?"
+- English: "Welcome to The Grand Horizon Hotel. How may I assist you?"
 """
             if rag_context:
                 system_prompt += f"\n\nHotel Information Context:\n{rag_context}"
@@ -1338,7 +1338,7 @@ async def get_feedback_stats():
 async def root():
     """API root - returns basic info."""
     return {
-        "name": "Siam Serenity Hotel Concierge API",
+        "name": "The Grand Horizon Hotel Concierge API",
         "version": "1.0.0",
         "docs": "/docs",
         "health": "/health",

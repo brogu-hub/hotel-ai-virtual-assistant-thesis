@@ -63,7 +63,7 @@ def get_openrouter_llm(
 
     # Get optional configuration from environment
     referer = os.getenv("OPENROUTER_REFERER", "https://siam-serenity-hotel.com")
-    title = os.getenv("OPENROUTER_TITLE", "Siam Serenity Concierge")
+    title = os.getenv("OPENROUTER_TITLE", "Grand Horizon Concierge")
 
     logger.info(f"Initializing OpenRouter LLM with model: {model}")
 

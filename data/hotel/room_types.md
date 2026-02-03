@@ -2,7 +2,7 @@
 
 ## Overview / ภาพรวม
 
-The Grand Paradise Hotel offers 4 room types to suit every guest's needs.
+The Grand Horizon Hotel offers 4 room types to suit every guest's needs.
 โรงแรม เดอะ แกรนด์ พาราไดส์ มีห้องพัก 4 ประเภทเพื่อตอบสนองทุกความต้องการ
 
 All rooms include:
