@@ -378,6 +378,20 @@ async def health_check():
     except Exception as e:
         components["database"] = f"error: {str(e)[:50]}"
 
+    # Check LangGraph adapter
+    try:
+        if langgraph_adapter:
+            lg_health = await langgraph_adapter.health_check()
+            components["langgraph"] = lg_health.get("status", "unknown")
+            if lg_health.get("mode"):
+                components["langgraph"] += f" ({lg_health['mode']})"
+            if lg_health.get("error"):
+                components["langgraph"] += f": {lg_health['error'][:30]}"
+        else:
+            components["langgraph"] = "not_initialized"
+    except Exception as e:
+        components["langgraph"] = f"error: {str(e)[:50]}"
+
     # Determine overall status
     healthy_count = sum(1 for v in components.values() if "healthy" in v)
     total_count = len(components)
