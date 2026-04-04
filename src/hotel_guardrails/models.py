@@ -250,10 +250,15 @@ class StreamChunk(BaseModel):
 class LLMSettingsResponse(BaseModel):
     """Response model for /settings/llm endpoint."""
 
+    backend: str = Field(
+        ...,
+        description="Active LLM backend: 'ollama' or 'openrouter'",
+        examples=["ollama"],
+    )
     model: str = Field(
         ...,
         description="Current LLM model name",
-        examples=["qwen/qwen3-max"],
+        examples=["fredrezones55/qwen3.5-opus:9b"],
     )
     temperature: float = Field(
         ...,
@@ -267,9 +272,48 @@ class LLMSettingsResponse(BaseModel):
         ...,
         description="Whether streaming is enabled",
     )
-    available_models: List[Dict[str, str]] = Field(
+    thinking: bool = Field(
+        False,
+        description="Whether thinking/reasoning mode is enabled",
+    )
+    ollama_base_url: Optional[str] = Field(
+        None,
+        description="Ollama API base URL",
+    )
+    openrouter_model: Optional[str] = Field(
+        None,
+        description="OpenRouter model (for reference when on Ollama)",
+    )
+    available_models: List[Dict[str, Any]] = Field(
         ...,
         description="List of available LLM models",
+    )
+
+
+class LLMSettingsUpdateRequest(BaseModel):
+    """Request model for PUT /settings/llm endpoint."""
+
+    backend: Optional[str] = Field(
+        None,
+        description="Switch backend: 'ollama' or 'openrouter'",
+        examples=["ollama"],
+    )
+    model: Optional[str] = Field(
+        None,
+        description="Model name to use",
+        examples=["fredrezones55/qwen3.5-opus:9b", "qwen/qwen3-max"],
+    )
+    temperature: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=2.0,
+        description="Sampling temperature (0.0-2.0)",
+    )
+    max_tokens: Optional[int] = Field(
+        None,
+        ge=1,
+        le=8192,
+        description="Maximum response tokens",
     )
 
 
@@ -629,3 +673,78 @@ class GuestCreateResponse(BaseModel):
     success: bool = Field(..., description="Whether registration was successful")
     message: str = Field(..., description="Human-readable message in Thai/English")
     guest: Optional[GuestResponse] = Field(None, description="Registered guest details")
+
+
+# =============================================================================
+# Admin Models
+# =============================================================================
+
+
+class AdminRoomStatusRequest(BaseModel):
+    """Request to update room status."""
+    status: str = Field(..., description="New status: available, occupied, maintenance, cleaning")
+    notes: Optional[str] = Field(None, description="Admin notes")
+
+
+class AdminBookingStatusRequest(BaseModel):
+    """Request to override booking status."""
+    status: str = Field(..., description="New status: pending, confirmed, checked_in, checked_out, cancelled, no_show")
+    notes: Optional[str] = Field(None, description="Admin notes / reason")
+
+
+class AdminChatOverrideRequest(BaseModel):
+    """Admin sends a message directly to a guest session (overriding bot)."""
+    session_id: str = Field(..., description="Target session ID")
+    message: str = Field(..., min_length=1, max_length=4096, description="Admin message to guest")
+
+
+class AdminChatOverrideResponse(BaseModel):
+    """Response after admin chat override."""
+    success: bool
+    session_id: str
+    message: str
+
+
+# =============================================================================
+# Dashboard Models
+# =============================================================================
+
+
+class DashboardStatsResponse(BaseModel):
+    """Hotel dashboard overview statistics."""
+    rooms: Dict[str, Any] = Field(..., description="Room status breakdown")
+    reservations: Dict[str, Any] = Field(..., description="Reservation status breakdown")
+    today_new_bookings: int = Field(0, description="Bookings created today")
+    today_checkins: int = Field(0, description="Expected check-ins today")
+    today_checkouts: int = Field(0, description="Expected check-outs today")
+    total_revenue: float = Field(0, description="Total revenue (non-cancelled)")
+    today_revenue: float = Field(0, description="Revenue from today's bookings")
+    total_guests: int = Field(0, description="Total registered guests")
+    service_requests: Dict[str, Any] = Field(default_factory=dict, description="Service request status breakdown")
+    occupancy_rate: float = Field(0, description="Current occupancy percentage")
+
+
+class RecentBookingItem(BaseModel):
+    """Single recent booking for dashboard feed."""
+    reservation_id: int
+    confirmation_number: Optional[str] = None
+    status: str
+    check_in_date: Any
+    check_out_date: Any
+    total_amount: Optional[float] = None
+    created_at: Any
+    booking_source: Optional[str] = None
+    room_number: Optional[str] = None
+    room_type: Optional[str] = None
+    email: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+
+
+class SessionStatsResponse(BaseModel):
+    """Conversation session statistics."""
+    total_sessions: int = 0
+    total_messages: int = 0
+    user_messages: int = 0
+    bot_messages: int = 0
+    admin_messages: int = 0

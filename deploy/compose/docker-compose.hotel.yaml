@@ -1,0 +1,188 @@
+# =============================================================================
+# Hotel AI Operations Assistant - Local Development with Ollama
+# Self-contained stack: Ollama (LLM + Embeddings), PostgreSQL, Redis, Qdrant, API
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # Ollama - Local LLM and Embedding Server
+  # ===========================================================================
+  hotel-ollama:
+    container_name: hotel-ollama
+    image: ollama/ollama:latest
+    volumes:
+      - hotel-ollama-data:/root/.ollama
+    ports:
+      - "11435:11434"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 45s
+    networks:
+      - hotel-ai-network
+
+  # ===========================================================================
+  # PostgreSQL - Hotel Database
+  # ===========================================================================
+  hotel-db:
+    container_name: hotel-db
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: hotel
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: hotelpass123
+    volumes:
+      - hotel-db-data:/var/lib/postgresql/data
+      - ./init-scripts/init-hotel.sql:/docker-entrypoint-initdb.d/01-init-hotel.sql
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hotel"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - hotel-ai-network
+
+  # ===========================================================================
+  # Redis - Session Cache
+  # ===========================================================================
+  hotel-redis:
+    container_name: hotel-redis
+    image: redis:7.0.13-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - hotel-redis-data:/data
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - hotel-ai-network
+
+  # ===========================================================================
+  # Qdrant - Vector Database for Hotel Knowledge RAG
+  # ===========================================================================
+  hotel-qdrant:
+    container_name: hotel-qdrant
+    image: qdrant/qdrant:latest
+    volumes:
+      - hotel-qdrant-data:/qdrant/storage
+    ports:
+      - "6334:6333"
+      - "6335:6334"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6333' 2>/dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - hotel-ai-network
+
+  # ===========================================================================
+  # Hotel API Server (FastAPI + LangGraph Agent)
+  # ===========================================================================
+  hotel-api:
+    container_name: hotel-api
+    build:
+      context: ../../
+      dockerfile: docker/dev/Dockerfile.dev
+    volumes:
+      - ../../src:/app/src:cached
+      - ../../scripts:/app/scripts:cached
+      - ../../data:/app/data:cached
+    environment:
+      PYTHONPATH: /app
+      APP_ENV: development
+
+      # --- LLM: Local Ollama (default, switchable at runtime via PUT /settings/llm) ---
+      LLM_BACKEND: ollama
+      OLLAMA_BASE_URL: http://hotel-ollama:11434/v1
+      OLLAMA_MODEL: fredrezones55/qwen3.5-opus:9b
+
+      # --- OpenRouter (available for runtime switching) ---
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-sk-dummy-not-used}
+      OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-qwen/qwen3-max}
+      OPENROUTER_RATE_LIMIT: ${OPENROUTER_RATE_LIMIT:-20}
+
+      # --- Embeddings: OpenRouter qwen3-embedding-8b ---
+      EMBEDDING_BACKEND: openrouter
+      EMBEDDING_MODEL: qwen/qwen3-embedding-8b
+      EMBEDDING_VECTOR_SIZE: "4096"
+
+      # --- Vector Store: Local Qdrant ---
+      QDRANT_URL: http://hotel-qdrant:6333
+      APP_VECTORSTORE_NAME: qdrant
+
+      # --- Database: Local PostgreSQL ---
+      DATABASE_URL: postgresql://postgres:hotelpass123@hotel-db:5432/hotel
+      POSTGRES_HOST: hotel-db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: hotel
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: hotelpass123
+      CUSTOMER_DATA_DB: hotel
+
+      # --- Cache: Local Redis ---
+      REDIS_HOST: hotel-redis
+      REDIS_PORT: "6379"
+      APP_CACHE_URL: hotel-redis:6379
+      REDIS_SESSION_EXPIRY: "12"
+
+      # --- LangGraph ---
+      LANGGRAPH_MODE: embedded
+      APP_CHECKPOINTER_NAME: postgres
+      GRAPH_RECURSION_LIMIT: "20"
+      GRAPH_TIMEOUT_IN_SEC: "60"
+
+      # --- NeMo Guardrails: Disabled for local Ollama ---
+      NEMO_GUARDRAILS_ENABLED: "false"
+
+      # --- Reranker: Local Qwen (no NVIDIA API needed) ---
+      RERANKER_BACKEND: qwen
+
+      # --- Logging ---
+      LOGLEVEL: DEBUG
+      LOG_LEVEL: DEBUG
+
+    ports:
+      - "8088:8088"
+    depends_on:
+      hotel-ollama:
+        condition: service_healthy
+      hotel-db:
+        condition: service_healthy
+      hotel-redis:
+        condition: service_healthy
+      hotel-qdrant:
+        condition: service_healthy
+    networks:
+      - hotel-ai-network
+    command: >
+      python -m uvicorn src.hotel_guardrails.server:app
+      --host 0.0.0.0 --port 8088 --reload
+
+networks:
+  hotel-ai-network:
+    name: hotel-ai-network
+    driver: bridge
+
+volumes:
+  hotel-ollama-data:
+  hotel-db-data:
+  hotel-redis-data:
+  hotel-qdrant-data:

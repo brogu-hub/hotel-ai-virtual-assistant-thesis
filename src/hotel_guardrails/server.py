@@ -32,11 +32,18 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 
-from nemoguardrails import RailsConfig, LLMRails
+try:
+    from nemoguardrails import RailsConfig, LLMRails
+    NEMO_AVAILABLE = True
+except ImportError:
+    NEMO_AVAILABLE = False
 from langchain_openai import ChatOpenAI
 
 from .openrouter_llm import get_openrouter_llm
-from .config import get_llm_settings, get_server_settings, AVAILABLE_MODELS
+from .config import (
+    get_llm_settings, get_server_settings, AVAILABLE_MODELS,
+    get_runtime_llm_config, LLMBackend,
+)
 from .models import (
     ChatRequest,
     ChatResponse,
@@ -45,6 +52,13 @@ from .models import (
     HealthResponse,
     ErrorResponse,
     LLMSettingsResponse,
+    LLMSettingsUpdateRequest,
+    AdminRoomStatusRequest,
+    AdminBookingStatusRequest,
+    AdminChatOverrideRequest,
+    AdminChatOverrideResponse,
+    DashboardStatsResponse,
+    SessionStatsResponse,
     SessionCreateResponse,
     SessionInfo,
     # New models for extended endpoints
@@ -102,92 +116,110 @@ tags_metadata = [
     {"name": "Sessions", "description": "Conversation session management"},
     {"name": "Settings", "description": "LLM and server configuration"},
     {"name": "Feedback", "description": "Response quality feedback for continuous improvement"},
+    {"name": "Admin", "description": "Hotel staff admin operations (override bot, manage rooms/bookings)"},
+    {"name": "Dashboard", "description": "Real-time hotel statistics and monitoring"},
     {"name": "Root", "description": "API information"},
 ]
 
 # Global rails instance
 rails: LLMRails = None
+# Admin-controlled sessions (bot paused, admin responding)
+admin_controlled_sessions: set = set()
 # Fallback LangChain LLM for when NeMo fails
 langchain_llm: ChatOpenAI = None
 # Hybrid routing components
 hybrid_router: HybridRouter = None
 langgraph_adapter: LangGraphAdapter = None
 feedback_collector: FeedbackCollector = None
+# Escalation monitor
+escalation_monitor = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize NeMo Guardrails and hybrid routing on startup."""
-    global rails, langchain_llm, hybrid_router, langgraph_adapter, feedback_collector
+    global rails, langchain_llm, hybrid_router, langgraph_adapter, feedback_collector, escalation_monitor
+
+    # Initialize RuntimeLLMConfig singleton (reads env vars)
+    runtime_config = get_runtime_llm_config()
+    logger.info(f"LLM backend: {runtime_config.backend.value}, model: {runtime_config.active_model}")
 
     # Set OpenRouter API key for NeMo
     api_key = os.getenv("OPENROUTER_API_KEY")
-    if not api_key:
-        logger.warning("OPENROUTER_API_KEY not set - guardrails will fail to initialize")
-
-    # Set as OPENAI_API_KEY for NeMo's OpenAI engine
-    os.environ["OPENAI_API_KEY"] = api_key or ""
+    if api_key:
+        os.environ["OPENAI_API_KEY"] = api_key
 
     # Get LLM settings from config
     llm_settings = get_llm_settings()
 
-    # Initialize LangChain LLM with proper OpenRouter headers
+    # Initialize LangChain LLM (uses runtime config backend)
     try:
         langchain_llm = get_openrouter_llm(
-            model=llm_settings.model,
-            temperature=llm_settings.temperature,
-            max_tokens=llm_settings.max_tokens,
-            streaming=False,  # Non-streaming for generate
+            model=runtime_config.active_model,
+            temperature=runtime_config.temperature,
+            max_tokens=runtime_config.max_tokens,
+            streaming=False,
         )
-        logger.info(f"LangChain OpenRouter LLM initialized with {llm_settings.model}")
+        logger.info(f"LangChain LLM initialized: {runtime_config.active_model}")
     except Exception as e:
         logger.error(f"Failed to initialize LangChain LLM: {e}")
         langchain_llm = None
 
-    # Load config from src/hotel_guardrails/config/
-    config_path = os.path.join(os.path.dirname(__file__), "config")
+    # NeMo Guardrails (optional - disabled for Ollama backend)
+    nemo_enabled = (
+        NEMO_AVAILABLE
+        and os.getenv("NEMO_GUARDRAILS_ENABLED", "true").lower() == "true"
+    )
 
-    logger.info(f"Loading NeMo Guardrails config from {config_path}")
+    if nemo_enabled:
+        config_path = os.path.join(os.path.dirname(__file__), "config")
+        logger.info(f"Loading NeMo Guardrails config from {config_path}")
 
+        try:
+            config = RailsConfig.from_path(config_path)
+            rails = LLMRails(config)
+
+            if langchain_llm:
+                rails.register_action(lambda: langchain_llm, "get_main_llm")
+                logger.info("Registered LangChain LLM with NeMo Guardrails")
+
+            rails.register_action(search_hotel_knowledge, "search_hotel_knowledge")
+            rails.register_action(check_room_availability, "check_room_availability")
+            rails.register_action(create_reservation, "create_reservation")
+            rails.register_action(confirm_reservation, "confirm_reservation")
+            rails.register_action(cancel_reservation, "cancel_reservation")
+            rails.register_action(get_reservation_details, "get_reservation_details")
+            rails.register_action(check_input_safety, "check_input_safety")
+            rails.register_action(check_output_safety, "check_output_safety")
+            rails.register_action(detect_language, "detect_language")
+            rails.register_action(format_bilingual_response, "format_bilingual_response")
+
+            logger.info("NeMo Guardrails initialized successfully")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize NeMo Guardrails: {e}")
+    else:
+        reason = "NEMO_GUARDRAILS_ENABLED=false" if NEMO_AVAILABLE else "nemoguardrails not installed"
+        logger.info(f"NeMo Guardrails disabled ({reason}) - using LangGraph-only path")
+
+    # Initialize persistent checkpointer (PostgreSQL or in-memory)
     try:
-        config = RailsConfig.from_path(config_path)
-        rails = LLMRails(config)
-
-        # Register the LangChain LLM with NeMo if available
-        if langchain_llm:
-            # Register as the main LLM provider
-            rails.register_action(
-                lambda: langchain_llm,
-                "get_main_llm"
-            )
-            logger.info("Registered LangChain LLM with NeMo Guardrails")
-
-        # Register custom actions
-        rails.register_action(search_hotel_knowledge, "search_hotel_knowledge")
-        rails.register_action(check_room_availability, "check_room_availability")
-        rails.register_action(create_reservation, "create_reservation")
-        rails.register_action(confirm_reservation, "confirm_reservation")
-        rails.register_action(cancel_reservation, "cancel_reservation")
-        rails.register_action(get_reservation_details, "get_reservation_details")
-        rails.register_action(check_input_safety, "check_input_safety")
-        rails.register_action(check_output_safety, "check_output_safety")
-        rails.register_action(detect_language, "detect_language")
-        rails.register_action(format_bilingual_response, "format_bilingual_response")
-
-        logger.info("NeMo Guardrails initialized successfully")
-
+        from src.hotel_guardrails.hotel_langgraph import init_checkpointer, close_checkpointer
+        checkpointer = await init_checkpointer()
     except Exception as e:
-        logger.error(f"Failed to initialize NeMo Guardrails: {e}")
-        # Don't raise - allow server to start for health checks
+        logger.error(f"Failed to initialize checkpointer: {e}")
+        checkpointer = None
 
-    # Initialize hybrid routing components
+    # Initialize hybrid routing components (passes checkpointer to LangGraph)
     try:
         feedback_collector = FeedbackCollector()
         hybrid_router = HybridRouter(
             feedback_store=feedback_collector.get_average_score
         )
-        langgraph_adapter = LangGraphAdapter()
-        logger.info("Hybrid routing components initialized")
+        langgraph_adapter = LangGraphAdapter(checkpointer=checkpointer)
+        from src.hotel_guardrails.escalation import EscalationMonitor
+        escalation_monitor = EscalationMonitor()
+        logger.info("Hybrid routing + escalation monitor initialized")
     except Exception as e:
         logger.error(f"Failed to initialize hybrid routing: {e}")
 
@@ -204,8 +236,13 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Cleanup
-    logger.info("Shutting down NeMo Guardrails")
+    # Cleanup: close checkpointer pool
+    try:
+        from src.hotel_guardrails.hotel_langgraph import close_checkpointer
+        await close_checkpointer()
+    except Exception:
+        pass
+    logger.info("Server shutdown complete")
 
 
 # Create FastAPI app
@@ -491,11 +528,38 @@ async def chat(request: ChatRequest):
             logger.warning(f"Safety check failed: {e}")
             # Continue with LangGraph anyway
 
-    # Step 2: Process with LangGraph Agent (primary)
+    # Step 2: Check if session is admin-controlled (staff took over)
+    if session_id in admin_controlled_sessions:
+        # Save user message but don't generate bot response
+        try:
+            await db.save_conversation_message(session_id, "user", request.message)
+        except Exception:
+            pass
+        return ChatResponse(
+            response="เจ้าหน้าที่โรงแรมกำลังช่วยเหลือท่านอยู่ กรุณารอสักครู่ค่ะ / "
+                     "A hotel staff member is assisting you. Please wait.",
+            session_id=session_id,
+            request_id=request_id,
+            routing_path="admin_override",
+            complexity="admin",
+        )
+
+    # Step 2.5: PII Redaction — scrub sensitive data before LLM
+    from src.hotel_guardrails.pii_redactor import redact_pii, check_output_pii
+    message_for_llm = request.message
+    pii_found = {}
+    try:
+        message_for_llm, pii_found = redact_pii(request.message, preserve_email=True)
+        if pii_found:
+            logger.info(f"PII redacted from input: {list(pii_found.keys())}")
+    except Exception as e:
+        logger.warning(f"PII redaction failed: {e}")
+
+    # Step 3: Process with LangGraph Agent (primary)
     if langgraph_adapter:
         try:
             result = await langgraph_adapter.invoke(
-                message=request.message,
+                message=message_for_llm,
                 session_id=session_id,
             )
 
@@ -604,6 +668,33 @@ Greeting examples:
         )
     except Exception as e:
         logger.warning(f"Failed to save conversation: {e}")
+
+    # Step 6: Auto-escalation check
+    if escalation_monitor and content:
+        try:
+            should_esc, esc_reason, esc_priority = escalation_monitor.should_escalate(
+                session_id=session_id,
+                message=request.message,
+                context={"response": content, "tool_calls": tool_calls},
+            )
+            if should_esc:
+                admin_controlled_sessions.add(session_id)
+                await db.save_conversation_message(
+                    session_id, "system",
+                    f"[Auto-escalation] {esc_reason} | Priority: {esc_priority}",
+                )
+                logger.warning(f"Auto-escalated session {session_id}: {esc_reason} ({esc_priority})")
+        except Exception as e:
+            logger.warning(f"Escalation check failed: {e}")
+
+    # Step 7: Check bot output for leaked PII
+    if content and pii_found:
+        try:
+            has_output_pii, output_pii = check_output_pii(content)
+            if has_output_pii:
+                logger.warning(f"PII detected in bot output: {list(output_pii.keys())}")
+        except Exception:
+            pass
 
     return ChatResponse(
         response=content,
@@ -1260,15 +1351,64 @@ async def get_llm_configuration():
     """
     Get current LLM configuration.
 
-    Returns the active LLM settings and list of available models.
-    Frontend can use this to populate model selection dropdowns.
+    Returns the active LLM settings including backend (ollama/openrouter)
+    and list of available models. Frontend can populate model dropdowns.
     """
-    settings = get_llm_settings()
+    runtime_config = get_runtime_llm_config()
     return LLMSettingsResponse(
-        model=settings.model,
-        temperature=settings.temperature,
-        max_tokens=settings.max_tokens,
-        streaming=settings.streaming,
+        backend=runtime_config.backend.value,
+        model=runtime_config.active_model,
+        temperature=runtime_config.temperature,
+        max_tokens=runtime_config.max_tokens,
+        streaming=runtime_config.streaming,
+        thinking=runtime_config.thinking,
+        ollama_base_url=runtime_config.ollama_base_url,
+        openrouter_model=runtime_config.openrouter_model,
+        available_models=AVAILABLE_MODELS,
+    )
+
+
+@app.put("/settings/llm", response_model=LLMSettingsResponse, tags=["Settings"])
+async def update_llm_configuration(request: LLMSettingsUpdateRequest):
+    """
+    Update LLM configuration at runtime (no restart needed).
+
+    Switch between backends:
+    - `ollama`: Local Ollama (e.g., fredrezones55/qwen3.5-opus:9b)
+    - `openrouter`: Cloud OpenRouter (e.g., qwen/qwen3-max)
+
+    Example:
+        PUT /settings/llm {"backend": "ollama", "model": "fredrezones55/qwen3.5-opus:9b"}
+        PUT /settings/llm {"backend": "openrouter", "model": "qwen/qwen3-max"}
+        PUT /settings/llm {"temperature": 0.5}
+    """
+    runtime_config = get_runtime_llm_config()
+
+    # Validate backend value
+    if request.backend is not None and request.backend.lower() not in ("ollama", "openrouter"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid backend '{request.backend}'. Must be 'ollama' or 'openrouter'.",
+        )
+
+    changes = runtime_config.update(
+        backend=request.backend,
+        model=request.model,
+        temperature=request.temperature,
+        max_tokens=request.max_tokens,
+    )
+
+    logger.info(f"LLM settings updated via API: {changes}")
+
+    return LLMSettingsResponse(
+        backend=runtime_config.backend.value,
+        model=runtime_config.active_model,
+        temperature=runtime_config.temperature,
+        max_tokens=runtime_config.max_tokens,
+        streaming=runtime_config.streaming,
+        thinking=runtime_config.thinking,
+        ollama_base_url=runtime_config.ollama_base_url,
+        openrouter_model=runtime_config.openrouter_model,
         available_models=AVAILABLE_MODELS,
     )
 
@@ -1473,6 +1613,630 @@ async def get_feedback_stats():
 
 # =============================================================================
 # Root Endpoint
+# =============================================================================
+
+
+# =============================================================================
+# Admin Endpoints
+# =============================================================================
+
+
+@app.put("/admin/rooms/{room_id}/status", tags=["Admin"])
+async def admin_set_room_status(room_id: int, request: AdminRoomStatusRequest):
+    """
+    Admin: Update room status (available, occupied, maintenance, cleaning).
+
+    Used by hotel staff to manage room inventory directly.
+    """
+    result = await db.admin_update_room_status(room_id, request.status, request.notes)
+    if not result:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to update room {room_id}. Check room_id and status value.",
+        )
+    return {"success": True, **result}
+
+
+@app.put("/admin/bookings/{reservation_id}/status", tags=["Admin"])
+async def admin_set_booking_status(reservation_id: str, request: AdminBookingStatusRequest):
+    """
+    Admin: Override booking status.
+
+    Allows front desk to manually change any booking status
+    (e.g., force check-in, mark no-show, override cancellation).
+    """
+    result = await db.admin_update_booking_status(reservation_id, request.status, request.notes)
+    if not result:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to update booking {reservation_id}. Check ID and status value.",
+        )
+    return {"success": True, **result}
+
+
+@app.post("/admin/chat/override", response_model=AdminChatOverrideResponse, tags=["Admin"])
+async def admin_chat_override(request: AdminChatOverrideRequest):
+    """
+    Admin: Send a message directly to a guest's chat session.
+
+    Allows hotel staff to take over a conversation from the bot.
+    The message is stored in conversation history with role='admin'
+    so the frontend can distinguish bot vs staff messages.
+    """
+    success = await db.admin_send_message_to_session(request.session_id, request.message)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to send admin message")
+    return AdminChatOverrideResponse(
+        success=True,
+        session_id=request.session_id,
+        message=request.message,
+    )
+
+
+@app.post("/admin/sessions/{session_id}/takeover", tags=["Admin"])
+async def admin_takeover_session(session_id: str):
+    """
+    Admin: Take over a chat session.
+
+    Pauses the AI bot for this session. All subsequent guest messages
+    will get a "staff is assisting" response instead of bot replies.
+    Admin uses /admin/chat/override to send messages to the guest.
+    """
+    admin_controlled_sessions.add(session_id)
+    await db.admin_send_message_to_session(
+        session_id,
+        "[System] Hotel staff has joined the conversation / เจ้าหน้าที่โรงแรมเข้าร่วมสนทนาแล้ว",
+    )
+    return {"success": True, "session_id": session_id, "status": "admin_controlled"}
+
+
+@app.post("/admin/sessions/{session_id}/release", tags=["Admin"])
+async def admin_release_session(session_id: str):
+    """
+    Admin: Release a chat session back to the AI bot.
+
+    Resumes normal bot responses for the guest.
+    """
+    admin_controlled_sessions.discard(session_id)
+    await db.admin_send_message_to_session(
+        session_id,
+        "[System] AI assistant has resumed / ผู้ช่วย AI กลับมาให้บริการแล้ว",
+    )
+    return {"success": True, "session_id": session_id, "status": "bot_active"}
+
+
+@app.get("/admin/sessions", tags=["Admin"])
+async def admin_list_active_sessions():
+    """
+    Admin: List active chat sessions with last message preview.
+
+    Used by admin dashboard to monitor all ongoing conversations.
+    Shows which sessions are admin-controlled vs bot-active.
+    """
+    try:
+        with db.get_cursor() as (cur, conn):
+            cur.execute("""
+                SELECT ch.session_id,
+                       COUNT(*) as message_count,
+                       MIN(ch.created_at) as started_at,
+                       MAX(ch.created_at) as last_activity
+                FROM conversation_history ch
+                WHERE ch.created_at > NOW() - INTERVAL '24 hours'
+                GROUP BY ch.session_id
+                ORDER BY MAX(ch.created_at) DESC
+                LIMIT 50
+            """)
+            sessions = []
+            for row in cur.fetchall():
+                sid = row["session_id"]
+                # Get last message preview
+                cur.execute("""
+                    SELECT role, content FROM conversation_history
+                    WHERE session_id = %s
+                    ORDER BY created_at DESC LIMIT 1
+                """, (sid,))
+                last_msg = cur.fetchone()
+
+                sessions.append({
+                    "session_id": sid,
+                    "message_count": row["message_count"],
+                    "started_at": row["started_at"],
+                    "last_activity": row["last_activity"],
+                    "last_message_role": last_msg["role"] if last_msg else None,
+                    "last_message_preview": last_msg["content"][:100] if last_msg else None,
+                    "status": "admin_controlled" if sid in admin_controlled_sessions else "bot_active",
+                })
+
+        return {"sessions": sessions, "count": len(sessions)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/admin/sessions/{session_id}/messages", tags=["Admin"])
+async def admin_get_session_messages(session_id: str, limit: int = 100):
+    """
+    Admin: Get full conversation for a session.
+
+    Returns all messages (user, assistant, admin, system) in chronological order.
+    Used by admin dashboard to display the live chat view.
+    """
+    try:
+        with db.get_cursor() as (cur, conn):
+            cur.execute("""
+                SELECT role, content, created_at
+                FROM conversation_history
+                WHERE session_id = %s
+                ORDER BY created_at ASC
+                LIMIT %s
+            """, (session_id, min(limit, 500)))
+            messages = [dict(r) for r in cur.fetchall()]
+        return {
+            "session_id": session_id,
+            "status": "admin_controlled" if session_id in admin_controlled_sessions else "bot_active",
+            "messages": messages,
+            "count": len(messages),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# Time-Travel / State History Endpoints
+# =============================================================================
+
+
+@app.get("/admin/escalations", tags=["Admin"])
+async def admin_get_escalations(limit: int = 20):
+    """
+    Admin: List auto-escalated sessions with reasons and priority.
+    """
+    try:
+        with db.get_cursor() as (cur, conn):
+            cur.execute("""
+                SELECT session_id, content, created_at
+                FROM conversation_history
+                WHERE role = 'system' AND content LIKE '[Auto-escalation]%%'
+                ORDER BY created_at DESC
+                LIMIT %s
+            """, (min(limit, 100),))
+            rows = [dict(r) for r in cur.fetchall()]
+        return {"escalations": rows, "count": len(rows)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/admin/sessions/{session_id}/states", tags=["Admin"])
+async def admin_get_state_history(session_id: str, limit: int = 20):
+    """
+    Admin: Get LangGraph checkpoint history for a session.
+
+    Returns each step the agent took, including which node ran,
+    what messages existed at that point, and the checkpoint_id
+    needed for rollback/replay.
+
+    This is the "time travel" view — every step is a rewindable snapshot.
+    """
+    if not langgraph_adapter or not langgraph_adapter._graph:
+        raise HTTPException(status_code=503, detail="LangGraph agent not available")
+
+    graph = langgraph_adapter._graph
+    config = {"configurable": {"thread_id": session_id}}
+
+    states = []
+    try:
+        async for snapshot in graph.aget_state_history(config, limit=min(limit, 50)):
+            checkpoint_id = snapshot.config.get("configurable", {}).get("checkpoint_id")
+            parent_id = None
+            if snapshot.parent_config:
+                parent_id = snapshot.parent_config.get("configurable", {}).get("checkpoint_id")
+
+            # Extract last message content for preview
+            messages = snapshot.values.get("messages", [])
+            last_msg = None
+            if messages:
+                m = messages[-1]
+                last_msg = {
+                    "role": getattr(m, "type", "unknown"),
+                    "content": (m.content or "")[:200] if hasattr(m, "content") else "",
+                    "has_tool_calls": bool(getattr(m, "tool_calls", None)),
+                }
+
+            states.append({
+                "step": snapshot.metadata.get("step", 0),
+                "checkpoint_id": checkpoint_id,
+                "parent_checkpoint_id": parent_id,
+                "source": snapshot.metadata.get("source", ""),
+                "node": snapshot.metadata.get("writes", {}),
+                "next_nodes": list(snapshot.next) if snapshot.next else [],
+                "message_count": len(messages),
+                "last_message": last_msg,
+                "current_intent": snapshot.values.get("current_intent", ""),
+                "created_at": snapshot.created_at,
+            })
+
+        return {
+            "session_id": session_id,
+            "states": states,
+            "count": len(states),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/admin/sessions/{session_id}/rollback", tags=["Admin"])
+async def admin_rollback_session(session_id: str, checkpoint_id: str):
+    """
+    Admin: Roll back a session to a previous checkpoint.
+
+    Time-travel: rewinds the conversation to the specified checkpoint step.
+    The next guest message will continue from that point as if the later
+    messages never happened.
+
+    Get available checkpoint_ids from GET /admin/sessions/{id}/states.
+
+    Args:
+        checkpoint_id: Target checkpoint to roll back to (from states endpoint)
+    """
+    if not langgraph_adapter or not langgraph_adapter._graph:
+        raise HTTPException(status_code=503, detail="LangGraph agent not available")
+
+    graph = langgraph_adapter._graph
+
+    try:
+        # Verify the checkpoint exists
+        replay_config = {
+            "configurable": {
+                "thread_id": session_id,
+                "checkpoint_id": checkpoint_id,
+            }
+        }
+        state = await graph.aget_state(replay_config)
+        if not state:
+            raise HTTPException(status_code=404, detail=f"Checkpoint {checkpoint_id} not found")
+
+        # Update state to create a new branch from this checkpoint
+        # This makes the old checkpoint the "current" one for the thread
+        new_config = await graph.aupdate_state(
+            replay_config,
+            values=None,  # No state changes, just fork from this point
+        )
+
+        new_checkpoint_id = new_config.get("configurable", {}).get("checkpoint_id")
+        step = state.metadata.get("step", 0)
+        msg_count = len(state.values.get("messages", []))
+
+        # Log the rollback in conversation_history for admin dashboard
+        await db.admin_send_message_to_session(
+            session_id,
+            f"[System] Session rolled back to step {step} (checkpoint: {checkpoint_id[:12]}...)",
+        )
+
+        return {
+            "success": True,
+            "session_id": session_id,
+            "rolled_back_to": {
+                "checkpoint_id": checkpoint_id,
+                "step": step,
+                "message_count": msg_count,
+                "intent": state.values.get("current_intent", ""),
+            },
+            "new_checkpoint_id": new_checkpoint_id,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/admin/sessions/{session_id}/replay", tags=["Admin"])
+async def admin_replay_from_checkpoint(
+    session_id: str,
+    checkpoint_id: str,
+    message: str,
+):
+    """
+    Admin: Replay a session from a specific checkpoint with a new message.
+
+    Time-travel + branch: goes back to the specified checkpoint and sends
+    a new message as if the guest typed it at that point. Creates a new
+    conversation branch from that step.
+
+    Use case: "What if the guest had said X instead of Y at step 3?"
+
+    Args:
+        checkpoint_id: Target checkpoint to replay from
+        message: New message to send from that point
+    """
+    if not langgraph_adapter or not langgraph_adapter._graph:
+        raise HTTPException(status_code=503, detail="LangGraph agent not available")
+
+    graph = langgraph_adapter._graph
+
+    try:
+        from langchain_core.messages import HumanMessage
+
+        replay_config = {
+            "configurable": {
+                "thread_id": session_id,
+                "checkpoint_id": checkpoint_id,
+            }
+        }
+
+        # Verify checkpoint exists
+        state = await graph.aget_state(replay_config)
+        if not state:
+            raise HTTPException(status_code=404, detail=f"Checkpoint {checkpoint_id} not found")
+
+        from_step = state.metadata.get("step", 0)
+
+        # Invoke graph from the checkpoint with new message
+        result = await graph.ainvoke(
+            {"messages": [HumanMessage(content=message)]},
+            config=replay_config,
+        )
+
+        # Extract response
+        final_messages = result.get("messages", [])
+        response_text = ""
+        for msg in reversed(final_messages):
+            if hasattr(msg, "content") and msg.content and getattr(msg, "type", "") == "ai":
+                response_text = msg.content
+                break
+
+        return {
+            "success": True,
+            "session_id": session_id,
+            "replayed_from": {
+                "checkpoint_id": checkpoint_id,
+                "step": from_step,
+            },
+            "new_message": message,
+            "response": response_text,
+            "total_messages": len(final_messages),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# Dashboard Endpoints
+# =============================================================================
+
+
+@app.get("/dashboard/stats", response_model=DashboardStatsResponse, tags=["Dashboard"])
+async def get_dashboard_statistics():
+    """
+    Dashboard: Hotel overview statistics.
+
+    Returns room occupancy, reservation counts, revenue,
+    today's check-ins/outs, and service request status.
+    """
+    stats = await db.get_dashboard_stats()
+    if "error" in stats:
+        raise HTTPException(status_code=500, detail=stats["error"])
+    return stats
+
+
+@app.get("/dashboard/bookings/recent", tags=["Dashboard"])
+async def get_recent_bookings_feed(limit: int = 20):
+    """
+    Dashboard: Recent bookings feed.
+
+    Live feed of the most recent reservations with guest and room details.
+    """
+    bookings = await db.get_recent_bookings(min(limit, 100))
+    return {"bookings": bookings, "count": len(bookings)}
+
+
+@app.get("/dashboard/sessions", response_model=SessionStatsResponse, tags=["Dashboard"])
+async def get_session_statistics():
+    """
+    Dashboard: Chatbot session statistics (last 24 hours).
+
+    Shows total sessions, message counts by role (user, bot, admin).
+    """
+    stats = await db.get_active_sessions_stats()
+    return stats
+
+
+@app.get("/dashboard/rooms", tags=["Dashboard"])
+async def get_room_status_overview():
+    """
+    Dashboard: Room status overview with counts per floor.
+
+    Shows visual breakdown of room statuses for housekeeping management.
+    """
+    try:
+        with db.get_cursor() as (cur, conn):
+            cur.execute("""
+                SELECT r.floor,
+                       COUNT(CASE WHEN r.status = 'available' THEN 1 END) as available,
+                       COUNT(CASE WHEN r.status = 'occupied' THEN 1 END) as occupied,
+                       COUNT(CASE WHEN r.status = 'maintenance' THEN 1 END) as maintenance,
+                       COUNT(CASE WHEN r.status = 'cleaning' THEN 1 END) as cleaning,
+                       COUNT(*) as total
+                FROM rooms r
+                GROUP BY r.floor
+                ORDER BY r.floor
+            """)
+            floors = [dict(r) for r in cur.fetchall()]
+
+            cur.execute("""
+                SELECT r.status, COUNT(*) as count
+                FROM rooms r GROUP BY r.status
+            """)
+            summary = {r["status"]: r["count"] for r in cur.fetchall()}
+            summary["total"] = sum(summary.values())
+
+        return {"floors": floors, "summary": summary}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/dashboard/revenue", tags=["Dashboard"])
+async def get_revenue_overview():
+    """
+    Dashboard: Revenue breakdown by period and room type.
+    """
+    try:
+        with db.get_cursor() as (cur, conn):
+            # Revenue by room type
+            cur.execute("""
+                SELECT rt.name as room_type,
+                       COUNT(res.reservation_id) as bookings,
+                       COALESCE(SUM(res.total_amount), 0) as revenue
+                FROM reservations res
+                JOIN rooms rm ON res.room_id = rm.room_id
+                JOIN room_types rt ON rm.room_type_id = rt.room_type_id
+                WHERE res.status NOT IN ('cancelled', 'no_show')
+                GROUP BY rt.name
+                ORDER BY revenue DESC
+            """)
+            by_room_type = [dict(r) for r in cur.fetchall()]
+
+            # Revenue by booking source
+            cur.execute("""
+                SELECT COALESCE(booking_source, 'Unknown') as source,
+                       COUNT(*) as bookings,
+                       COALESCE(SUM(total_amount), 0) as revenue
+                FROM reservations
+                WHERE status NOT IN ('cancelled', 'no_show')
+                GROUP BY booking_source
+                ORDER BY revenue DESC
+            """)
+            by_source = [dict(r) for r in cur.fetchall()]
+
+            # Daily revenue (last 30 days)
+            cur.execute("""
+                SELECT DATE(created_at) as date,
+                       COUNT(*) as bookings,
+                       COALESCE(SUM(total_amount), 0) as revenue
+                FROM reservations
+                WHERE status NOT IN ('cancelled', 'no_show')
+                AND created_at > NOW() - INTERVAL '30 days'
+                GROUP BY DATE(created_at)
+                ORDER BY date DESC
+            """)
+            daily = [dict(r) for r in cur.fetchall()]
+
+        return {
+            "by_room_type": by_room_type,
+            "by_source": by_source,
+            "daily": daily,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# Payment Endpoints (Demo)
+# =============================================================================
+
+
+@app.get("/payment/{token}", tags=["Payment"])
+async def get_payment_page(token: str):
+    """
+    Mock payment page — returns booking details and amount.
+
+    In production this would render a PCI-compliant payment form.
+    For demo: returns JSON that a frontend would display as a checkout page.
+    """
+    try:
+        with db.get_cursor() as (cur, conn):
+            cur.execute("""
+                SELECT pl.token, pl.amount, pl.currency, pl.status, pl.expires_at,
+                       r.reservation_id, r.confirmation_number, r.check_in_date,
+                       r.check_out_date, r.num_guests, r.payment_status,
+                       rm.room_number, rt.name as room_type,
+                       g.email, g.first_name, g.last_name
+                FROM payment_links pl
+                JOIN reservations r ON pl.reservation_id = r.reservation_id
+                JOIN rooms rm ON r.room_id = rm.room_id
+                JOIN room_types rt ON rm.room_type_id = rt.room_type_id
+                JOIN guests g ON r.guest_id = g.guest_id
+                WHERE pl.token = %s
+            """, (token,))
+            row = cur.fetchone()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Payment link not found or expired")
+
+        if row["status"] == "completed":
+            return {"status": "already_paid", "confirmation_number": row["confirmation_number"]}
+
+        from datetime import datetime as dt, timezone as tz
+        expires = row["expires_at"]
+        if expires and expires < dt.now():
+            return {"status": "expired", "message": "This payment link has expired. Please request a new one."}
+
+        return {
+            "status": "pending",
+            "token": token,
+            "amount": float(row["amount"]),
+            "currency": row["currency"],
+            "booking": {
+                "confirmation_number": row["confirmation_number"],
+                "room": f"{row['room_number']} ({row['room_type']})",
+                "check_in": str(row["check_in_date"]),
+                "check_out": str(row["check_out_date"]),
+                "guests": row["num_guests"],
+                "guest_email": row["email"],
+                "guest_name": f"{row['first_name']} {row['last_name']}".strip(),
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/payment/{token}/complete", tags=["Payment"])
+async def complete_payment(token: str):
+    """
+    Mock payment completion — marks reservation as paid.
+
+    In production this would be called by a payment gateway webhook.
+    For demo: always succeeds.
+    """
+    try:
+        with db.get_cursor() as (cur, conn):
+            # Update payment link status
+            cur.execute("""
+                UPDATE payment_links SET status = 'completed'
+                WHERE token = %s AND status = 'pending'
+                RETURNING reservation_id, amount
+            """, (token,))
+            pl = cur.fetchone()
+
+            if not pl:
+                raise HTTPException(status_code=404, detail="Payment link not found, already completed, or expired")
+
+            # Update reservation payment status
+            cur.execute("""
+                UPDATE reservations SET payment_status = 'paid', updated_at = CURRENT_TIMESTAMP
+                WHERE reservation_id = %s
+                RETURNING confirmation_number
+            """, (pl["reservation_id"],))
+            res = cur.fetchone()
+            conn.commit()
+
+        return {
+            "success": True,
+            "message": "Payment completed successfully / ชำระเงินสำเร็จ",
+            "confirmation_number": res["confirmation_number"],
+            "amount_paid": float(pl["amount"]),
+            "payment_status": "paid",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# Root
 # =============================================================================
 
 

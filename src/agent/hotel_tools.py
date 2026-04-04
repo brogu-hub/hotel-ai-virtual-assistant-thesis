@@ -117,7 +117,7 @@ def check_room_availability(check_in_date: str, check_out_date: str, room_type: 
 
     except Exception as e:
         logger.error(f"Error checking availability: {e}")
-        return f"เกิดข้อผิดพลาด: {str(e)}"
+        return f"เกิดข้อผิดพลาด / Error: {str(e)}"
 
 
 @tool
@@ -185,7 +185,7 @@ def get_reservation_details(reservation_id: str) -> str:
 
     except Exception as e:
         logger.error(f"Error getting reservation details: {e}")
-        return f"เกิดข้อผิดพลาด: {str(e)}"
+        return f"เกิดข้อผิดพลาด / Error: {str(e)}"
 
 
 @tool
@@ -218,7 +218,7 @@ def get_guest_reservations(guest_email: str) -> str:
                 reservations = cur.fetchall()
 
         if not reservations:
-            return f"ไม่พบการจองสำหรับ {guest_email}"
+            return f"ไม่พบการจองสำหรับ {guest_email} / No reservations found for {guest_email}"
 
         result = f"การจองของ {guest_email}:\n\n"
         for res in reservations:
@@ -230,7 +230,7 @@ def get_guest_reservations(guest_email: str) -> str:
 
     except Exception as e:
         logger.error(f"Error getting guest reservations: {e}")
-        return f"เกิดข้อผิดพลาด: {str(e)}"
+        return f"เกิดข้อผิดพลาด / Error: {str(e)}"
 
 
 @tool
@@ -255,7 +255,7 @@ def get_hotel_services() -> str:
                 services = cur.fetchall()
 
         if not services:
-            return "ไม่พบข้อมูลบริการ"
+            return "ไม่พบข้อมูลบริการ / No services found"
 
         result = "บริการของโรงแรม / Hotel Services:\n\n"
         current_category = None
@@ -273,7 +273,7 @@ def get_hotel_services() -> str:
 
     except Exception as e:
         logger.error(f"Error getting hotel services: {e}")
-        return f"เกิดข้อผิดพลาด: {str(e)}"
+        return f"เกิดข้อผิดพลาด / Error: {str(e)}"
 
 
 # =============================================================================
@@ -306,11 +306,19 @@ def create_reservation(
     try:
         with get_db_connection() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                # Get guest ID
+                # Find or auto-create guest by email (no account creation needed)
                 cur.execute("SELECT guest_id FROM guests WHERE LOWER(email) = LOWER(%s)", (guest_email,))
                 guest = cur.fetchone()
                 if not guest:
-                    return f"ไม่พบผู้เข้าพักอีเมล {guest_email} กรุณาลงทะเบียนก่อน"
+                    # Auto-register guest with email only
+                    cur.execute("""
+                        INSERT INTO guests (email, first_name, last_name, loyalty_tier, loyalty_points)
+                        VALUES (%s, 'Guest', '', 'Standard', 0)
+                        RETURNING guest_id
+                    """, (guest_email,))
+                    guest = cur.fetchone()
+                    conn.commit()
+                    logger.info(f"Auto-registered new guest: {guest_email}")
 
                 guest_id = guest['guest_id']
 
@@ -323,10 +331,10 @@ def create_reservation(
                 """, (room_number,))
                 room = cur.fetchone()
                 if not room:
-                    return f"ไม่พบห้อง {room_number}"
+                    return f"ไม่พบห้อง {room_number} / Room {room_number} not found"
 
                 if num_guests > room['max_occupancy']:
-                    return f"ห้อง {room_number} รองรับได้สูงสุด {room['max_occupancy']} ท่าน"
+                    return f"ห้อง {room_number} รองรับได้สูงสุด {room['max_occupancy']} ท่าน / Room {room_number} max occupancy is {room['max_occupancy']} guests"
 
                 # Check availability
                 cur.execute("""
@@ -337,11 +345,13 @@ def create_reservation(
                 """, (room['room_id'], check_out_date, check_in_date))
 
                 if cur.fetchone():
-                    return f"ห้อง {room_number} ไม่ว่างในวันที่ระบุ"
+                    return f"ห้อง {room_number} ไม่ว่างในวันที่ระบุ / Room {room_number} is not available for the requested dates"
 
-                # Calculate total
+                # Calculate total with dynamic pricing
                 nights = (datetime.strptime(check_out_date, '%Y-%m-%d') - datetime.strptime(check_in_date, '%Y-%m-%d')).days
-                total_amount = float(room['base_price']) * nights
+                multiplier, pricing_label = _calculate_dynamic_multiplier(check_in_date)
+                price_per_night = float(room['base_price']) * multiplier
+                total_amount = price_per_night * nights
 
                 # Create reservation
                 cur.execute("""
@@ -361,6 +371,7 @@ def create_reservation(
 ห้อง: {room_number} ({room['name']})
 วันที่: {check_in_date} - {check_out_date} ({nights} คืน)
 จำนวนผู้เข้าพัก: {num_guests} ท่าน
+ราคา: {price_per_night:,.0f} บาท/คืน ({pricing_label})
 ยอดรวม: {total_amount:,.0f} บาท
 
 สถานะ: รอการยืนยัน (Pending)
@@ -369,7 +380,7 @@ def create_reservation(
 
     except Exception as e:
         logger.error(f"Error creating reservation: {e}")
-        return f"เกิดข้อผิดพลาดในการจอง: {str(e)}"
+        return f"เกิดข้อผิดพลาดในการจอง / Booking error: {str(e)}"
 
 
 @tool
@@ -398,7 +409,7 @@ def confirm_reservation(reservation_id: str) -> str:
                 conn.commit()
 
                 if not result:
-                    return f"ไม่พบการจองที่รอยืนยัน หมายเลข {reservation_id}"
+                    return f"ไม่พบการจองที่รอยืนยัน หมายเลข {reservation_id} / No pending reservation found for {reservation_id}"
 
                 return f"""
 ยืนยันการจองสำเร็จ! / Reservation Confirmed!
@@ -413,7 +424,7 @@ def confirm_reservation(reservation_id: str) -> str:
 
     except Exception as e:
         logger.error(f"Error confirming reservation: {e}")
-        return f"เกิดข้อผิดพลาด: {str(e)}"
+        return f"เกิดข้อผิดพลาด / Error: {str(e)}"
 
 
 @tool
@@ -444,7 +455,7 @@ def create_service_request(
                 res = cur.fetchone()
 
                 if not res:
-                    return f"ไม่พบการจองหมายเลข {reservation_id}"
+                    return f"ไม่พบการจองหมายเลข {reservation_id} / Reservation {reservation_id} not found"
 
                 cur.execute("""
                     INSERT INTO service_requests
@@ -469,7 +480,7 @@ def create_service_request(
 
     except Exception as e:
         logger.error(f"Error creating service request: {e}")
-        return f"เกิดข้อผิดพลาด: {str(e)}"
+        return f"เกิดข้อผิดพลาด / Error: {str(e)}"
 
 
 # =============================================================================
@@ -513,10 +524,10 @@ def update_reservation(
                 current = cur.fetchone()
 
                 if not current:
-                    return f"ไม่พบการจองหมายเลข {reservation_id}"
+                    return f"ไม่พบการจองหมายเลข {reservation_id} / Reservation {reservation_id} not found"
 
                 if current['status'] in ['checked_out', 'cancelled']:
-                    return f"ไม่สามารถแก้ไขการจองที่ {current['status']} แล้ว"
+                    return f"ไม่สามารถแก้ไขการจองที่ {current['status']} แล้ว / Cannot modify a {current['status']} reservation"
 
                 # Prepare updates
                 new_check_in = check_in_date or str(current['check_in_date'])
@@ -534,7 +545,7 @@ def update_reservation(
                     """, (room_number,))
                     new_room = cur.fetchone()
                     if not new_room:
-                        return f"ไม่พบห้อง {room_number}"
+                        return f"ไม่พบห้อง {room_number} / Room {room_number} not found"
                     new_room_id = new_room['room_id']
                     new_base_price = float(new_room['base_price'])
 
@@ -569,7 +580,7 @@ def update_reservation(
 
     except Exception as e:
         logger.error(f"Error updating reservation: {e}")
-        return f"เกิดข้อผิดพลาด: {str(e)}"
+        return f"เกิดข้อผิดพลาด / Error: {str(e)}"
 
 
 @tool
@@ -597,7 +608,7 @@ def check_in_guest(reservation_id: str) -> str:
                 result = cur.fetchone()
 
                 if not result:
-                    return f"ไม่พบการจองที่ยืนยันแล้วหมายเลข {reservation_id}"
+                    return f"ไม่พบการจองที่ยืนยันแล้วหมายเลข {reservation_id} / No confirmed reservation found for {reservation_id}"
 
                 # Update room status
                 cur.execute("""
@@ -618,7 +629,7 @@ Welcome to our hotel!
 
     except Exception as e:
         logger.error(f"Error checking in guest: {e}")
-        return f"เกิดข้อผิดพลาด: {str(e)}"
+        return f"เกิดข้อผิดพลาด / Error: {str(e)}"
 
 
 @tool
@@ -646,7 +657,7 @@ def check_out_guest(reservation_id: str) -> str:
                 result = cur.fetchone()
 
                 if not result:
-                    return f"ไม่พบการจองที่เช็คอินแล้วหมายเลข {reservation_id}"
+                    return f"ไม่พบการจองที่เช็คอินแล้วหมายเลข {reservation_id} / No checked-in reservation found for {reservation_id}"
 
                 # Update room status
                 cur.execute("""
@@ -668,7 +679,7 @@ Thank you for staying with us!
 
     except Exception as e:
         logger.error(f"Error checking out guest: {e}")
-        return f"เกิดข้อผิดพลาด: {str(e)}"
+        return f"เกิดข้อผิดพลาด / Error: {str(e)}"
 
 
 # =============================================================================
@@ -704,7 +715,7 @@ def cancel_reservation(reservation_id: str, reason: str) -> str:
                 conn.commit()
 
                 if not result:
-                    return f"ไม่พบการจองที่สามารถยกเลิกได้หมายเลข {reservation_id}"
+                    return f"ไม่พบการจองที่สามารถยกเลิกได้หมายเลข {reservation_id} / No cancellable reservation found for {reservation_id}"
 
                 return f"""
 ยกเลิกการจองสำเร็จ / Reservation Cancelled
@@ -720,7 +731,7 @@ def cancel_reservation(reservation_id: str, reason: str) -> str:
 
     except Exception as e:
         logger.error(f"Error cancelling reservation: {e}")
-        return f"เกิดข้อผิดพลาด: {str(e)}"
+        return f"เกิดข้อผิดพลาด / Error: {str(e)}"
 
 
 # =============================================================================
@@ -827,6 +838,237 @@ class ToHotelServiceAssistant(BaseModel):
         }
 
 
+# =============================================================================
+# Dynamic Pricing
+# =============================================================================
+
+ROOM_TIER_ORDER = ["Standard Room", "Deluxe Room", "Suite", "Penthouse"]
+
+
+def _calculate_dynamic_multiplier(check_in_date: str) -> tuple:
+    """Calculate price multiplier based on days until check-in."""
+    days_ahead = (datetime.strptime(check_in_date, '%Y-%m-%d') - datetime.now()).days
+
+    if days_ahead >= 30:
+        return 0.85, "Early Bird 15% off"
+    elif days_ahead >= 14:
+        return 0.90, "Advance Booking 10% off"
+    elif days_ahead >= 7:
+        return 1.00, "Standard Rate"
+    elif days_ahead >= 1:
+        return 1.20, "Last-Minute +20%"
+    else:
+        return 1.30, "Same-Day +30%"
+
+
+@tool
+def calculate_dynamic_price(
+    room_type: str,
+    check_in_date: str,
+    check_out_date: str,
+) -> str:
+    """
+    Calculate room price with dynamic pricing (early bird discounts / last-minute surcharges).
+
+    Args:
+        room_type: Room type (Standard, Deluxe, Suite, Penthouse)
+        check_in_date: Check-in date (YYYY-MM-DD)
+        check_out_date: Check-out date (YYYY-MM-DD)
+
+    Returns:
+        Price breakdown with base price, multiplier, and final price
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute(
+                    "SELECT base_price, name FROM room_types WHERE LOWER(name) LIKE LOWER(%s)",
+                    (f"%{room_type}%",),
+                )
+                rt = cur.fetchone()
+                if not rt:
+                    return f"ไม่พบประเภทห้อง '{room_type}' / Room type '{room_type}' not found"
+
+                base_price = float(rt['base_price'])
+                nights = (datetime.strptime(check_out_date, '%Y-%m-%d') - datetime.strptime(check_in_date, '%Y-%m-%d')).days
+                multiplier, label = _calculate_dynamic_multiplier(check_in_date)
+                final_price = base_price * multiplier
+                total = final_price * nights
+
+                return f"""
+ราคาพิเศษ / Dynamic Pricing:
+==========================================
+Room Type: {rt['name']}
+Base Price: {base_price:,.0f} THB/night
+Pricing: {label} (x{multiplier})
+Final Price: {final_price:,.0f} THB/night
+Nights: {nights}
+Total: {total:,.0f} THB
+"""
+    except Exception as e:
+        logger.error(f"Error calculating dynamic price: {e}")
+        return f"เกิดข้อผิดพลาด / Error: {str(e)}"
+
+
+@tool
+def check_upsell_opportunity(
+    room_type: str,
+    check_in_date: str,
+    check_out_date: str,
+) -> str:
+    """
+    Check if a room upgrade is available for the given dates.
+    Suggests the next tier up with dynamic pricing applied.
+
+    Args:
+        room_type: Current room type (Standard, Deluxe, Suite)
+        check_in_date: Check-in date (YYYY-MM-DD)
+        check_out_date: Check-out date (YYYY-MM-DD)
+
+    Returns:
+        Upgrade suggestion with price difference, or empty if none available
+    """
+    try:
+        # Find next tier
+        current_idx = -1
+        for i, tier in enumerate(ROOM_TIER_ORDER):
+            if room_type.lower() in tier.lower():
+                current_idx = i
+                break
+
+        if current_idx < 0 or current_idx >= len(ROOM_TIER_ORDER) - 1:
+            return ""  # Already top tier or unknown
+
+        next_tier = ROOM_TIER_ORDER[current_idx + 1]
+
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                # Get current tier price
+                cur.execute("SELECT base_price FROM room_types WHERE LOWER(name) LIKE LOWER(%s)", (f"%{room_type}%",))
+                current = cur.fetchone()
+                if not current:
+                    return ""
+
+                # Check next tier availability
+                cur.execute("""
+                    SELECT r.room_number, r.view_type, rt.base_price, rt.name
+                    FROM rooms r
+                    JOIN room_types rt ON r.room_type_id = rt.room_type_id
+                    WHERE r.status = 'available'
+                    AND LOWER(rt.name) LIKE LOWER(%s)
+                    AND r.room_id NOT IN (
+                        SELECT room_id FROM reservations
+                        WHERE status NOT IN ('cancelled', 'no_show', 'checked_out')
+                        AND check_in_date < %s AND check_out_date > %s
+                    )
+                    LIMIT 1
+                """, (f"%{next_tier}%", check_out_date, check_in_date))
+
+                upgrade = cur.fetchone()
+                if not upgrade:
+                    return ""
+
+                nights = (datetime.strptime(check_out_date, '%Y-%m-%d') - datetime.strptime(check_in_date, '%Y-%m-%d')).days
+                multiplier, label = _calculate_dynamic_multiplier(check_in_date)
+
+                current_final = float(current['base_price']) * multiplier
+                upgrade_final = float(upgrade['base_price']) * multiplier
+                diff_per_night = upgrade_final - current_final
+                diff_total = diff_per_night * nights
+
+                return f"""
+อัพเกรดห้องพัก / Upgrade Available!
+==========================================
+From: {room_type} ({current_final:,.0f} THB/night)
+To: {upgrade['name']} ({upgrade_final:,.0f} THB/night)
+Room: {upgrade['room_number']} ({upgrade['view_type']})
+Extra: +{diff_per_night:,.0f} THB/night (+{diff_total:,.0f} THB total for {nights} nights)
+Pricing: {label}
+"""
+
+    except Exception as e:
+        logger.error(f"Error checking upsell: {e}")
+        return ""
+
+
+# =============================================================================
+# Mock Payment Link
+# =============================================================================
+
+
+@tool
+def generate_payment_link(reservation_id: str) -> str:
+    """
+    Generate a secure payment link for a reservation (demo).
+
+    Args:
+        reservation_id: Reservation ID or confirmation number
+
+    Returns:
+        Payment link URL and details
+    """
+    import uuid as _uuid
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("""
+                    SELECT reservation_id, confirmation_number, total_amount, status, payment_status
+                    FROM reservations
+                    WHERE reservation_id::text = %s OR confirmation_number = %s
+                """, (reservation_id, reservation_id))
+                res = cur.fetchone()
+
+                if not res:
+                    return f"ไม่พบการจองหมายเลข {reservation_id} / Reservation {reservation_id} not found"
+
+                if res['payment_status'] == 'paid':
+                    return f"การจอง {res['confirmation_number']} ชำระเงินแล้ว / Reservation {res['confirmation_number']} is already paid"
+
+                token = str(_uuid.uuid4())
+                amount = float(res['total_amount'])
+                expires_minutes = 30
+
+                # Create payment link record
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS payment_links (
+                        payment_id SERIAL PRIMARY KEY,
+                        token VARCHAR(36) UNIQUE NOT NULL,
+                        reservation_id INTEGER REFERENCES reservations(reservation_id),
+                        amount DECIMAL(10, 2) NOT NULL,
+                        currency VARCHAR(3) DEFAULT 'THB',
+                        status VARCHAR(20) DEFAULT 'pending',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        expires_at TIMESTAMP NOT NULL
+                    )
+                """)
+
+                cur.execute("""
+                    INSERT INTO payment_links (token, reservation_id, amount, expires_at)
+                    VALUES (%s, %s, %s, NOW() + INTERVAL '%s minutes')
+                    RETURNING payment_id
+                """, (token, res['reservation_id'], amount, expires_minutes))
+
+                conn.commit()
+                url = f"https://pay.grandhorizon.hotel/checkout/{token}"
+
+                return f"""
+ลิงก์ชำระเงิน / Secure Payment Link:
+==========================================
+Reservation: {res['confirmation_number']}
+Amount: {amount:,.0f} THB
+Link: {url}
+Valid for: {expires_minutes} minutes
+
+Please complete payment at the link above.
+กรุณาชำระเงินผ่านลิงก์ด้านบน (ใช้ได้ {expires_minutes} นาที)
+"""
+
+    except Exception as e:
+        logger.error(f"Error generating payment link: {e}")
+        return f"เกิดข้อผิดพลาด / Error: {str(e)}"
+
+
 # Export all tools
 HOTEL_TOOLS = [
     # READ operations
@@ -846,4 +1088,9 @@ HOTEL_TOOLS = [
     cancel_reservation,
     # RAG - Hotel Knowledge
     search_hotel_knowledge,
+    # Dynamic Pricing + Upselling
+    calculate_dynamic_price,
+    check_upsell_opportunity,
+    # Payment
+    generate_payment_link,
 ]

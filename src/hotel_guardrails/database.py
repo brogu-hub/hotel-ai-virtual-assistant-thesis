@@ -973,15 +973,15 @@ async def create_guest(
             cur.execute("""
                 INSERT INTO guests (
                     email, first_name, last_name, first_name_th, last_name_th,
-                    phone, nationality, id_type, id_number, date_of_birth, address,
+                    phone, nationality, id_number,
                     loyalty_tier, loyalty_points, created_at, updated_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 RETURNING guest_id, created_at
             """, (
                 email, first_name, last_name, first_name_th, last_name_th,
-                phone, nationality, id_type, id_number, dob, address,
-                "Bronze", 0  # Default loyalty tier and points
+                phone, nationality, id_number,
+                "Standard", 0  # Default loyalty tier and points
             ))
 
             result = cur.fetchone()
@@ -1111,6 +1111,211 @@ async def update_guest(
 # =============================================================================
 # Health Check
 # =============================================================================
+
+
+# =============================================================================
+# Admin Operations
+# =============================================================================
+
+
+async def admin_update_room_status(
+    room_id: int, status: str, notes: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """Update room status (available, occupied, maintenance, cleaning)."""
+    valid = {"available", "occupied", "maintenance", "cleaning"}
+    if status not in valid:
+        return None
+    try:
+        with get_cursor() as (cur, conn):
+            cur.execute("""
+                UPDATE rooms SET status = %s, notes = COALESCE(%s, notes)
+                WHERE room_id = %s
+                RETURNING room_id, room_number, status
+            """, (status, notes, room_id))
+            result = cur.fetchone()
+            conn.commit()
+            return dict(result) if result else None
+    except Exception as e:
+        logger.error(f"Error updating room status: {e}")
+        return None
+
+
+async def admin_update_booking_status(
+    reservation_id: str, status: str, notes: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """Admin override booking status."""
+    valid = {"pending", "confirmed", "checked_in", "checked_out", "cancelled", "no_show"}
+    if status not in valid:
+        return None
+    try:
+        with get_cursor() as (cur, conn):
+            updates = ["status = %s"]
+            params = [status]
+            if notes:
+                updates.append("special_requests = COALESCE(special_requests || E'\\n', '') || %s")
+                params.append(f"[Admin] {notes}")
+            if status == "cancelled" and notes:
+                updates.append("cancellation_reason = %s")
+                params.append(notes)
+
+            params.extend([reservation_id, reservation_id])
+            cur.execute(f"""
+                UPDATE reservations SET {', '.join(updates)}, updated_at = CURRENT_TIMESTAMP
+                WHERE reservation_id::text = %s OR confirmation_number = %s
+                RETURNING reservation_id, confirmation_number, status
+            """, params)
+            result = cur.fetchone()
+            conn.commit()
+            return dict(result) if result else None
+    except Exception as e:
+        logger.error(f"Error admin updating booking: {e}")
+        return None
+
+
+async def admin_send_message_to_session(
+    session_id: str, message: str
+) -> bool:
+    """Insert an admin message into conversation history."""
+    try:
+        with get_cursor() as (cur, conn):
+            cur.execute("""
+                INSERT INTO conversation_history (session_id, role, content)
+                VALUES (%s, 'admin', %s)
+            """, (session_id, message))
+            conn.commit()
+            return True
+    except Exception as e:
+        logger.error(f"Error saving admin message: {e}")
+        return False
+
+
+# =============================================================================
+# Dashboard Statistics
+# =============================================================================
+
+
+async def get_dashboard_stats() -> Dict[str, Any]:
+    """Get overview statistics for admin dashboard."""
+    try:
+        with get_cursor() as (cur, conn):
+            stats = {}
+
+            # Room stats
+            cur.execute("""
+                SELECT status, COUNT(*) as count
+                FROM rooms GROUP BY status ORDER BY status
+            """)
+            stats["rooms"] = {row["status"]: row["count"] for row in cur.fetchall()}
+            stats["rooms"]["total"] = sum(stats["rooms"].values())
+
+            # Reservation stats
+            cur.execute("""
+                SELECT status, COUNT(*) as count
+                FROM reservations GROUP BY status ORDER BY status
+            """)
+            stats["reservations"] = {row["status"]: row["count"] for row in cur.fetchall()}
+            stats["reservations"]["total"] = sum(stats["reservations"].values())
+
+            # Today's activity
+            cur.execute("""
+                SELECT COUNT(*) as count FROM reservations
+                WHERE DATE(created_at) = CURRENT_DATE
+            """)
+            stats["today_new_bookings"] = cur.fetchone()["count"]
+
+            cur.execute("""
+                SELECT COUNT(*) as count FROM reservations
+                WHERE check_in_date = CURRENT_DATE AND status IN ('confirmed', 'checked_in')
+            """)
+            stats["today_checkins"] = cur.fetchone()["count"]
+
+            cur.execute("""
+                SELECT COUNT(*) as count FROM reservations
+                WHERE check_out_date = CURRENT_DATE AND status IN ('checked_in', 'checked_out')
+            """)
+            stats["today_checkouts"] = cur.fetchone()["count"]
+
+            # Revenue
+            cur.execute("""
+                SELECT COALESCE(SUM(total_amount), 0) as total
+                FROM reservations
+                WHERE status NOT IN ('cancelled', 'no_show')
+            """)
+            stats["total_revenue"] = float(cur.fetchone()["total"])
+
+            cur.execute("""
+                SELECT COALESCE(SUM(total_amount), 0) as total
+                FROM reservations
+                WHERE status NOT IN ('cancelled', 'no_show')
+                AND DATE(created_at) = CURRENT_DATE
+            """)
+            stats["today_revenue"] = float(cur.fetchone()["total"])
+
+            # Guest stats
+            cur.execute("SELECT COUNT(*) as count FROM guests")
+            stats["total_guests"] = cur.fetchone()["count"]
+
+            # Service requests
+            cur.execute("""
+                SELECT status, COUNT(*) as count
+                FROM service_requests GROUP BY status ORDER BY status
+            """)
+            stats["service_requests"] = {row["status"]: row["count"] for row in cur.fetchall()}
+
+            # Occupancy rate
+            total_rooms = stats["rooms"].get("total", 1)
+            occupied = stats["rooms"].get("occupied", 0)
+            stats["occupancy_rate"] = round((occupied / total_rooms) * 100, 1) if total_rooms else 0
+
+            return stats
+
+    except Exception as e:
+        logger.error(f"Error getting dashboard stats: {e}")
+        return {"error": str(e)}
+
+
+async def get_recent_bookings(limit: int = 20) -> List[Dict[str, Any]]:
+    """Get most recent bookings for dashboard feed."""
+    try:
+        with get_cursor() as (cur, conn):
+            cur.execute("""
+                SELECT r.reservation_id, r.confirmation_number, r.status,
+                       r.check_in_date, r.check_out_date, r.total_amount,
+                       r.created_at, r.booking_source,
+                       rm.room_number, rt.name as room_type,
+                       g.email, g.first_name, g.last_name
+                FROM reservations r
+                JOIN rooms rm ON r.room_id = rm.room_id
+                JOIN room_types rt ON rm.room_type_id = rt.room_type_id
+                JOIN guests g ON r.guest_id = g.guest_id
+                ORDER BY r.created_at DESC
+                LIMIT %s
+            """, (limit,))
+            rows = cur.fetchall()
+            return [dict(r) for r in rows]
+    except Exception as e:
+        logger.error(f"Error getting recent bookings: {e}")
+        return []
+
+
+async def get_active_sessions_stats() -> Dict[str, Any]:
+    """Get conversation session statistics."""
+    try:
+        with get_cursor() as (cur, conn):
+            cur.execute("""
+                SELECT COUNT(DISTINCT session_id) as total_sessions,
+                       COUNT(*) as total_messages,
+                       COUNT(CASE WHEN role = 'user' THEN 1 END) as user_messages,
+                       COUNT(CASE WHEN role = 'assistant' THEN 1 END) as bot_messages,
+                       COUNT(CASE WHEN role = 'admin' THEN 1 END) as admin_messages
+                FROM conversation_history
+                WHERE created_at > NOW() - INTERVAL '24 hours'
+            """)
+            row = cur.fetchone()
+            return dict(row) if row else {}
+    except Exception as e:
+        logger.error(f"Error getting session stats: {e}")
+        return {"error": str(e)}
 
 
 async def check_database_health() -> Dict[str, Any]:

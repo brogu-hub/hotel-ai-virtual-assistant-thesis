@@ -39,6 +39,7 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 EMBEDDING_MODEL_TOKEN_LIMITS = {
     "qwen/qwen3-embedding-8b": 8192,
     "qwen/qwen3-embedding-0.6b": 2048,
+    "qwen3-embedding:4b": 1024,  # Ollama local - use smaller chunks for better RAG
     "openai/text-embedding-3-small": 8191,
     "openai/text-embedding-3-large": 8191,
     "openai/text-embedding-ada-002": 8191,
@@ -74,23 +75,27 @@ class OpenRouterEmbeddings(Embeddings):
         timeout: int = 60,
     ):
         """
-        Initialize OpenRouter Embeddings.
+        Initialize embeddings — supports both OpenRouter and Ollama backends.
 
-        Args:
-            model: Embedding model name (default: qwen/qwen3-embedding-8b)
-            api_key: OpenRouter API key (or set OPENROUTER_API_KEY env var)
-            base_url: OpenRouter API base URL
-            timeout: Request timeout in seconds
+        Backend is determined by EMBEDDING_BACKEND env var.
         """
-        self.model = model
-        self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
-        self.base_url = base_url
+        embedding_backend = os.getenv("EMBEDDING_BACKEND", "openrouter").lower()
+
+        if embedding_backend == "ollama":
+            ollama_base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+            self.model = os.getenv("OLLAMA_EMBEDDING_MODEL", "qwen3-embedding:4b")
+            self.api_key = "sk-ollama-not-needed"
+            self.base_url = ollama_base
+            logger.info(f"Initializing Ollama embeddings: {self.model} at {self.base_url}")
+        else:
+            self.model = model
+            self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
+            self.base_url = base_url
+            if not self.api_key:
+                raise ValueError("OPENROUTER_API_KEY environment variable is required")
+            logger.info(f"Initializing OpenRouter embeddings: {self.model}")
+
         self.timeout = timeout
-
-        if not self.api_key:
-            raise ValueError("OPENROUTER_API_KEY environment variable is required")
-
-        logger.info(f"Initializing OpenRouter embeddings with model: {self.model}")
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """

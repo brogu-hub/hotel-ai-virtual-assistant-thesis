@@ -32,43 +32,47 @@ def get_openrouter_llm(
     streaming: bool = True,
 ) -> ChatOpenAI:
     """
-    Create OpenRouter LLM instance for NeMo Guardrails.
+    Create LLM instance — supports both OpenRouter and Ollama backends.
 
-    Uses OpenAI-compatible API with required headers for Paid Tier.
+    Backend is determined by RuntimeLLMConfig singleton (switchable at runtime).
 
     Args:
-        model: OpenRouter model name (default: qwen/qwen3-max)
+        model: Model name override (uses runtime config if not specified)
         temperature: Sampling temperature (0.0-2.0)
         max_tokens: Maximum tokens in response
         streaming: Enable streaming responses
 
     Returns:
-        ChatOpenAI instance configured for OpenRouter
-
-    Raises:
-        ValueError: If OPENROUTER_API_KEY is not set
-
-    Example:
-        ```python
-        llm = get_openrouter_llm()
-        response = llm.invoke([
-            {"role": "user", "content": "What time is breakfast?"}
-        ])
-        print(response.content)
-        ```
+        ChatOpenAI instance configured for the active backend
     """
-    api_key = os.getenv("OPENROUTER_API_KEY")
+    from .config import get_runtime_llm_config, LLMBackend
+
+    runtime_config = get_runtime_llm_config()
+
+    if runtime_config.backend == LLMBackend.OLLAMA:
+        logger.info(f"Creating Ollama LLM: {runtime_config.ollama_model}")
+        return ChatOpenAI(
+            model=runtime_config.ollama_model,
+            openai_api_key="sk-ollama-not-needed",
+            openai_api_base=runtime_config.ollama_base_url,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            streaming=streaming,
+        )
+
+    # OpenRouter path
+    api_key = runtime_config.openrouter_api_key or os.getenv("OPENROUTER_API_KEY")
     if not api_key:
         raise ValueError("OPENROUTER_API_KEY environment variable required")
 
-    # Get optional configuration from environment
     referer = os.getenv("OPENROUTER_REFERER", "https://siam-serenity-hotel.com")
     title = os.getenv("OPENROUTER_TITLE", "Grand Horizon Concierge")
+    use_model = model if model != DEFAULT_MODEL else runtime_config.openrouter_model
 
-    logger.info(f"Initializing OpenRouter LLM with model: {model}")
+    logger.info(f"Creating OpenRouter LLM: {use_model}")
 
     return ChatOpenAI(
-        model=model,
+        model=use_model,
         openai_api_key=api_key,
         openai_api_base=OPENROUTER_BASE_URL,
         temperature=temperature,

@@ -41,7 +41,7 @@ import logging
 from typing import Annotated, TypedDict, Dict, List, Literal, Optional, Any, Callable
 from datetime import datetime
 
-from langchain_core.messages import BaseMessage, ToolMessage, AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, ToolMessage, AIMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, StateGraph, START
@@ -149,32 +149,61 @@ For English speakers, be professional and warm.
 # =============================================================================
 
 def get_llm(temperature: float = 0.3, max_tokens: int = 1024, streaming: bool = False):
-    """Get LLM - using OpenRouter directly for better LangGraph compatibility."""
-    try:
-        from src.common.llm_openrouter import get_openrouter_llm
-        return get_openrouter_llm(
-            temperature=temperature,
-            max_tokens=max_tokens,
+    """
+    Get LLM using RuntimeLLMConfig.
+    Supports Ollama (local) and OpenRouter (cloud), switchable at runtime.
+    """
+    from langchain_openai import ChatOpenAI
+    from src.hotel_guardrails.config import get_runtime_llm_config, LLMBackend, resolve_thinking_model
+
+    runtime_config = get_runtime_llm_config()
+
+    # Use runtime config values, but allow per-call overrides
+    temp = temperature
+    tokens = max_tokens
+
+    if runtime_config.backend == LLMBackend.OLLAMA:
+        # Qwen3.5 on Ollama has thinking built-in (outputs <think> tags automatically)
+        logger.info(f"Using Ollama LLM: {runtime_config.ollama_model} (thinking={runtime_config.thinking})")
+        return ChatOpenAI(
+            model=runtime_config.ollama_model,
+            openai_api_key="sk-ollama-not-needed",
+            openai_api_base=runtime_config.ollama_base_url,
+            temperature=temp,
+            max_tokens=tokens,
             streaming=streaming,
         )
-    except Exception as e:
-        logger.error(f"Failed to initialize OpenRouter LLM: {e}")
-        # Try NVIDIA as fallback
-        try:
-            nvidia_api_key = os.getenv("NVIDIA_API_KEY")
-            if nvidia_api_key:
-                from langchain_nvidia_ai_endpoints import ChatNVIDIA
-                nvidia_model = os.getenv("NVIDIA_LLM_MODEL", "meta/llama-3.3-70b-instruct")
-                logger.info(f"Using NVIDIA fallback LLM: {nvidia_model}")
-                return ChatNVIDIA(
-                    model=nvidia_model,
-                    api_key=nvidia_api_key,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                )
-        except Exception as nvidia_error:
-            logger.error(f"NVIDIA fallback also failed: {nvidia_error}")
-        raise e
+    else:
+        # Rate limit OpenRouter calls to prevent 429
+        runtime_config.rate_limiter.wait_and_acquire()
+        model = runtime_config.openrouter_model
+        logger.info(f"Using OpenRouter LLM: {model} (thinking={runtime_config.thinking})")
+
+        api_key = runtime_config.openrouter_api_key or os.getenv("OPENROUTER_API_KEY")
+
+        # Build extra body params for OpenRouter reasoning
+        model_kwargs = {}
+        if runtime_config.thinking:
+            # Enable reasoning via OpenRouter's reasoning parameter
+            model_kwargs["extra_body"] = {
+                "reasoning": {
+                    "effort": "high",
+                },
+            }
+
+        return ChatOpenAI(
+            model=model,
+            openai_api_key=api_key,
+            openai_api_base=runtime_config.openrouter_base_url,
+            temperature=temp,
+            max_tokens=tokens,
+            streaming=streaming,
+            model_kwargs=model_kwargs,
+            default_headers={
+                "HTTP-Referer": os.getenv("OPENROUTER_REFERER", "https://grand-horizon-hotel.com"),
+                "X-Title": os.getenv("OPENROUTER_TITLE", "Grand Horizon Concierge"),
+            },
+        )
 
 
 # =============================================================================
@@ -253,7 +282,7 @@ async def handle_booking(state: HotelState, config: RunnableConfig) -> Dict:
     llm_settings = config.get('configurable', {}).get('llm_settings', {})
     llm = get_llm(
         temperature=llm_settings.get('temperature', 0.3),
-        max_tokens=llm_settings.get('max_tokens', 1024)
+        max_tokens=llm_settings.get('max_tokens', 2048)
     )
 
     runnable = prompt_template | llm.bind_tools(booking_tools)
@@ -305,21 +334,22 @@ async def handle_knowledge(state: HotelState, config: RunnableConfig) -> Dict:
     # Search knowledge base
     try:
         knowledge_result = search_hotel_knowledge.invoke(last_user_message)
+        # Trim to prevent overshadowing the user question (max ~2000 chars)
+        if len(knowledge_result) > 2000:
+            knowledge_result = knowledge_result[:2000] + "\n..."
     except Exception as e:
         logger.error(f"RAG search failed: {e}")
-        knowledge_result = "ขออภัย ไม่สามารถค้นหาข้อมูลได้ / Sorry, information search failed."
+        knowledge_result = "No information found."
 
-    # Generate response using the retrieved knowledge
+    # Generate response: user message first, then knowledge context
     rag_prompt = ChatPromptTemplate.from_messages([
-        ("system", f"""{main_prompt}
+        ("system", main_prompt),
+        ("human", last_user_message),
+        ("system", f"""Use this hotel information to answer the guest's question above.
+Be direct and specific. Include times, prices, locations.
+Answer in the same language the guest used.
 
-Use the following retrieved information to answer the user's question.
-Be concise and helpful. Answer in the same language the user asked.
-
-Retrieved Knowledge:
-{knowledge_result}
-"""),
-        MessagesPlaceholder("messages"),
+{knowledge_result}"""),
     ])
 
     llm_settings = config.get('configurable', {}).get('llm_settings', {})
@@ -438,7 +468,7 @@ def route_service(state: HotelState) -> Literal["service_tools", "__end__"]:
 # Build the Graph
 # =============================================================================
 
-def build_hotel_graph():
+def build_hotel_graph(checkpointer=None):
     """Build and return the hotel LangGraph agent."""
 
     # Load prompts
@@ -477,10 +507,14 @@ Analyze the guest's request and use the appropriate tool to route it.
         get_guest_reservations,
         get_hotel_services,
         create_service_request,
+        calculate_dynamic_price,
+        check_upsell_opportunity,
+        generate_payment_link,
     )
 
     booking_tools = [
         check_room_availability,
+        calculate_dynamic_price,
         create_reservation,
         confirm_reservation,
         update_reservation,
@@ -489,6 +523,8 @@ Analyze the guest's request and use the appropriate tool to route it.
         check_out_guest,
         get_reservation_details,
         get_guest_reservations,
+        check_upsell_opportunity,
+        generate_payment_link,
     ]
 
     service_tools = [get_hotel_services, create_service_request]
@@ -547,11 +583,78 @@ Analyze the guest's request and use the appropriate tool to route it.
     builder.add_edge("hotel_knowledge", END)
     builder.add_edge("other_talk", END)
 
-    # Compile with memory checkpointer
-    memory = MemorySaver()
-    graph = builder.compile(checkpointer=memory)
+    # Compile with checkpointer (passed in, or fallback to MemorySaver)
+    if checkpointer is None:
+        checkpointer = MemorySaver()
+        logger.info("Using MemorySaver (in-memory, volatile)")
 
+    graph = builder.compile(checkpointer=checkpointer)
     return graph
+
+
+# =============================================================================
+# Checkpointer Initialization
+# =============================================================================
+
+_checkpointer = None
+_checkpointer_pool = None
+
+
+async def init_checkpointer():
+    """
+    Initialize the LangGraph checkpointer based on APP_CHECKPOINTER_NAME env var.
+
+    - "postgres": Persistent to PostgreSQL (survives restarts)
+    - "memory": In-memory only (volatile, for dev/testing)
+    """
+    global _checkpointer, _checkpointer_pool
+
+    checkpointer_name = os.getenv("APP_CHECKPOINTER_NAME", "postgres").lower()
+
+    if checkpointer_name == "postgres":
+        db_url = os.getenv("DATABASE_URL")
+        if not db_url:
+            logger.warning("DATABASE_URL not set, falling back to MemorySaver")
+            _checkpointer = MemorySaver()
+            return _checkpointer
+
+        try:
+            from psycopg_pool import AsyncConnectionPool
+            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+            connection_kwargs = {
+                "autocommit": True,
+                "prepare_threshold": 0,
+            }
+
+            _checkpointer_pool = AsyncConnectionPool(
+                conninfo=db_url,
+                min_size=2,
+                max_size=10,
+                kwargs=connection_kwargs,
+            )
+            _checkpointer = AsyncPostgresSaver(_checkpointer_pool)
+            await _checkpointer.setup()
+
+            logger.info("PostgreSQL checkpointer initialized (persistent memory)")
+            return _checkpointer
+
+        except Exception as e:
+            logger.error(f"Failed to init PostgreSQL checkpointer: {e}, falling back to MemorySaver")
+            _checkpointer = MemorySaver()
+            return _checkpointer
+    else:
+        logger.info("Using MemorySaver checkpointer (in-memory, volatile)")
+        _checkpointer = MemorySaver()
+        return _checkpointer
+
+
+async def close_checkpointer():
+    """Close the checkpointer connection pool on shutdown."""
+    global _checkpointer_pool
+    if _checkpointer_pool is not None:
+        await _checkpointer_pool.close()
+        logger.info("Checkpointer pool closed")
 
 
 # =============================================================================
@@ -561,13 +664,13 @@ Analyze the guest's request and use the appropriate tool to route it.
 _hotel_graph = None
 
 
-def get_hotel_graph():
+def get_hotel_graph(checkpointer=None):
     """Get or create the hotel LangGraph agent."""
     global _hotel_graph
     if _hotel_graph is None:
         try:
             logger.info("Building hotel LangGraph agent...")
-            _hotel_graph = build_hotel_graph()
+            _hotel_graph = build_hotel_graph(checkpointer=checkpointer or _checkpointer)
             logger.info("Hotel LangGraph agent ready")
         except Exception as e:
             logger.error(f"Failed to build hotel LangGraph agent: {e}")
@@ -586,7 +689,7 @@ async def invoke_hotel_agent(
     session_id: str,
     user_id: str = "guest",
     language: str = "auto",
-    conversation_history: Optional[List[Dict[str, str]]] = None,
+    conversation_history: Optional[List[Dict[str, str]]] = None,  # unused — MemorySaver handles history
     llm_settings: Optional[Dict] = None,
 ) -> Dict[str, Any]:
     """
@@ -605,24 +708,10 @@ async def invoke_hotel_agent(
     """
     graph = get_hotel_graph()
 
-    # Build messages list
-    messages = []
-    if conversation_history:
-        for msg in conversation_history:
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-            if role == "user":
-                messages.append(HumanMessage(content=content))
-            elif role == "assistant":
-                messages.append(AIMessage(content=content))
-            elif role == "system":
-                messages.append(SystemMessage(content=content))
-
-    messages.append(HumanMessage(content=message))
-
-    # Build initial state
+    # Only send the NEW message — MemorySaver checkpointer already has conversation history
+    # This prevents duplicate messages and preserves multi-turn context
     initial_state = {
-        "messages": messages,
+        "messages": [HumanMessage(content=message)],
         "session_id": session_id,
         "user_id": user_id,
         "language": language,

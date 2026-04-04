@@ -68,6 +68,7 @@ class LangGraphAdapter:
         endpoint: str = LANGGRAPH_ENDPOINT,
         timeout: float = 60.0,
         max_retries: int = 2,
+        checkpointer=None,
     ):
         """
         Initialize LangGraph Adapter.
@@ -77,6 +78,7 @@ class LangGraphAdapter:
             endpoint: LangGraph server endpoint URL (for http mode)
             timeout: Request timeout in seconds
             max_retries: Maximum retry attempts on failure
+            checkpointer: LangGraph checkpointer (PostgresSaver or MemorySaver)
         """
         self.mode = mode
         self.endpoint = endpoint
@@ -86,10 +88,10 @@ class LangGraphAdapter:
         logger.info(f"LangGraphAdapter initialized: mode={mode}")
 
         if mode == "embedded":
-            # Pre-load the embedded graph
+            # Pre-load the embedded graph with persistent checkpointer
             try:
                 from src.hotel_guardrails.hotel_langgraph import get_hotel_graph
-                self._graph = get_hotel_graph()
+                self._graph = get_hotel_graph(checkpointer=checkpointer)
                 logger.info("Embedded LangGraph agent loaded successfully")
             except Exception as e:
                 logger.error(f"Failed to load embedded LangGraph agent: {e}")

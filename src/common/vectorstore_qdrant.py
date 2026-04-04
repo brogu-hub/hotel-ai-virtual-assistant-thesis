@@ -42,13 +42,10 @@ def get_collection_name() -> str:
 
 def get_qdrant_client():
     """
-    Create Qdrant client for Railway-hosted instance.
+    Create Qdrant client — auto-detects local (HTTP) vs Railway (HTTPS).
 
     Returns:
         QdrantClient instance
-
-    Raises:
-        ImportError: If qdrant-client is not installed
     """
     try:
         from qdrant_client import QdrantClient
@@ -58,25 +55,33 @@ def get_qdrant_client():
         )
 
     qdrant_url = get_qdrant_url()
-    api_key = os.getenv("QDRANT_API_KEY", None)  # Railway Qdrant has no key
+    api_key = os.getenv("QDRANT_API_KEY", None)
+    is_local = qdrant_url.startswith("http://")
 
-    logger.info(f"Connecting to Qdrant at: {qdrant_url}")
+    logger.info(f"Connecting to Qdrant at: {qdrant_url} (local={is_local})")
 
-    # Use REST-only transport (disable gRPC completely for Railway)
-    return QdrantClient(
-        url=qdrant_url,
-        api_key=api_key,
-        port=443,
-        https=True,
-        grpc_port=None,  # Disable gRPC completely
-        prefer_grpc=False,
-    )
+    if is_local:
+        # Local Docker Qdrant — HTTP, no auth
+        return QdrantClient(
+            url=qdrant_url,
+            prefer_grpc=False,
+        )
+    else:
+        # Railway / remote HTTPS Qdrant
+        return QdrantClient(
+            url=qdrant_url,
+            api_key=api_key,
+            port=443,
+            https=True,
+            grpc_port=None,
+            prefer_grpc=False,
+        )
 
 
 def create_qdrant_vectorstore(
     embeddings: Embeddings,
     collection_name: Optional[str] = None,
-    vector_size: int = 4096,  # Default for qwen/qwen3-embedding-8b
+    vector_size: int = None,
 ):
     """
     Create or connect to Qdrant vector store.
@@ -116,6 +121,10 @@ def create_qdrant_vectorstore(
         raise ImportError(
             "langchain-qdrant is required. Install with: pip install langchain-qdrant"
         )
+
+    # Auto-detect vector size from env (qwen3-embedding:4b=2560, qwen3-embedding-8b=4096)
+    if vector_size is None:
+        vector_size = int(os.getenv("EMBEDDING_VECTOR_SIZE", "4096"))
 
     collection = collection_name or get_collection_name()
     client = get_qdrant_client()

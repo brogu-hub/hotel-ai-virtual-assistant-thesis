@@ -46,24 +46,24 @@ class ChatOpenRouter(ChatOpenAI):
         **kwargs
     ):
         """
-        Initialize OpenRouter LLM client.
+        Initialize LLM client — supports both OpenRouter and Ollama backends.
 
-        Args:
-            model_name: Model to use (default from env APP_LLM_MODELNAME)
-            temperature: Sampling temperature (0.0-2.0)
-            max_tokens: Maximum tokens in response
-            streaming: Enable streaming responses
-            **kwargs: Additional arguments passed to ChatOpenAI
+        Backend is determined by LLM_BACKEND env var or RuntimeLLMConfig.
         """
-        # Get configuration from environment
-        api_key = os.getenv('OPENROUTER_API_KEY')
-        base_url = os.getenv('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1')
-        model = model_name or os.getenv('APP_LLM_MODELNAME', 'qwen/qwen3-max')
+        llm_backend = os.getenv('LLM_BACKEND', 'openrouter').lower()
 
-        if not api_key:
-            raise ValueError("OPENROUTER_API_KEY environment variable is required")
-
-        logger.info(f"Initializing OpenRouter LLM with model: {model}")
+        if llm_backend == 'ollama':
+            api_key = os.getenv('OPENROUTER_API_KEY', 'sk-ollama-not-needed')
+            base_url = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434/v1')
+            model = model_name or os.getenv('OLLAMA_MODEL', 'fredrezones55/qwen3.5-opus:9b')
+            logger.info(f"Initializing Ollama LLM: {model} at {base_url}")
+        else:
+            api_key = os.getenv('OPENROUTER_API_KEY')
+            base_url = os.getenv('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1')
+            model = model_name or os.getenv('APP_LLM_MODELNAME', 'qwen/qwen3-max')
+            if not api_key:
+                raise ValueError("OPENROUTER_API_KEY environment variable is required")
+            logger.info(f"Initializing OpenRouter LLM: {model}")
 
         super().__init__(
             model=model,
