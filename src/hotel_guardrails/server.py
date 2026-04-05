@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
@@ -76,11 +76,25 @@ from .models import (
     GuestResponse,
     GuestUpdateRequest,
     GuestCreateResponse,
+    # Auth models
+    UserRegisterRequest,
+    UserLoginRequest,
+    UserResponse,
+    TokenResponse,
 )
 from .hybrid_router import HybridRouter, RoutingPath
 from .langgraph_adapter import LangGraphAdapter
 from .feedback_collector import FeedbackCollector
 from . import database as db
+from .auth import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    get_current_user,
+    require_admin,
+    serialize_user,
+    JWT_EXPIRE_HOURS,
+)
 
 # Request ID context variable for tracing
 request_id_ctx: ContextVar[str] = ContextVar("request_id", default="")
@@ -109,6 +123,7 @@ logger = logging.getLogger(__name__)
 # OpenAPI tags metadata
 tags_metadata = [
     {"name": "Health", "description": "Service health monitoring"},
+    {"name": "Auth", "description": "User/admin authentication (register, login, JWT)"},
     {"name": "Chat", "description": "AI conversation powered by LangGraph Agent"},
     {"name": "Rooms", "description": "Room catalog and availability"},
     {"name": "Booking", "description": "Room reservation operations"},
@@ -116,8 +131,8 @@ tags_metadata = [
     {"name": "Sessions", "description": "Conversation session management"},
     {"name": "Settings", "description": "LLM and server configuration"},
     {"name": "Feedback", "description": "Response quality feedback for continuous improvement"},
-    {"name": "Admin", "description": "Hotel staff admin operations (override bot, manage rooms/bookings)"},
-    {"name": "Dashboard", "description": "Real-time hotel statistics and monitoring"},
+    {"name": "Admin", "description": "Hotel staff admin operations (override bot, manage rooms/bookings) — requires admin JWT"},
+    {"name": "Dashboard", "description": "Real-time hotel statistics and monitoring — requires admin JWT"},
     {"name": "Root", "description": "API information"},
 ]
 
@@ -210,6 +225,28 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize checkpointer: {e}")
         checkpointer = None
 
+    # Ensure users table and seed default admin if no admin exists yet
+    try:
+        await db.ensure_users_table()
+        default_admin_username = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
+        default_admin_email = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@grandhorizon.hotel")
+        default_admin_password = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
+        created = await db.seed_default_admin(
+            username=default_admin_username,
+            email=default_admin_email,
+            password_hash=hash_password(default_admin_password),
+            full_name="Hotel Administrator",
+        )
+        if created:
+            logger.warning(
+                f"Default admin created: username={default_admin_username} "
+                f"(CHANGE THE PASSWORD in production via DEFAULT_ADMIN_PASSWORD env var)"
+            )
+        else:
+            logger.info("Admin user already exists — skipping default admin seed")
+    except Exception as e:
+        logger.error(f"Failed to ensure users table / seed admin: {e}")
+
     # Initialize hybrid routing components (passes checkpointer to LangGraph)
     try:
         feedback_collector = FeedbackCollector()
@@ -277,9 +314,12 @@ app = FastAPI(
 )
 
 # CORS middleware
+# NOTE: allow_origin_regex=".*" is used instead of allow_origins=["*"]
+# because allow_credentials=True is incompatible with allow_origins=["*"]
+# (browsers reject wildcard + credentials combo).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -381,8 +421,14 @@ async def health_check():
     """
     components = {}
 
-    # Check NeMo Guardrails
-    components["guardrails"] = "healthy" if rails else "not_initialized"
+    # Check NeMo Guardrails (optional — disabled by default for Ollama backend)
+    nemo_enabled = os.getenv("NEMO_GUARDRAILS_ENABLED", "true").lower() == "true"
+    if rails:
+        components["guardrails"] = "healthy"
+    elif not nemo_enabled:
+        components["guardrails"] = "disabled (intentional)"
+    else:
+        components["guardrails"] = "not_initialized"
 
     # Check Qdrant
     try:
@@ -435,8 +481,8 @@ async def health_check():
     except Exception as e:
         components["langgraph"] = f"error: {str(e)[:50]}"
 
-    # Determine overall status
-    healthy_count = sum(1 for v in components.values() if "healthy" in v)
+    # Determine overall status (disabled components count as healthy)
+    healthy_count = sum(1 for v in components.values() if "healthy" in v or "disabled" in v)
     total_count = len(components)
 
     if healthy_count == total_count:
@@ -447,6 +493,128 @@ async def health_check():
         overall = "degraded"
 
     return HealthResponse(status=overall, components=components)
+
+
+# =============================================================================
+# Authentication Endpoints
+# =============================================================================
+
+
+@app.post("/auth/register", response_model=TokenResponse, tags=["Auth"])
+async def auth_register(request: UserRegisterRequest):
+    """
+    Register a new user account (role='user') and return a JWT access token.
+
+    **Public endpoint** — anyone can register as a regular user.
+    To create admin accounts, use `/auth/admin/register` (requires existing admin).
+
+    Returns the signed JWT on success.
+    """
+    success, message, user = await db.create_user(
+        username=request.username,
+        email=request.email,
+        password_hash=hash_password(request.password),
+        role="user",
+        full_name=request.full_name,
+    )
+    if not success or not user:
+        raise HTTPException(status_code=400, detail=message)
+
+    token = create_access_token({
+        "sub": user["username"],
+        "role": user["role"],
+        "user_id": user["user_id"],
+    })
+    return TokenResponse(
+        access_token=token,
+        token_type="bearer",
+        expires_in=JWT_EXPIRE_HOURS * 3600,
+        user=UserResponse(**serialize_user(user)),
+    )
+
+
+@app.post("/auth/login", response_model=TokenResponse, tags=["Auth"])
+async def auth_login(request: UserLoginRequest):
+    """
+    Login with username (or email) and password. Returns a JWT access token.
+
+    Works for both `user` and `admin` roles — the returned JWT contains
+    the role which downstream endpoints use for authorization.
+    """
+    user = await db.get_user_by_username(request.username)
+    if not user or not verify_password(request.password, user["password_hash"]):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid username or password / ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง",
+        )
+
+    if not user.get("is_active", True):
+        raise HTTPException(
+            status_code=403,
+            detail="Account disabled / บัญชีถูกปิดการใช้งาน",
+        )
+
+    await db.update_user_last_login(user["user_id"])
+
+    token = create_access_token({
+        "sub": user["username"],
+        "role": user["role"],
+        "user_id": user["user_id"],
+    })
+    return TokenResponse(
+        access_token=token,
+        token_type="bearer",
+        expires_in=JWT_EXPIRE_HOURS * 3600,
+        user=UserResponse(**serialize_user(user)),
+    )
+
+
+@app.get("/auth/me", response_model=UserResponse, tags=["Auth"])
+async def auth_me(current_user: dict = Depends(get_current_user)):
+    """Return the currently authenticated user's profile."""
+    return UserResponse(**serialize_user(current_user))
+
+
+@app.post("/auth/admin/register", response_model=UserResponse, tags=["Auth"])
+async def auth_admin_register(
+    request: UserRegisterRequest,
+    current_admin: dict = Depends(require_admin),
+):
+    """
+    Create a new admin account. **Requires an existing admin JWT.**
+
+    Used by hotel management to provision additional staff accounts.
+    """
+    success, message, user = await db.create_user(
+        username=request.username,
+        email=request.email,
+        password_hash=hash_password(request.password),
+        role="admin",
+        full_name=request.full_name,
+    )
+    if not success or not user:
+        raise HTTPException(status_code=400, detail=message)
+
+    logger.info(
+        f"Admin '{current_admin['username']}' created new admin '{user['username']}'"
+    )
+    return UserResponse(**serialize_user(user))
+
+
+@app.get("/auth/users", tags=["Auth"])
+async def auth_list_users(
+    role: Optional[str] = None,
+    limit: int = 100,
+    current_admin: dict = Depends(require_admin),
+):
+    """
+    List all users (admin only). Optionally filter by role ('user' or 'admin').
+    """
+    users = await db.list_users(role=role, limit=limit)
+    return {
+        "users": [serialize_user(u) for u in users],
+        "count": len(users),
+    }
 
 
 # =============================================================================
@@ -712,34 +880,96 @@ Greeting examples:
 @app.post("/chat/stream", tags=["Chat"])
 async def chat_stream(request: ChatRequest):
     """
-    Streaming chat endpoint for real-time responses.
+    Streaming chat endpoint for real-time responses via SSE.
 
-    Returns Server-Sent Events (SSE).
+    Uses LangGraph agent (same as /chat) but streams token-by-token.
+    Falls back to non-streaming if the LLM doesn't support streaming.
 
-    Example usage with curl:
+    Example:
         ```bash
-        curl -X POST http://localhost:8081/chat/stream \\
+        curl -X POST http://localhost:8088/chat/stream \\
           -H "Content-Type: application/json" \\
           -d '{"message": "Tell me about the spa"}' \\
           --no-buffer
         ```
     """
-    if not rails:
-        raise HTTPException(status_code=503, detail="Guardrails not initialized")
-
     session_id = request.session_id or str(uuid.uuid4())
 
+    # PII redaction
+    from src.hotel_guardrails.pii_redactor import redact_pii
+    message_for_llm = request.message
+    try:
+        message_for_llm, _ = redact_pii(request.message, preserve_email=True)
+    except Exception:
+        pass
+
+    # Admin-controlled check
+    if session_id in admin_controlled_sessions:
+        async def admin_stream():
+            msg = ("เจ้าหน้าที่โรงแรมกำลังช่วยเหลือท่านอยู่ กรุณารอสักครู่ค่ะ / "
+                   "A hotel staff member is assisting you. Please wait.")
+            yield f"data: {json.dumps({'content': msg, 'done': False})}\n\n"
+            yield f"data: {json.dumps({'content': '', 'done': True, 'session_id': session_id})}\n\n"
+        return StreamingResponse(admin_stream(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Session-ID": session_id})
+
     async def generate_stream() -> AsyncGenerator[str, None]:
+        content = ""
         try:
-            async for chunk in rails.stream_async(
-                messages=[{"role": "user", "content": request.message}],
-                options={"session_id": session_id},
-            ):
-                yield f"data: {chunk}\n\n"
-            yield "data: [DONE]\n\n"
+            if langgraph_adapter and langgraph_adapter._graph:
+                from langchain_core.messages import HumanMessage
+
+                graph = langgraph_adapter._graph
+                config = {"configurable": {"thread_id": session_id}}
+
+                # Stream events from LangGraph
+                async for event in graph.astream_events(
+                    {"messages": [HumanMessage(content=message_for_llm)]},
+                    config=config,
+                    version="v2",
+                ):
+                    kind = event.get("event", "")
+
+                    # Stream LLM token output
+                    if kind == "on_chat_model_stream":
+                        chunk = event.get("data", {}).get("chunk")
+                        if chunk and hasattr(chunk, "content") and chunk.content:
+                            token = chunk.content
+                            content += token
+                            yield f"data: {json.dumps({'content': token, 'done': False})}\n\n"
+
+                # Save conversation history
+                try:
+                    await db.save_conversation_message(session_id, "user", request.message)
+                    if content:
+                        await db.save_conversation_message(session_id, "assistant", content)
+                except Exception:
+                    pass
+
+                # Escalation check
+                if escalation_monitor and content:
+                    try:
+                        should_esc, reason, priority = escalation_monitor.should_escalate(
+                            session_id, request.message, {"response": content}
+                        )
+                        if should_esc:
+                            admin_controlled_sessions.add(session_id)
+                            await db.save_conversation_message(
+                                session_id, "system",
+                                f"[Auto-escalation] {reason} | Priority: {priority}",
+                            )
+                    except Exception:
+                        pass
+
+            else:
+                # Fallback: non-streaming via /chat logic
+                yield f"data: {json.dumps({'content': 'Streaming not available. Please use /chat endpoint.', 'done': False})}\n\n"
+
         except Exception as e:
-            logger.error(f"Stream generation failed: {e}")
-            yield f"data: ERROR: {str(e)}\n\n"
+            logger.error(f"Stream failed: {e}")
+            yield f"data: {json.dumps({'content': f'Error: {str(e)}', 'done': False})}\n\n"
+
+        yield f"data: {json.dumps({'content': '', 'done': True, 'session_id': session_id})}\n\n"
 
     return StreamingResponse(
         generate_stream(),
@@ -1369,9 +1599,12 @@ async def get_llm_configuration():
 
 
 @app.put("/settings/llm", response_model=LLMSettingsResponse, tags=["Settings"])
-async def update_llm_configuration(request: LLMSettingsUpdateRequest):
+async def update_llm_configuration(
+    request: LLMSettingsUpdateRequest,
+    current_admin: dict = Depends(require_admin),
+):
     """
-    Update LLM configuration at runtime (no restart needed).
+    Update LLM configuration at runtime (no restart needed). **Admin only.**
 
     Switch between backends:
     - `ollama`: Local Ollama (e.g., fredrezones55/qwen3.5-opus:9b)
@@ -1622,7 +1855,11 @@ async def get_feedback_stats():
 
 
 @app.put("/admin/rooms/{room_id}/status", tags=["Admin"])
-async def admin_set_room_status(room_id: int, request: AdminRoomStatusRequest):
+async def admin_set_room_status(
+    room_id: int,
+    request: AdminRoomStatusRequest,
+    current_admin: dict = Depends(require_admin),
+):
     """
     Admin: Update room status (available, occupied, maintenance, cleaning).
 
@@ -1638,7 +1875,11 @@ async def admin_set_room_status(room_id: int, request: AdminRoomStatusRequest):
 
 
 @app.put("/admin/bookings/{reservation_id}/status", tags=["Admin"])
-async def admin_set_booking_status(reservation_id: str, request: AdminBookingStatusRequest):
+async def admin_set_booking_status(
+    reservation_id: str,
+    request: AdminBookingStatusRequest,
+    current_admin: dict = Depends(require_admin),
+):
     """
     Admin: Override booking status.
 
@@ -1655,7 +1896,10 @@ async def admin_set_booking_status(reservation_id: str, request: AdminBookingSta
 
 
 @app.post("/admin/chat/override", response_model=AdminChatOverrideResponse, tags=["Admin"])
-async def admin_chat_override(request: AdminChatOverrideRequest):
+async def admin_chat_override(
+    request: AdminChatOverrideRequest,
+    current_admin: dict = Depends(require_admin),
+):
     """
     Admin: Send a message directly to a guest's chat session.
 
@@ -1674,7 +1918,10 @@ async def admin_chat_override(request: AdminChatOverrideRequest):
 
 
 @app.post("/admin/sessions/{session_id}/takeover", tags=["Admin"])
-async def admin_takeover_session(session_id: str):
+async def admin_takeover_session(
+    session_id: str,
+    current_admin: dict = Depends(require_admin),
+):
     """
     Admin: Take over a chat session.
 
@@ -1691,7 +1938,10 @@ async def admin_takeover_session(session_id: str):
 
 
 @app.post("/admin/sessions/{session_id}/release", tags=["Admin"])
-async def admin_release_session(session_id: str):
+async def admin_release_session(
+    session_id: str,
+    current_admin: dict = Depends(require_admin),
+):
     """
     Admin: Release a chat session back to the AI bot.
 
@@ -1706,7 +1956,7 @@ async def admin_release_session(session_id: str):
 
 
 @app.get("/admin/sessions", tags=["Admin"])
-async def admin_list_active_sessions():
+async def admin_list_active_sessions(current_admin: dict = Depends(require_admin)):
     """
     Admin: List active chat sessions with last message preview.
 
@@ -1753,7 +2003,11 @@ async def admin_list_active_sessions():
 
 
 @app.get("/admin/sessions/{session_id}/messages", tags=["Admin"])
-async def admin_get_session_messages(session_id: str, limit: int = 100):
+async def admin_get_session_messages(
+    session_id: str,
+    limit: int = 100,
+    current_admin: dict = Depends(require_admin),
+):
     """
     Admin: Get full conversation for a session.
 
@@ -1786,7 +2040,10 @@ async def admin_get_session_messages(session_id: str, limit: int = 100):
 
 
 @app.get("/admin/escalations", tags=["Admin"])
-async def admin_get_escalations(limit: int = 20):
+async def admin_get_escalations(
+    limit: int = 20,
+    current_admin: dict = Depends(require_admin),
+):
     """
     Admin: List auto-escalated sessions with reasons and priority.
     """
@@ -1806,7 +2063,11 @@ async def admin_get_escalations(limit: int = 20):
 
 
 @app.get("/admin/sessions/{session_id}/states", tags=["Admin"])
-async def admin_get_state_history(session_id: str, limit: int = 20):
+async def admin_get_state_history(
+    session_id: str,
+    limit: int = 20,
+    current_admin: dict = Depends(require_admin),
+):
     """
     Admin: Get LangGraph checkpoint history for a session.
 
@@ -1864,7 +2125,11 @@ async def admin_get_state_history(session_id: str, limit: int = 20):
 
 
 @app.post("/admin/sessions/{session_id}/rollback", tags=["Admin"])
-async def admin_rollback_session(session_id: str, checkpoint_id: str):
+async def admin_rollback_session(
+    session_id: str,
+    checkpoint_id: str,
+    current_admin: dict = Depends(require_admin),
+):
     """
     Admin: Roll back a session to a previous checkpoint.
 
@@ -1933,6 +2198,7 @@ async def admin_replay_from_checkpoint(
     session_id: str,
     checkpoint_id: str,
     message: str,
+    current_admin: dict = Depends(require_admin),
 ):
     """
     Admin: Replay a session from a specific checkpoint with a new message.
@@ -2006,7 +2272,7 @@ async def admin_replay_from_checkpoint(
 
 
 @app.get("/dashboard/stats", response_model=DashboardStatsResponse, tags=["Dashboard"])
-async def get_dashboard_statistics():
+async def get_dashboard_statistics(current_admin: dict = Depends(require_admin)):
     """
     Dashboard: Hotel overview statistics.
 
@@ -2020,7 +2286,10 @@ async def get_dashboard_statistics():
 
 
 @app.get("/dashboard/bookings/recent", tags=["Dashboard"])
-async def get_recent_bookings_feed(limit: int = 20):
+async def get_recent_bookings_feed(
+    limit: int = 20,
+    current_admin: dict = Depends(require_admin),
+):
     """
     Dashboard: Recent bookings feed.
 
@@ -2031,7 +2300,7 @@ async def get_recent_bookings_feed(limit: int = 20):
 
 
 @app.get("/dashboard/sessions", response_model=SessionStatsResponse, tags=["Dashboard"])
-async def get_session_statistics():
+async def get_session_statistics(current_admin: dict = Depends(require_admin)):
     """
     Dashboard: Chatbot session statistics (last 24 hours).
 
@@ -2042,7 +2311,7 @@ async def get_session_statistics():
 
 
 @app.get("/dashboard/rooms", tags=["Dashboard"])
-async def get_room_status_overview():
+async def get_room_status_overview(current_admin: dict = Depends(require_admin)):
     """
     Dashboard: Room status overview with counts per floor.
 
@@ -2076,7 +2345,7 @@ async def get_room_status_overview():
 
 
 @app.get("/dashboard/revenue", tags=["Dashboard"])
-async def get_revenue_overview():
+async def get_revenue_overview(current_admin: dict = Depends(require_admin)):
     """
     Dashboard: Revenue breakdown by period and room type.
     """

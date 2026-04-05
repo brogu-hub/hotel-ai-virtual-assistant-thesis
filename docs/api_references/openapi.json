@@ -1,0 +1,4338 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "The Grand Horizon Hotel Concierge API",
+    "description": "\n    Hotel Operations AI powered by LangGraph Agent\n\n    ## Architecture\n    - **LangGraph Agent**: Primary handler for ALL queries\n    - **Safety Router**: Filters blocked/unsafe content\n    - **RAG**: Hotel knowledge retrieval for context\n    - **LangChain Fallback**: Backup if LangGraph unavailable\n\n    ## Features\n    - Bilingual Thai/English conversation\n    - RAG-powered hotel knowledge retrieval\n    - Room booking operations\n    - Safety guardrails for input/output\n    - Continuous improvement via feedback loop\n\n    ## Headers\n    - `X-Request-ID`: Optional request tracking ID (auto-generated if not provided)\n\n    Powered by OpenRouter (configurable model)\n    ",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Healthz",
+        "description": "Simple health check for load balancers (Railway, K8s).",
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health Check",
+        "description": "Check service health.\n\nReturns status of:\n- guardrails: NeMo Guardrails initialization\n- qdrant: Vector database connection\n- openrouter: LLM API connectivity\n- database: PostgreSQL connection",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/register": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Auth Register",
+        "description": "Register a new user account (role='user') and return a JWT access token.\n\n**Public endpoint** — anyone can register as a regular user.\nTo create admin accounts, use `/auth/admin/register` (requires existing admin).\n\nReturns the signed JWT on success.",
+        "operationId": "auth_register_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserRegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Auth Login",
+        "description": "Login with username (or email) and password. Returns a JWT access token.\n\nWorks for both `user` and `admin` roles — the returned JWT contains\nthe role which downstream endpoints use for authorization.",
+        "operationId": "auth_login_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Auth Me",
+        "description": "Return the currently authenticated user's profile.",
+        "operationId": "auth_me_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/auth/admin/register": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Auth Admin Register",
+        "description": "Create a new admin account. **Requires an existing admin JWT.**\n\nUsed by hotel management to provision additional staff accounts.",
+        "operationId": "auth_admin_register_auth_admin_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserRegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/auth/users": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Auth List Users",
+        "description": "List all users (admin only). Optionally filter by role ('user' or 'admin').",
+        "operationId": "auth_list_users_auth_users_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "role",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat": {
+      "post": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "Chat",
+        "description": "General AI conversation powered by LangGraph Agent.\n\nAll queries are processed by LangGraph for consistent, high-quality responses.\nSafety checks filter blocked content before processing.\n\n## Features\n- Automatic language detection (Thai/English)\n- LangGraph Agent for all query types\n- RAG-powered responses using hotel knowledge base\n- Continuous improvement via feedback loop\n\n## Headers\n- `X-Request-ID`: Request tracking ID (returned in response)\n\nExample:\n    ```json\n    {\"message\": \"What time is breakfast?\"}\n    ```\n\n    ```json\n    {\"message\": \"รหัส WiFi คืออะไรครับ\"}\n    ```",
+        "operationId": "chat_chat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat/stream": {
+      "post": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "Chat Stream",
+        "description": "Streaming chat endpoint for real-time responses via SSE.\n\nUses LangGraph agent (same as /chat) but streams token-by-token.\nFalls back to non-streaming if the LLM doesn't support streaming.\n\nExample:\n    ```bash\n    curl -X POST http://localhost:8088/chat/stream \\\n      -H \"Content-Type: application/json\" \\\n      -d '{\"message\": \"Tell me about the spa\"}' \\\n      --no-buffer\n    ```",
+        "operationId": "chat_stream_chat_stream_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tools/book": {
+      "post": {
+        "tags": [
+          "Booking"
+        ],
+        "summary": "Booking Operations",
+        "description": "Booking operations endpoint.\n\nActions:\n- **check**: Check room availability for dates\n- **create**: Create a new reservation\n- **confirm**: Confirm a pending reservation\n- **cancel**: Cancel an existing reservation\n\nExample (check availability):\n    ```json\n    {\n        \"action\": \"check\",\n        \"check_in\": \"2025-02-15\",\n        \"check_out\": \"2025-02-17\",\n        \"room_type\": \"Deluxe\"\n    }\n    ```\n\nExample (create reservation):\n    ```json\n    {\n        \"action\": \"create\",\n        \"guest_id\": \"G001\",\n        \"room_id\": \"501\",\n        \"check_in\": \"2025-02-15\",\n        \"check_out\": \"2025-02-17\"\n    }\n    ```",
+        "operationId": "booking_operations_tools_book_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rooms": {
+      "get": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "List Rooms",
+        "description": "List all room types with photos, amenities, and base prices.\n\nReturns room catalog for browsing before booking.\nIncludes availability count for each room type.\n\nExample response:\n    ```json\n    {\n        \"rooms\": [\n            {\n                \"room_type_id\": 1,\n                \"name\": \"Standard\",\n                \"name_th\": \"ห้องสแตนดาร์ด\",\n                \"base_price\": 2500.00,\n                \"max_occupancy\": 2,\n                \"amenities\": [\"WiFi\", \"TV\", \"Minibar\"],\n                \"available_count\": 5\n            }\n        ],\n        \"total\": 4\n    }\n    ```",
+        "operationId": "list_rooms_rooms_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rooms/availability": {
+      "get": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Get Room Availability",
+        "description": "Get room availability for a date range (calendar view).\n\nUseful for showing availability calendar in the booking UI.\n\nArgs:\n    start_date: Start date (YYYY-MM-DD)\n    end_date: End date (YYYY-MM-DD)\n    room_type: Optional room type filter\n\nExample:\n    ```\n    GET /rooms/availability?start_date=2025-02-01&end_date=2025-02-28\n    ```\n\nReturns daily availability with min price for available rooms.",
+        "operationId": "get_room_availability_rooms_availability_get",
+        "parameters": [
+          {
+            "name": "start_date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Start Date"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "End Date"
+            }
+          },
+          {
+            "name": "room_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Room Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomAvailabilityResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rooms/{room_id}": {
+      "get": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Get Room",
+        "description": "Get detailed information for a specific room.\n\nIncludes:\n- Room details (number, floor, status, view)\n- Room type information (amenities, pricing)\n- Pricing breakdown (base price, taxes, service charge)\n\nArgs:\n    room_id: The room ID to fetch\n\nExample response:\n    ```json\n    {\n        \"room\": {\n            \"room_id\": 1,\n            \"room_number\": \"501\",\n            \"floor\": 5,\n            \"status\": \"available\",\n            \"room_type\": {...}\n        },\n        \"pricing\": {\n            \"base_price\": 3500.00,\n            \"tax_rate\": 0.07,\n            \"service_charge\": 0.10,\n            \"total_per_night\": 4095.00\n        }\n    }\n    ```",
+        "operationId": "get_room_rooms__room_id__get",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bookings": {
+      "get": {
+        "tags": [
+          "Booking"
+        ],
+        "summary": "List Bookings",
+        "description": "List bookings with optional filtering.\n\nFilter by:\n- guest_id: Guest's ID\n- guest_email: Guest's email address\n- status: Reservation status (pending, confirmed, checked_in, checked_out, cancelled)\n\nSupports pagination with page and page_size parameters.\n\nExample:\n    ```\n    GET /bookings?guest_email=guest@example.com&status=confirmed\n    GET /bookings?guest_id=123&page=2&page_size=10\n    ```",
+        "operationId": "list_bookings_bookings_get",
+        "parameters": [
+          {
+            "name": "guest_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Guest Id"
+            }
+          },
+          {
+            "name": "guest_email",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Guest Email"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bookings/{reservation_id}": {
+      "get": {
+        "tags": [
+          "Booking"
+        ],
+        "summary": "Get Booking",
+        "description": "Get detailed booking information by reservation ID or confirmation number.\n\nArgs:\n    reservation_id: Reservation ID (numeric) or confirmation number (e.g., HTL240215001)\n\nReturns full booking details including guest info, room details, and payment status.",
+        "operationId": "get_booking_bookings__reservation_id__get",
+        "parameters": [
+          {
+            "name": "reservation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Reservation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Booking"
+        ],
+        "summary": "Update Booking",
+        "description": "Update booking details without canceling.\n\nModifiable fields:\n- check_in_date: New check-in date\n- check_out_date: New check-out date\n- room_number: Change to different room\n- num_guests: Update guest count\n- special_requests: Update special requests\n\nNote: Cannot modify checked_out or cancelled bookings.\n\nExample:\n    ```json\n    {\n        \"check_in_date\": \"2025-02-16\",\n        \"special_requests\": \"Late check-in requested\"\n    }\n    ```\n\nReturns the updated booking and a summary of changes made.",
+        "operationId": "update_booking_bookings__reservation_id__patch",
+        "parameters": [
+          {
+            "name": "reservation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Reservation Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookingUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookingUpdateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/guests": {
+      "post": {
+        "tags": [
+          "Guests"
+        ],
+        "summary": "Register Guest",
+        "description": "Register a new guest.\n\nCreates a new guest profile for booking operations.\nGuests must be registered before making reservations.\n\nExample:\n    ```json\n    {\n        \"email\": \"guest@example.com\",\n        \"first_name\": \"John\",\n        \"last_name\": \"Smith\"\n    }\n    ```\n\nReturns guest details with assigned guest_id.",
+        "operationId": "register_guest_guests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuestCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/guests/{email}": {
+      "get": {
+        "tags": [
+          "Guests"
+        ],
+        "summary": "Get Guest By Email",
+        "description": "Get guest information by email address.\n\nArgs:\n    email: Guest's email address\n\nReturns guest profile including loyalty tier and points.\n\nExample:\n    ```\n    GET /guests/guest@example.com\n    ```",
+        "operationId": "get_guest_by_email_guests__email__get",
+        "parameters": [
+          {
+            "name": "email",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Email"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/guests/{guest_id}": {
+      "patch": {
+        "tags": [
+          "Guests"
+        ],
+        "summary": "Update Guest",
+        "description": "Update guest information.\n\nModifiable fields:\n- first_name, last_name: Names in English\n- first_name_th, last_name_th: Names in Thai\n- phone: Contact number\n- nationality: Guest nationality\n- address: Full address\n\nNote: Email cannot be changed (use as unique identifier).\n\nExample:\n    ```json\n    {\n        \"phone\": \"+66899999999\",\n        \"address\": \"123 New Address, Bangkok\"\n    }\n    ```\n\nReturns updated guest profile.",
+        "operationId": "update_guest_guests__guest_id__patch",
+        "parameters": [
+          {
+            "name": "guest_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Guest Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuestUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/settings/llm": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Get Llm Configuration",
+        "description": "Get current LLM configuration.\n\nReturns the active LLM settings including backend (ollama/openrouter)\nand list of available models. Frontend can populate model dropdowns.",
+        "operationId": "get_llm_configuration_settings_llm_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LLMSettingsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Update Llm Configuration",
+        "description": "Update LLM configuration at runtime (no restart needed). **Admin only.**\n\nSwitch between backends:\n- `ollama`: Local Ollama (e.g., fredrezones55/qwen3.5-opus:9b)\n- `openrouter`: Cloud OpenRouter (e.g., qwen/qwen3-max)\n\nExample:\n    PUT /settings/llm {\"backend\": \"ollama\", \"model\": \"fredrezones55/qwen3.5-opus:9b\"}\n    PUT /settings/llm {\"backend\": \"openrouter\", \"model\": \"qwen/qwen3-max\"}\n    PUT /settings/llm {\"temperature\": 0.5}",
+        "operationId": "update_llm_configuration_settings_llm_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LLMSettingsUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LLMSettingsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/settings/models": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "List Available Models",
+        "description": "List available LLM models.\n\nReturns models that can be used with the chat endpoints.",
+        "operationId": "list_available_models_settings_models_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Create Session",
+        "description": "Create a new conversation session.\n\nReturns a session ID that should be passed with subsequent chat requests.",
+        "operationId": "create_session_sessions_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionCreateResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Get Session",
+        "description": "Get session information.\n\nReturns session metadata including creation time.\nNote: Full session persistence is not implemented - sessions are stateless.",
+        "operationId": "get_session_sessions__session_id__get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Delete Session",
+        "description": "Delete a conversation session.\n\nClears all conversation history associated with the session.",
+        "operationId": "delete_session_sessions__session_id__delete",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{session_id}/messages": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Get Session Messages",
+        "description": "Get conversation history for a session.\n\nRetrieves all messages exchanged in a conversation session.\nUseful for session restoration after page refresh or resuming conversations.\n\nArgs:\n    session_id: The session ID to retrieve messages for\n    limit: Maximum number of messages to return (default: 50, max: 200)\n    offset: Number of messages to skip for pagination\n\nExample:\n    ```\n    GET /sessions/550e8400-e29b-41d4-a716-446655440000/messages?limit=20\n    ```\n\nReturns messages in chronological order (oldest first).",
+        "operationId": "get_session_messages_sessions__session_id__messages_get",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationHistoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/feedback": {
+      "post": {
+        "tags": [
+          "Feedback"
+        ],
+        "summary": "Submit Feedback",
+        "description": "Submit feedback for a response.\n\nUsed to rate response quality and improve routing decisions.\n\nArgs:\n    request_id: The request ID from the chat response\n    score: Quality score (0.0 = bad, 1.0 = good)\n    comment: Optional feedback comment\n\nExample:\n    ```bash\n    curl -X POST \"http://localhost:8081/feedback?request_id=abc-123&score=0.9\"\n    ```",
+        "operationId": "submit_feedback_feedback_post",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Id"
+            }
+          },
+          {
+            "name": "score",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "title": "Score"
+            }
+          },
+          {
+            "name": "comment",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Comment"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/feedback/stats": {
+      "get": {
+        "tags": [
+          "Feedback"
+        ],
+        "summary": "Get Feedback Stats",
+        "description": "Get feedback statistics by routing path.\n\nReturns performance metrics for NeMo vs LangGraph routing.\nUseful for monitoring and optimization.",
+        "operationId": "get_feedback_stats_feedback_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/rooms/{room_id}/status": {
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Admin Set Room Status",
+        "description": "Admin: Update room status (available, occupied, maintenance, cleaning).\n\nUsed by hotel staff to manage room inventory directly.",
+        "operationId": "admin_set_room_status_admin_rooms__room_id__status_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminRoomStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/bookings/{reservation_id}/status": {
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Admin Set Booking Status",
+        "description": "Admin: Override booking status.\n\nAllows front desk to manually change any booking status\n(e.g., force check-in, mark no-show, override cancellation).",
+        "operationId": "admin_set_booking_status_admin_bookings__reservation_id__status_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "reservation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Reservation Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminBookingStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/chat/override": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Admin Chat Override",
+        "description": "Admin: Send a message directly to a guest's chat session.\n\nAllows hotel staff to take over a conversation from the bot.\nThe message is stored in conversation history with role='admin'\nso the frontend can distinguish bot vs staff messages.",
+        "operationId": "admin_chat_override_admin_chat_override_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminChatOverrideRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminChatOverrideResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/admin/sessions/{session_id}/takeover": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Admin Takeover Session",
+        "description": "Admin: Take over a chat session.\n\nPauses the AI bot for this session. All subsequent guest messages\nwill get a \"staff is assisting\" response instead of bot replies.\nAdmin uses /admin/chat/override to send messages to the guest.",
+        "operationId": "admin_takeover_session_admin_sessions__session_id__takeover_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/sessions/{session_id}/release": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Admin Release Session",
+        "description": "Admin: Release a chat session back to the AI bot.\n\nResumes normal bot responses for the guest.",
+        "operationId": "admin_release_session_admin_sessions__session_id__release_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/sessions": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Admin List Active Sessions",
+        "description": "Admin: List active chat sessions with last message preview.\n\nUsed by admin dashboard to monitor all ongoing conversations.\nShows which sessions are admin-controlled vs bot-active.",
+        "operationId": "admin_list_active_sessions_admin_sessions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/admin/sessions/{session_id}/messages": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Admin Get Session Messages",
+        "description": "Admin: Get full conversation for a session.\n\nReturns all messages (user, assistant, admin, system) in chronological order.\nUsed by admin dashboard to display the live chat view.",
+        "operationId": "admin_get_session_messages_admin_sessions__session_id__messages_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/escalations": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Admin Get Escalations",
+        "description": "Admin: List auto-escalated sessions with reasons and priority.",
+        "operationId": "admin_get_escalations_admin_escalations_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/sessions/{session_id}/states": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Admin Get State History",
+        "description": "Admin: Get LangGraph checkpoint history for a session.\n\nReturns each step the agent took, including which node ran,\nwhat messages existed at that point, and the checkpoint_id\nneeded for rollback/replay.\n\nThis is the \"time travel\" view — every step is a rewindable snapshot.",
+        "operationId": "admin_get_state_history_admin_sessions__session_id__states_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/sessions/{session_id}/rollback": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Admin Rollback Session",
+        "description": "Admin: Roll back a session to a previous checkpoint.\n\nTime-travel: rewinds the conversation to the specified checkpoint step.\nThe next guest message will continue from that point as if the later\nmessages never happened.\n\nGet available checkpoint_ids from GET /admin/sessions/{id}/states.\n\nArgs:\n    checkpoint_id: Target checkpoint to roll back to (from states endpoint)",
+        "operationId": "admin_rollback_session_admin_sessions__session_id__rollback_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "checkpoint_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Checkpoint Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/sessions/{session_id}/replay": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Admin Replay From Checkpoint",
+        "description": "Admin: Replay a session from a specific checkpoint with a new message.\n\nTime-travel + branch: goes back to the specified checkpoint and sends\na new message as if the guest typed it at that point. Creates a new\nconversation branch from that step.\n\nUse case: \"What if the guest had said X instead of Y at step 3?\"\n\nArgs:\n    checkpoint_id: Target checkpoint to replay from\n    message: New message to send from that point",
+        "operationId": "admin_replay_from_checkpoint_admin_sessions__session_id__replay_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "checkpoint_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Checkpoint Id"
+            }
+          },
+          {
+            "name": "message",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Message"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dashboard/stats": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "summary": "Get Dashboard Statistics",
+        "description": "Dashboard: Hotel overview statistics.\n\nReturns room occupancy, reservation counts, revenue,\ntoday's check-ins/outs, and service request status.",
+        "operationId": "get_dashboard_statistics_dashboard_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardStatsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/dashboard/bookings/recent": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "summary": "Get Recent Bookings Feed",
+        "description": "Dashboard: Recent bookings feed.\n\nLive feed of the most recent reservations with guest and room details.",
+        "operationId": "get_recent_bookings_feed_dashboard_bookings_recent_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dashboard/sessions": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "summary": "Get Session Statistics",
+        "description": "Dashboard: Chatbot session statistics (last 24 hours).\n\nShows total sessions, message counts by role (user, bot, admin).",
+        "operationId": "get_session_statistics_dashboard_sessions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStatsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/dashboard/rooms": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "summary": "Get Room Status Overview",
+        "description": "Dashboard: Room status overview with counts per floor.\n\nShows visual breakdown of room statuses for housekeeping management.",
+        "operationId": "get_room_status_overview_dashboard_rooms_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/dashboard/revenue": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "summary": "Get Revenue Overview",
+        "description": "Dashboard: Revenue breakdown by period and room type.",
+        "operationId": "get_revenue_overview_dashboard_revenue_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/payment/{token}": {
+      "get": {
+        "tags": [
+          "Payment"
+        ],
+        "summary": "Get Payment Page",
+        "description": "Mock payment page — returns booking details and amount.\n\nIn production this would render a PCI-compliant payment form.\nFor demo: returns JSON that a frontend would display as a checkout page.",
+        "operationId": "get_payment_page_payment__token__get",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/payment/{token}/complete": {
+      "post": {
+        "tags": [
+          "Payment"
+        ],
+        "summary": "Complete Payment",
+        "description": "Mock payment completion — marks reservation as paid.\n\nIn production this would be called by a payment gateway webhook.\nFor demo: always succeeds.",
+        "operationId": "complete_payment_payment__token__complete_post",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "tags": [
+          "Root"
+        ],
+        "summary": "Root",
+        "description": "API root - returns basic info.",
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AdminBookingStatusRequest": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "New status: pending, confirmed, checked_in, checked_out, cancelled, no_show"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes",
+            "description": "Admin notes / reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "AdminBookingStatusRequest",
+        "description": "Request to override booking status."
+      },
+      "AdminChatOverrideRequest": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id",
+            "description": "Target session ID"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Message",
+            "description": "Admin message to guest"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "message"
+        ],
+        "title": "AdminChatOverrideRequest",
+        "description": "Admin sends a message directly to a guest session (overriding bot)."
+      },
+      "AdminChatOverrideResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "session_id",
+          "message"
+        ],
+        "title": "AdminChatOverrideResponse",
+        "description": "Response after admin chat override."
+      },
+      "AdminRoomStatusRequest": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "New status: available, occupied, maintenance, cleaning"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes",
+            "description": "Admin notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "AdminRoomStatusRequest",
+        "description": "Request to update room status."
+      },
+      "BookingInfo": {
+        "properties": {
+          "reservation_id": {
+            "type": "integer",
+            "title": "Reservation Id",
+            "description": "Reservation ID"
+          },
+          "confirmation_number": {
+            "type": "string",
+            "title": "Confirmation Number",
+            "description": "Confirmation number (e.g., HTL240215001)",
+            "examples": [
+              "HTL240215001"
+            ]
+          },
+          "guest": {
+            "$ref": "#/components/schemas/GuestInfo",
+            "description": "Guest information"
+          },
+          "room_number": {
+            "type": "string",
+            "title": "Room Number",
+            "description": "Assigned room number"
+          },
+          "room_type": {
+            "type": "string",
+            "title": "Room Type",
+            "description": "Room type name"
+          },
+          "room_type_th": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room Type Th",
+            "description": "Room type name in Thai"
+          },
+          "check_in_date": {
+            "type": "string",
+            "title": "Check In Date",
+            "description": "Check-in date (YYYY-MM-DD)"
+          },
+          "check_out_date": {
+            "type": "string",
+            "title": "Check Out Date",
+            "description": "Check-out date (YYYY-MM-DD)"
+          },
+          "num_nights": {
+            "type": "integer",
+            "title": "Num Nights",
+            "description": "Number of nights"
+          },
+          "num_guests": {
+            "type": "integer",
+            "title": "Num Guests",
+            "description": "Number of guests"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Reservation status",
+            "examples": [
+              "pending",
+              "confirmed",
+              "checked_in",
+              "checked_out",
+              "cancelled"
+            ]
+          },
+          "total_amount": {
+            "type": "number",
+            "title": "Total Amount",
+            "description": "Total amount in THB"
+          },
+          "payment_status": {
+            "type": "string",
+            "title": "Payment Status",
+            "description": "Payment status",
+            "examples": [
+              "pending",
+              "paid",
+              "refunded"
+            ]
+          },
+          "special_requests": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Special Requests",
+            "description": "Special requests"
+          },
+          "booking_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Booking Source",
+            "description": "Booking source"
+          },
+          "cancellation_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancellation Reason",
+            "description": "Cancellation reason if cancelled"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "description": "Booking creation timestamp"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At",
+            "description": "Last update timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reservation_id",
+          "confirmation_number",
+          "guest",
+          "room_number",
+          "room_type",
+          "check_in_date",
+          "check_out_date",
+          "num_nights",
+          "num_guests",
+          "status",
+          "total_amount",
+          "payment_status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "BookingInfo",
+        "description": "Detailed booking/reservation information."
+      },
+      "BookingListResponse": {
+        "properties": {
+          "bookings": {
+            "items": {
+              "$ref": "#/components/schemas/BookingInfo"
+            },
+            "type": "array",
+            "title": "Bookings",
+            "description": "List of bookings"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "Total number of bookings"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page",
+            "description": "Current page number",
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size",
+            "description": "Items per page",
+            "default": 20
+          }
+        },
+        "type": "object",
+        "required": [
+          "bookings",
+          "total"
+        ],
+        "title": "BookingListResponse",
+        "description": "Response model for booking list endpoint."
+      },
+      "BookingRequest": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "pattern": "^(check|create|confirm|cancel)$",
+            "title": "Action",
+            "description": "Booking action: 'check' (availability), 'create', 'confirm', or 'cancel'",
+            "examples": [
+              "check",
+              "create",
+              "confirm",
+              "cancel"
+            ]
+          },
+          "guest_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guest Id",
+            "description": "Guest ID (required for 'create' action)",
+            "examples": [
+              "G001",
+              "GUEST-12345"
+            ]
+          },
+          "room_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room Type",
+            "description": "Room type: Standard, Deluxe, Suite, or Penthouse",
+            "examples": [
+              "Deluxe",
+              "Suite"
+            ]
+          },
+          "room_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room Id",
+            "description": "Specific room ID (required for 'create' action)",
+            "examples": [
+              "501",
+              "ROOM-501"
+            ]
+          },
+          "reservation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reservation Id",
+            "description": "Reservation ID (required for 'confirm' and 'cancel' actions)",
+            "examples": [
+              "RES-2024-001",
+              "12345"
+            ]
+          },
+          "check_in": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check In",
+            "description": "Check-in date (required for 'check' and 'create' actions)",
+            "examples": [
+              "2025-02-15"
+            ]
+          },
+          "check_out": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check Out",
+            "description": "Check-out date (required for 'check' and 'create' actions)",
+            "examples": [
+              "2025-02-17"
+            ]
+          },
+          "special_requests": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Special Requests",
+            "description": "Special requests for the reservation",
+            "examples": [
+              "Late check-in, high floor preferred"
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason",
+            "description": "Cancellation reason (optional for 'cancel' action)",
+            "examples": [
+              "Change of travel plans"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "BookingRequest",
+        "description": "Request model for /tools/book endpoint."
+      },
+      "BookingResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "description": "Whether the operation was successful"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action",
+            "description": "Action that was performed"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data",
+            "description": "Result data from the operation"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable message in Thai/English"
+          },
+          "reservation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reservation Id",
+            "description": "Reservation ID if created or affected"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "action",
+          "message"
+        ],
+        "title": "BookingResponse",
+        "description": "Response model for /tools/book endpoint."
+      },
+      "BookingUpdateRequest": {
+        "properties": {
+          "check_in_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check In Date",
+            "description": "New check-in date (YYYY-MM-DD)",
+            "examples": [
+              "2025-02-15"
+            ]
+          },
+          "check_out_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Check Out Date",
+            "description": "New check-out date (YYYY-MM-DD)",
+            "examples": [
+              "2025-02-17"
+            ]
+          },
+          "room_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room Number",
+            "description": "New room number",
+            "examples": [
+              "502"
+            ]
+          },
+          "num_guests": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 10.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Num Guests",
+            "description": "Updated number of guests"
+          },
+          "special_requests": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Special Requests",
+            "description": "Updated special requests"
+          }
+        },
+        "type": "object",
+        "title": "BookingUpdateRequest",
+        "description": "Request model for PATCH /bookings/{reservation_id} endpoint."
+      },
+      "BookingUpdateResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "description": "Whether the update was successful"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable message in Thai/English"
+          },
+          "booking": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BookingInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Updated booking details"
+          },
+          "changes": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Changes",
+            "description": "Fields that were changed with old and new values",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "message"
+        ],
+        "title": "BookingUpdateResponse",
+        "description": "Response model for PATCH /bookings/{reservation_id} endpoint."
+      },
+      "ChatRequest": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Message",
+            "description": "User message in Thai or English",
+            "examples": [
+              "What time is breakfast?",
+              "รหัส WiFi คืออะไรครับ"
+            ]
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id",
+            "description": "Session ID for conversation context. If not provided, a new session is created.",
+            "examples": [
+              "550e8400-e29b-41d4-a716-446655440000"
+            ]
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(th|en|auto)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language",
+            "description": "Preferred response language: 'th' (Thai), 'en' (English), or 'auto' (detect from input)",
+            "default": "auto"
+          },
+          "llm_settings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LLMOverrides"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional per-request LLM configuration overrides"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "ChatRequest",
+        "description": "Request model for /chat endpoint."
+      },
+      "ChatResponse": {
+        "properties": {
+          "response": {
+            "type": "string",
+            "title": "Response",
+            "description": "AI response in Thai or English"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id",
+            "description": "Session ID for continuing the conversation"
+          },
+          "sources": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sources",
+            "description": "RAG sources used to generate the response"
+          },
+          "retrieval_context": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieval Context",
+            "description": "Actual retrieved document chunks used for RAG evaluation"
+          },
+          "tool_calls": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Calls",
+            "description": "Tools executed during response generation"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id",
+            "description": "Request tracking ID for debugging (from X-Request-ID header)"
+          },
+          "routing_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routing Path",
+            "description": "Which path handled the request: 'nemo' (fast) or 'langgraph' (complex)",
+            "examples": [
+              "nemo",
+              "langgraph"
+            ]
+          },
+          "routing_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routing Reason",
+            "description": "Human-readable reason for the routing decision",
+            "examples": [
+              "Simple query - using fast path",
+              "Complex query requiring multi-step reasoning"
+            ]
+          },
+          "complexity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Complexity",
+            "description": "Query complexity classification: 'simple', 'moderate', or 'complex'",
+            "examples": [
+              "simple",
+              "moderate",
+              "complex"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "response",
+          "session_id"
+        ],
+        "title": "ChatResponse",
+        "description": "Response model for /chat endpoint."
+      },
+      "ConversationHistoryResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id",
+            "description": "Session ID"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationMessage"
+            },
+            "type": "array",
+            "title": "Messages",
+            "description": "List of messages"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "Total number of messages"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "description": "Whether there are more messages",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "messages",
+          "total"
+        ],
+        "title": "ConversationHistoryResponse",
+        "description": "Response model for GET /sessions/{session_id}/messages endpoint."
+      },
+      "ConversationMessage": {
+        "properties": {
+          "message_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Id",
+            "description": "Message ID"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role",
+            "description": "Message role: 'user' or 'assistant'",
+            "examples": [
+              "user",
+              "assistant"
+            ]
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "Message content"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp",
+            "description": "Message timestamp (ISO format)"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata",
+            "description": "Additional metadata (sources, tool_calls, etc.)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "content",
+          "timestamp"
+        ],
+        "title": "ConversationMessage",
+        "description": "A single message in a conversation."
+      },
+      "DashboardStatsResponse": {
+        "properties": {
+          "rooms": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Rooms",
+            "description": "Room status breakdown"
+          },
+          "reservations": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Reservations",
+            "description": "Reservation status breakdown"
+          },
+          "today_new_bookings": {
+            "type": "integer",
+            "title": "Today New Bookings",
+            "description": "Bookings created today",
+            "default": 0
+          },
+          "today_checkins": {
+            "type": "integer",
+            "title": "Today Checkins",
+            "description": "Expected check-ins today",
+            "default": 0
+          },
+          "today_checkouts": {
+            "type": "integer",
+            "title": "Today Checkouts",
+            "description": "Expected check-outs today",
+            "default": 0
+          },
+          "total_revenue": {
+            "type": "number",
+            "title": "Total Revenue",
+            "description": "Total revenue (non-cancelled)",
+            "default": 0
+          },
+          "today_revenue": {
+            "type": "number",
+            "title": "Today Revenue",
+            "description": "Revenue from today's bookings",
+            "default": 0
+          },
+          "total_guests": {
+            "type": "integer",
+            "title": "Total Guests",
+            "description": "Total registered guests",
+            "default": 0
+          },
+          "service_requests": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Service Requests",
+            "description": "Service request status breakdown"
+          },
+          "occupancy_rate": {
+            "type": "number",
+            "title": "Occupancy Rate",
+            "description": "Current occupancy percentage",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "rooms",
+          "reservations"
+        ],
+        "title": "DashboardStatsResponse",
+        "description": "Hotel dashboard overview statistics."
+      },
+      "GuestCreateRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "title": "Email",
+            "description": "Guest email address (used as unique identifier)",
+            "examples": [
+              "guest@example.com"
+            ]
+          },
+          "first_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "First Name",
+            "description": "First name",
+            "examples": [
+              "John"
+            ]
+          },
+          "last_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Last Name",
+            "description": "Last name",
+            "examples": [
+              "Smith"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "first_name",
+          "last_name"
+        ],
+        "title": "GuestCreateRequest",
+        "description": "Request model for POST /guests endpoint (guest registration)."
+      },
+      "GuestCreateResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "description": "Whether registration was successful"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable message in Thai/English"
+          },
+          "guest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GuestResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Registered guest details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "message"
+        ],
+        "title": "GuestCreateResponse",
+        "description": "Response model for POST /guests endpoint."
+      },
+      "GuestInfo": {
+        "properties": {
+          "guest_id": {
+            "type": "integer",
+            "title": "Guest Id",
+            "description": "Guest ID"
+          },
+          "first_name": {
+            "type": "string",
+            "title": "First Name",
+            "description": "First name in English"
+          },
+          "last_name": {
+            "type": "string",
+            "title": "Last Name",
+            "description": "Last name in English"
+          },
+          "first_name_th": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Name Th",
+            "description": "First name in Thai"
+          },
+          "last_name_th": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name Th",
+            "description": "Last name in Thai"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email",
+            "description": "Email address"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone",
+            "description": "Phone number"
+          },
+          "loyalty_tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loyalty Tier",
+            "description": "Loyalty program tier"
+          },
+          "loyalty_points": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loyalty Points",
+            "description": "Loyalty points balance"
+          }
+        },
+        "type": "object",
+        "required": [
+          "guest_id",
+          "first_name",
+          "last_name",
+          "email"
+        ],
+        "title": "GuestInfo",
+        "description": "Guest information for booking."
+      },
+      "GuestResponse": {
+        "properties": {
+          "guest_id": {
+            "type": "integer",
+            "title": "Guest Id",
+            "description": "Unique guest ID"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email",
+            "description": "Guest email address"
+          },
+          "first_name": {
+            "type": "string",
+            "title": "First Name",
+            "description": "First name in English"
+          },
+          "last_name": {
+            "type": "string",
+            "title": "Last Name",
+            "description": "Last name in English"
+          },
+          "first_name_th": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Name Th",
+            "description": "First name in Thai"
+          },
+          "last_name_th": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name Th",
+            "description": "Last name in Thai"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone",
+            "description": "Phone number"
+          },
+          "nationality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nationality",
+            "description": "Nationality"
+          },
+          "loyalty_tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loyalty Tier",
+            "description": "Loyalty program tier"
+          },
+          "loyalty_points": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loyalty Points",
+            "description": "Loyalty points balance"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "description": "Registration timestamp (ISO format)"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At",
+            "description": "Last update timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "guest_id",
+          "email",
+          "first_name",
+          "last_name",
+          "created_at"
+        ],
+        "title": "GuestResponse",
+        "description": "Response model for guest information."
+      },
+      "GuestUpdateRequest": {
+        "properties": {
+          "first_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Name",
+            "description": "First name in English"
+          },
+          "last_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name",
+            "description": "Last name in English"
+          },
+          "first_name_th": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Name Th",
+            "description": "First name in Thai"
+          },
+          "last_name_th": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name Th",
+            "description": "Last name in Thai"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone",
+            "description": "Phone number"
+          },
+          "nationality": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nationality",
+            "description": "Nationality"
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address",
+            "description": "Full address"
+          }
+        },
+        "type": "object",
+        "title": "GuestUpdateRequest",
+        "description": "Request model for PATCH /guests/{guest_id} endpoint."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Overall service status: 'healthy', 'degraded', or 'unhealthy'",
+            "examples": [
+              "healthy",
+              "degraded"
+            ]
+          },
+          "components": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Components",
+            "description": "Status of individual components",
+            "examples": [
+              {
+                "guardrails": "healthy",
+                "openrouter": "healthy",
+                "qdrant": "healthy"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "components"
+        ],
+        "title": "HealthResponse",
+        "description": "Response model for /health endpoint."
+      },
+      "LLMOverrides": {
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "Override model for this request",
+            "examples": [
+              "qwen/qwen3-max",
+              "anthropic/claude-3-haiku"
+            ]
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 2.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature",
+            "description": "Override temperature (0.0-2.0)"
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 8192.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens",
+            "description": "Override max tokens"
+          }
+        },
+        "type": "object",
+        "title": "LLMOverrides",
+        "description": "Optional per-request LLM configuration overrides."
+      },
+      "LLMSettingsResponse": {
+        "properties": {
+          "backend": {
+            "type": "string",
+            "title": "Backend",
+            "description": "Active LLM backend: 'ollama' or 'openrouter'",
+            "examples": [
+              "ollama"
+            ]
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "description": "Current LLM model name",
+            "examples": [
+              "fredrezones55/qwen3.5-opus:9b"
+            ]
+          },
+          "temperature": {
+            "type": "number",
+            "title": "Temperature",
+            "description": "Current temperature setting"
+          },
+          "max_tokens": {
+            "type": "integer",
+            "title": "Max Tokens",
+            "description": "Current max tokens setting"
+          },
+          "streaming": {
+            "type": "boolean",
+            "title": "Streaming",
+            "description": "Whether streaming is enabled"
+          },
+          "thinking": {
+            "type": "boolean",
+            "title": "Thinking",
+            "description": "Whether thinking/reasoning mode is enabled",
+            "default": false
+          },
+          "ollama_base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ollama Base Url",
+            "description": "Ollama API base URL"
+          },
+          "openrouter_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Openrouter Model",
+            "description": "OpenRouter model (for reference when on Ollama)"
+          },
+          "available_models": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Available Models",
+            "description": "List of available LLM models"
+          }
+        },
+        "type": "object",
+        "required": [
+          "backend",
+          "model",
+          "temperature",
+          "max_tokens",
+          "streaming",
+          "available_models"
+        ],
+        "title": "LLMSettingsResponse",
+        "description": "Response model for /settings/llm endpoint."
+      },
+      "LLMSettingsUpdateRequest": {
+        "properties": {
+          "backend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend",
+            "description": "Switch backend: 'ollama' or 'openrouter'",
+            "examples": [
+              "ollama"
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "Model name to use",
+            "examples": [
+              "fredrezones55/qwen3.5-opus:9b",
+              "qwen/qwen3-max"
+            ]
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 2.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature",
+            "description": "Sampling temperature (0.0-2.0)"
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 8192.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens",
+            "description": "Maximum response tokens"
+          }
+        },
+        "type": "object",
+        "title": "LLMSettingsUpdateRequest",
+        "description": "Request model for PUT /settings/llm endpoint."
+      },
+      "RoomAvailabilityDay": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date",
+            "description": "Date (YYYY-MM-DD)"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available",
+            "description": "Whether rooms are available"
+          },
+          "available_count": {
+            "type": "integer",
+            "title": "Available Count",
+            "description": "Number of available rooms"
+          },
+          "min_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Price",
+            "description": "Minimum price for available rooms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "available",
+          "available_count"
+        ],
+        "title": "RoomAvailabilityDay",
+        "description": "Availability for a single day."
+      },
+      "RoomAvailabilityResponse": {
+        "properties": {
+          "room_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room Type",
+            "description": "Room type filter if applied"
+          },
+          "start_date": {
+            "type": "string",
+            "title": "Start Date",
+            "description": "Start date of range"
+          },
+          "end_date": {
+            "type": "string",
+            "title": "End Date",
+            "description": "End date of range"
+          },
+          "availability": {
+            "items": {
+              "$ref": "#/components/schemas/RoomAvailabilityDay"
+            },
+            "type": "array",
+            "title": "Availability",
+            "description": "Daily availability"
+          }
+        },
+        "type": "object",
+        "required": [
+          "start_date",
+          "end_date",
+          "availability"
+        ],
+        "title": "RoomAvailabilityResponse",
+        "description": "Response model for room availability calendar."
+      },
+      "RoomDetailResponse": {
+        "properties": {
+          "room": {
+            "$ref": "#/components/schemas/RoomResponse",
+            "description": "Room details"
+          },
+          "pricing": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Pricing",
+            "description": "Pricing breakdown (base_price, taxes, fees)",
+            "default": {}
+          },
+          "availability": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Availability",
+            "description": "Availability info for next 30 days"
+          }
+        },
+        "type": "object",
+        "required": [
+          "room"
+        ],
+        "title": "RoomDetailResponse",
+        "description": "Response model for detailed room information."
+      },
+      "RoomListResponse": {
+        "properties": {
+          "rooms": {
+            "items": {
+              "$ref": "#/components/schemas/RoomTypeResponse"
+            },
+            "type": "array",
+            "title": "Rooms",
+            "description": "List of room types"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "Total number of room types"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rooms",
+          "total"
+        ],
+        "title": "RoomListResponse",
+        "description": "Response model for room listing endpoint."
+      },
+      "RoomResponse": {
+        "properties": {
+          "room_id": {
+            "type": "integer",
+            "title": "Room Id",
+            "description": "Unique room ID"
+          },
+          "room_number": {
+            "type": "string",
+            "title": "Room Number",
+            "description": "Room number (e.g., '501')"
+          },
+          "floor": {
+            "type": "integer",
+            "title": "Floor",
+            "description": "Floor number"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Room status: 'available', 'occupied', 'cleaning', 'maintenance'",
+            "examples": [
+              "available",
+              "occupied"
+            ]
+          },
+          "view_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "View Type",
+            "description": "View from this specific room"
+          },
+          "last_cleaned": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Cleaned",
+            "description": "Last cleaning timestamp"
+          },
+          "room_type": {
+            "$ref": "#/components/schemas/RoomTypeResponse",
+            "description": "Room type details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "room_id",
+          "room_number",
+          "floor",
+          "status",
+          "room_type"
+        ],
+        "title": "RoomResponse",
+        "description": "Response model for individual room information."
+      },
+      "RoomTypeResponse": {
+        "properties": {
+          "room_type_id": {
+            "type": "integer",
+            "title": "Room Type Id",
+            "description": "Room type ID"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Room type name in English"
+          },
+          "name_th": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Th",
+            "description": "Room type name in Thai"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Description in English"
+          },
+          "description_th": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description Th",
+            "description": "Description in Thai"
+          },
+          "base_price": {
+            "type": "number",
+            "title": "Base Price",
+            "description": "Base price per night in THB"
+          },
+          "max_occupancy": {
+            "type": "integer",
+            "title": "Max Occupancy",
+            "description": "Maximum number of guests"
+          },
+          "size_sqm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Sqm",
+            "description": "Room size in square meters"
+          },
+          "bed_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bed Type",
+            "description": "Bed configuration"
+          },
+          "view_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "View Type",
+            "description": "View type (city, pool, garden)"
+          },
+          "amenities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Amenities",
+            "description": "List of amenities",
+            "default": []
+          },
+          "photos": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Photos",
+            "description": "URLs to room photos",
+            "default": []
+          },
+          "available_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Count",
+            "description": "Number of available rooms of this type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "room_type_id",
+          "name",
+          "base_price",
+          "max_occupancy"
+        ],
+        "title": "RoomTypeResponse",
+        "description": "Response model for room type information."
+      },
+      "SessionCreateResponse": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id",
+            "description": "New session ID"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "description": "Session creation timestamp (ISO format)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "created_at"
+        ],
+        "title": "SessionCreateResponse",
+        "description": "Response model for POST /sessions endpoint."
+      },
+      "SessionInfo": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session Id",
+            "description": "Session ID"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "description": "Session creation timestamp"
+          },
+          "last_activity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity",
+            "description": "Last activity timestamp"
+          },
+          "message_count": {
+            "type": "integer",
+            "title": "Message Count",
+            "description": "Number of messages in session",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "created_at"
+        ],
+        "title": "SessionInfo",
+        "description": "Response model for GET /sessions/{id} endpoint."
+      },
+      "SessionStatsResponse": {
+        "properties": {
+          "total_sessions": {
+            "type": "integer",
+            "title": "Total Sessions",
+            "default": 0
+          },
+          "total_messages": {
+            "type": "integer",
+            "title": "Total Messages",
+            "default": 0
+          },
+          "user_messages": {
+            "type": "integer",
+            "title": "User Messages",
+            "default": 0
+          },
+          "bot_messages": {
+            "type": "integer",
+            "title": "Bot Messages",
+            "default": 0
+          },
+          "admin_messages": {
+            "type": "integer",
+            "title": "Admin Messages",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "SessionStatsResponse",
+        "description": "Conversation session statistics."
+      },
+      "TokenResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token",
+            "description": "JWT access token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "description": "Token type (always 'bearer')",
+            "default": "bearer"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In",
+            "description": "Token lifetime in seconds"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserResponse",
+            "description": "Authenticated user profile"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "expires_in",
+          "user"
+        ],
+        "title": "TokenResponse",
+        "description": "Response model for /auth/login and /auth/register."
+      },
+      "UserLoginRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username",
+            "description": "Username or email address",
+            "examples": [
+              "john_doe",
+              "user@example.com"
+            ]
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Password",
+            "description": "Account password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "UserLoginRequest",
+        "description": "Request model for POST /auth/login endpoint."
+      },
+      "UserRegisterRequest": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 3,
+            "pattern": "^[a-zA-Z0-9_.\\-]+$",
+            "title": "Username",
+            "description": "Unique username (letters, numbers, . _ -)",
+            "examples": [
+              "john_doe",
+              "jane.smith"
+            ]
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 3,
+            "title": "Email",
+            "description": "Email address (must be unique)",
+            "examples": [
+              "user@example.com"
+            ]
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Password",
+            "description": "Password (minimum 8 characters)"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name",
+            "description": "Full display name (optional)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "email",
+          "password"
+        ],
+        "title": "UserRegisterRequest",
+        "description": "Request model for POST /auth/register endpoint."
+      },
+      "UserResponse": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "title": "User Id",
+            "description": "Unique user ID"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username",
+            "description": "Username"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email",
+            "description": "Email address"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role",
+            "description": "Account role: 'user' or 'admin'",
+            "examples": [
+              "user",
+              "admin"
+            ]
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name",
+            "description": "Full display name"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "description": "Whether the account is active",
+            "default": true
+          },
+          "guest_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guest Id",
+            "description": "Linked guest_id if user has a guest profile"
+          },
+          "last_login": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login",
+            "description": "Last login timestamp (ISO)"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At",
+            "description": "Account creation timestamp (ISO)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "username",
+          "email",
+          "role",
+          "created_at"
+        ],
+        "title": "UserResponse",
+        "description": "Public user information (excludes password_hash)."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "description": "Bearer JWT token from /auth/login",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Health",
+      "description": "Service health monitoring"
+    },
+    {
+      "name": "Auth",
+      "description": "User/admin authentication (register, login, JWT)"
+    },
+    {
+      "name": "Chat",
+      "description": "AI conversation powered by LangGraph Agent"
+    },
+    {
+      "name": "Rooms",
+      "description": "Room catalog and availability"
+    },
+    {
+      "name": "Booking",
+      "description": "Room reservation operations"
+    },
+    {
+      "name": "Guests",
+      "description": "Guest registration and management"
+    },
+    {
+      "name": "Sessions",
+      "description": "Conversation session management"
+    },
+    {
+      "name": "Settings",
+      "description": "LLM and server configuration"
+    },
+    {
+      "name": "Feedback",
+      "description": "Response quality feedback for continuous improvement"
+    },
+    {
+      "name": "Admin",
+      "description": "Hotel staff admin operations (override bot, manage rooms/bookings) — requires admin JWT"
+    },
+    {
+      "name": "Dashboard",
+      "description": "Real-time hotel statistics and monitoring — requires admin JWT"
+    },
+    {
+      "name": "Root",
+      "description": "API information"
+    }
+  ]
+}

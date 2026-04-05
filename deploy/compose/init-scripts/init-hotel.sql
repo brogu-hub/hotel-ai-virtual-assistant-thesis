@@ -135,8 +135,29 @@ CREATE TABLE IF NOT EXISTS conversation_history (
 );
 
 -- =============================================================================
+-- Users Table (authentication: registered guests + admins)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS users (
+    user_id SERIAL PRIMARY KEY,
+    username VARCHAR(64) UNIQUE NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(20) NOT NULL DEFAULT 'user',
+    full_name VARCHAR(200),
+    is_active BOOLEAN DEFAULT TRUE,
+    guest_id INTEGER REFERENCES guests(guest_id) ON DELETE SET NULL,
+    last_login TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT users_role_check CHECK (role IN ('user', 'admin'))
+);
+
+-- =============================================================================
 -- Indexes for better query performance
 -- =============================================================================
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_reservations_guest ON reservations(guest_id);
 CREATE INDEX IF NOT EXISTS idx_reservations_dates ON reservations(check_in_date, check_out_date);
 CREATE INDEX IF NOT EXISTS idx_reservations_status ON reservations(status);

@@ -676,6 +676,87 @@ class GuestCreateResponse(BaseModel):
 
 
 # =============================================================================
+# Authentication Models
+# =============================================================================
+
+
+class UserRegisterRequest(BaseModel):
+    """Request model for POST /auth/register endpoint."""
+
+    username: str = Field(
+        ...,
+        min_length=3,
+        max_length=64,
+        pattern=r"^[a-zA-Z0-9_.\-]+$",
+        description="Unique username (letters, numbers, . _ -)",
+        examples=["john_doe", "jane.smith"],
+    )
+    email: str = Field(
+        ...,
+        min_length=3,
+        max_length=255,
+        description="Email address (must be unique)",
+        examples=["user@example.com"],
+    )
+    password: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+        description="Password (minimum 8 characters)",
+    )
+    full_name: Optional[str] = Field(
+        None,
+        max_length=200,
+        description="Full display name (optional)",
+    )
+
+
+class UserLoginRequest(BaseModel):
+    """Request model for POST /auth/login endpoint."""
+
+    username: str = Field(
+        ...,
+        description="Username or email address",
+        examples=["john_doe", "user@example.com"],
+    )
+    password: str = Field(
+        ...,
+        min_length=1,
+        description="Account password",
+    )
+
+
+class UserResponse(BaseModel):
+    """Public user information (excludes password_hash)."""
+
+    user_id: int = Field(..., description="Unique user ID")
+    username: str = Field(..., description="Username")
+    email: str = Field(..., description="Email address")
+    role: str = Field(
+        ...,
+        description="Account role: 'user' or 'admin'",
+        examples=["user", "admin"],
+    )
+    full_name: Optional[str] = Field(None, description="Full display name")
+    is_active: bool = Field(True, description="Whether the account is active")
+    guest_id: Optional[int] = Field(
+        None,
+        description="Linked guest_id if user has a guest profile",
+    )
+    last_login: Optional[str] = Field(None, description="Last login timestamp (ISO)")
+    created_at: str = Field(..., description="Account creation timestamp (ISO)")
+
+
+class TokenResponse(BaseModel):
+    """Response model for /auth/login and /auth/register."""
+
+    access_token: str = Field(..., description="JWT access token")
+    token_type: str = Field("bearer", description="Token type (always 'bearer')")
+    expires_in: int = Field(..., description="Token lifetime in seconds")
+    user: UserResponse = Field(..., description="Authenticated user profile")
+
+
+# =============================================================================
 # Admin Models
 # =============================================================================
 

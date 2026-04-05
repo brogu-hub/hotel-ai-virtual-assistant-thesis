@@ -1114,6 +1114,208 @@ async def update_guest(
 
 
 # =============================================================================
+# User / Auth Operations
+# =============================================================================
+
+
+async def ensure_users_table() -> None:
+    """Create users table + indexes if they don't exist (idempotent)."""
+    try:
+        with get_cursor() as (cur, conn):
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id SERIAL PRIMARY KEY,
+                    username VARCHAR(64) UNIQUE NOT NULL,
+                    email VARCHAR(255) UNIQUE NOT NULL,
+                    password_hash VARCHAR(255) NOT NULL,
+                    role VARCHAR(20) NOT NULL DEFAULT 'user',
+                    full_name VARCHAR(200),
+                    is_active BOOLEAN DEFAULT TRUE,
+                    guest_id INTEGER REFERENCES guests(guest_id) ON DELETE SET NULL,
+                    last_login TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    CONSTRAINT users_role_check CHECK (role IN ('user', 'admin'))
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)")
+            conn.commit()
+            logger.info("users table ensured")
+    except Exception as e:
+        logger.error(f"Error ensuring users table: {e}")
+        raise
+
+
+async def create_user(
+    username: str,
+    email: str,
+    password_hash: str,
+    role: str = "user",
+    full_name: Optional[str] = None,
+    guest_id: Optional[int] = None,
+) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+    """
+    Create a new user account.
+
+    Returns:
+        (success, message, user_dict) — user_dict excludes password_hash.
+    """
+    if role not in ("user", "admin"):
+        return False, f"Invalid role: {role}", None
+
+    try:
+        with get_cursor() as (cur, conn):
+            cur.execute(
+                "SELECT user_id FROM users WHERE LOWER(username) = LOWER(%s) OR LOWER(email) = LOWER(%s)",
+                (username, email),
+            )
+            if cur.fetchone():
+                return (
+                    False,
+                    "Username or email already exists / ชื่อผู้ใช้หรืออีเมลมีอยู่แล้ว",
+                    None,
+                )
+
+            cur.execute(
+                """
+                INSERT INTO users (username, email, password_hash, role, full_name, guest_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING user_id, username, email, role, full_name, guest_id,
+                          is_active, last_login, created_at
+                """,
+                (username, email, password_hash, role, full_name, guest_id),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            return True, "User created successfully / สร้างผู้ใช้สำเร็จ", dict(row)
+    except Exception as e:
+        logger.error(f"Error creating user: {e}")
+        return False, f"Error creating user: {str(e)}", None
+
+
+async def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
+    """Look up a user by username or email (case-insensitive). Includes password_hash."""
+    try:
+        with get_cursor() as (cur, conn):
+            cur.execute(
+                """
+                SELECT user_id, username, email, password_hash, role, full_name,
+                       is_active, guest_id, last_login, created_at, updated_at
+                FROM users
+                WHERE LOWER(username) = LOWER(%s) OR LOWER(email) = LOWER(%s)
+                LIMIT 1
+                """,
+                (username, username),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+    except Exception as e:
+        logger.error(f"Error fetching user: {e}")
+        return None
+
+
+async def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
+    """Look up a user by user_id. Includes password_hash."""
+    try:
+        with get_cursor() as (cur, conn):
+            cur.execute(
+                """
+                SELECT user_id, username, email, password_hash, role, full_name,
+                       is_active, guest_id, last_login, created_at, updated_at
+                FROM users
+                WHERE user_id = %s
+                """,
+                (user_id,),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+    except Exception as e:
+        logger.error(f"Error fetching user by id: {e}")
+        return None
+
+
+async def update_user_last_login(user_id: int) -> None:
+    """Update the last_login timestamp to now."""
+    try:
+        with get_cursor() as (cur, conn):
+            cur.execute(
+                "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = %s",
+                (user_id,),
+            )
+            conn.commit()
+    except Exception as e:
+        logger.warning(f"Failed to update last_login for user {user_id}: {e}")
+
+
+async def list_users(
+    role: Optional[str] = None, limit: int = 100
+) -> List[Dict[str, Any]]:
+    """List users, optionally filtered by role. Excludes password_hash."""
+    try:
+        with get_cursor() as (cur, conn):
+            if role:
+                cur.execute(
+                    """
+                    SELECT user_id, username, email, role, full_name, is_active,
+                           guest_id, last_login, created_at
+                    FROM users
+                    WHERE role = %s
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                    """,
+                    (role, min(limit, 500)),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT user_id, username, email, role, full_name, is_active,
+                           guest_id, last_login, created_at
+                    FROM users
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                    """,
+                    (min(limit, 500),),
+                )
+            return [dict(r) for r in cur.fetchall()]
+    except Exception as e:
+        logger.error(f"Error listing users: {e}")
+        return []
+
+
+async def seed_default_admin(
+    username: str, email: str, password_hash: str, full_name: str = "Default Admin"
+) -> bool:
+    """
+    Create a default admin if NO admin user exists yet.
+
+    Returns True if a new admin was created, False if one already exists
+    or on error.
+    """
+    try:
+        with get_cursor() as (cur, conn):
+            cur.execute("SELECT 1 FROM users WHERE role = 'admin' LIMIT 1")
+            if cur.fetchone():
+                return False
+
+            cur.execute(
+                """
+                INSERT INTO users (username, email, password_hash, role, full_name)
+                VALUES (%s, %s, %s, 'admin', %s)
+                ON CONFLICT (username) DO NOTHING
+                """,
+                (username, email, password_hash, full_name),
+            )
+            created = cur.rowcount > 0
+            conn.commit()
+            return created
+    except Exception as e:
+        logger.error(f"Error seeding default admin: {e}")
+        return False
+
+
+# =============================================================================
 # Admin Operations
 # =============================================================================
 

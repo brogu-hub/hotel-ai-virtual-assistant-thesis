@@ -55,6 +55,10 @@ prometheus_client==0.21.0
 nest-asyncio==1.6.0
 python-dotenv>=1.0.0
 
+# Authentication (JWT + bcrypt password hashing)
+PyJWT>=2.8.0
+bcrypt>=4.0.0
+
 # Data Generation (for hotel dataset)
 faker>=22.0.0
 
