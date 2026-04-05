@@ -241,6 +241,87 @@ login_rate_limiter_ip = LoginRateLimiter(LOGIN_RATE_LIMIT_PER_IP, LOGIN_RATE_WIN
 login_rate_limiter_user = LoginRateLimiter(LOGIN_RATE_LIMIT_PER_USER, LOGIN_RATE_WINDOW_SEC)
 
 
+# =============================================================================
+# User lookup cache (TTL-based — hot path optimization for authenticated
+# requests, which otherwise do a DB lookup on every call to get_current_user)
+# =============================================================================
+
+
+class UserCache:
+    """Tiny thread-safe TTL cache for user lookups by username.
+
+    Scaling rationale: every authenticated request goes through
+    `get_current_user`, which currently does `SELECT ... FROM users WHERE
+    username = %s`. With N concurrent users and an average request rate,
+    this turns into N DB hits per request. A 30-second TTL cache cuts
+    this to O(1 DB hit per 30s per active user) while keeping the window
+    small enough that role/active-flag changes propagate quickly.
+
+    Invalidate on: password change, account disable, role change.
+    """
+
+    def __init__(self, ttl_seconds: int = 30, max_size: int = 5000) -> None:
+        self._cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+        self._lock = threading.Lock()
+        self.ttl = ttl_seconds
+        self.max_size = max_size
+        self._hits = 0
+        self._misses = 0
+
+    def _key(self, username: str) -> str:
+        return username.lower().strip()
+
+    def get(self, username: str) -> Optional[Dict[str, Any]]:
+        k = self._key(username)
+        with self._lock:
+            entry = self._cache.get(k)
+            if entry is None:
+                self._misses += 1
+                return None
+            ts, user = entry
+            if time.time() - ts > self.ttl:
+                self._cache.pop(k, None)
+                self._misses += 1
+                return None
+            self._hits += 1
+            return user
+
+    def set(self, username: str, user: Dict[str, Any]) -> None:
+        k = self._key(username)
+        with self._lock:
+            # Cheap bounded eviction: when full, drop 10% of the oldest
+            if len(self._cache) >= self.max_size:
+                oldest = sorted(self._cache.items(), key=lambda kv: kv[1][0])
+                for old_k, _ in oldest[: self.max_size // 10]:
+                    self._cache.pop(old_k, None)
+            self._cache[k] = (time.time(), user)
+
+    def invalidate(self, username: str) -> None:
+        k = self._key(username)
+        with self._lock:
+            self._cache.pop(k, None)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._cache.clear()
+
+    def stats(self) -> Dict[str, Any]:
+        with self._lock:
+            total = self._hits + self._misses
+            hit_rate = (self._hits / total) if total else 0.0
+            return {
+                "size": len(self._cache),
+                "hits": self._hits,
+                "misses": self._misses,
+                "hit_rate": round(hit_rate, 3),
+                "ttl_seconds": self.ttl,
+            }
+
+
+USER_CACHE_TTL_SECONDS = int(os.getenv("USER_CACHE_TTL_SECONDS", "30"))
+user_cache = UserCache(ttl_seconds=USER_CACHE_TTL_SECONDS)
+
+
 def get_client_ip(request: Request) -> str:
     """Extract the client IP, respecting X-Forwarded-For when behind a proxy."""
     xff = request.headers.get("X-Forwarded-For")
@@ -299,7 +380,14 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    user = await db.get_user_by_username(username)
+    # Hot-path optimization: check the TTL cache before hitting the DB.
+    # Cached entries are invalidated on password change / account disable.
+    user = user_cache.get(username)
+    if user is None:
+        user = await db.get_user_by_username(username)
+        if user:
+            user_cache.set(username, user)
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -308,6 +396,7 @@ async def get_current_user(
         )
 
     if not user.get("is_active", True):
+        user_cache.invalidate(username)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account disabled / บัญชีถูกปิดการใช้งาน",
@@ -327,9 +416,11 @@ async def get_current_user(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-    # Attach the raw token payload for endpoints that need jti (e.g., logout)
-    user["_jwt_payload"] = payload
-    return user
+    # Return a shallow copy with the JWT payload attached — never store the
+    # payload in the cached dict.
+    result = dict(user)
+    result["_jwt_payload"] = payload
+    return result
 
 
 async def require_admin(

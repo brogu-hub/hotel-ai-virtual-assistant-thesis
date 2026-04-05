@@ -101,12 +101,14 @@ from .auth import (
     login_rate_limiter_ip,
     login_rate_limiter_user,
     is_jwt_secret_insecure,
+    user_cache,
     JWT_EXPIRE_HOURS,
     LOCKOUT_THRESHOLD,
     LOCKOUT_MINUTES,
     LOGIN_RATE_LIMIT_PER_IP,
     LOGIN_RATE_LIMIT_PER_USER,
 )
+from .audit import audit, AuditActions
 
 # Request ID context variable for tracing
 request_id_ctx: ContextVar[str] = ContextVar("request_id", default="")
@@ -313,6 +315,13 @@ async def lifespan(app: FastAPI):
         await close_checkpointer()
     except Exception:
         pass
+
+    # Cleanup: close DB connection pool
+    try:
+        db.close_db_pool()
+    except Exception:
+        pass
+
     logger.info("Server shutdown complete")
 
 
@@ -535,7 +544,7 @@ async def health_check():
 
 
 @app.post("/auth/register", response_model=TokenResponse, tags=["Auth"])
-async def auth_register(request: UserRegisterRequest):
+async def auth_register(request: UserRegisterRequest, http_request: Request):
     """
     Register a new user account (role='user') and return a JWT access token.
 
@@ -552,7 +561,23 @@ async def auth_register(request: UserRegisterRequest):
         full_name=request.full_name,
     )
     if not success or not user:
+        await audit(
+            http_request,
+            action=AuditActions.REGISTER,
+            actor_username=request.username,
+            details={"email": request.email, "error": message},
+            success=False,
+        )
         raise HTTPException(status_code=400, detail=message)
+
+    await audit(
+        http_request,
+        action=AuditActions.REGISTER,
+        actor_username=user["username"],
+        resource_type="user",
+        resource_id=str(user["user_id"]),
+        details={"email": user["email"], "role": user["role"]},
+    )
 
     token = create_access_token({
         "sub": user["username"],
@@ -588,6 +613,13 @@ async def auth_login(request: UserLoginRequest, http_request: Request):
     allowed, retry_after = login_rate_limiter_ip.check_and_record(client_ip)
     if not allowed:
         logger.warning(f"Login rate limit exceeded for IP {client_ip}")
+        await audit(
+            http_request,
+            action=AuditActions.LOGIN_RATE_LIMITED,
+            actor_username=username_key,
+            details={"reason": "per_ip", "retry_after": retry_after},
+            success=False,
+        )
         raise HTTPException(
             status_code=429,
             detail=f"Too many login attempts from this IP. Retry in {retry_after}s. / ลองเข้าสู่ระบบมากเกินไป",
@@ -598,6 +630,13 @@ async def auth_login(request: UserLoginRequest, http_request: Request):
     allowed_u, retry_after_u = login_rate_limiter_user.check_and_record(username_key)
     if not allowed_u:
         logger.warning(f"Login rate limit exceeded for username {username_key}")
+        await audit(
+            http_request,
+            action=AuditActions.LOGIN_RATE_LIMITED,
+            actor_username=username_key,
+            details={"reason": "per_user", "retry_after": retry_after_u},
+            success=False,
+        )
         raise HTTPException(
             status_code=429,
             detail=f"Too many login attempts for this account. Retry in {retry_after_u}s. / ลองเข้าสู่ระบบบัญชีนี้มากเกินไป",
@@ -613,6 +652,13 @@ async def auth_login(request: UserLoginRequest, http_request: Request):
             logger.warning(
                 f"Login attempted on locked account: {user['username']} "
                 f"(remaining: {lockout_seconds}s)"
+            )
+            await audit(
+                http_request,
+                action=AuditActions.LOGIN_LOCKED,
+                actor=user,
+                details={"remaining_seconds": lockout_seconds},
+                success=False,
             )
             raise HTTPException(
                 status_code=423,  # Locked
@@ -637,12 +683,30 @@ async def auth_login(request: UserLoginRequest, http_request: Request):
                 logger.warning(
                     f"Account locked after {attempts} failed attempts: {user['username']}"
                 )
+            # Invalidate cache so updated failed_login_attempts/locked_until reflect
+            user_cache.invalidate(user["username"])
+
+        await audit(
+            http_request,
+            action=AuditActions.LOGIN_FAILED,
+            actor=user if user else None,
+            actor_username=username_key if not user else None,
+            details={"reason": "wrong_password" if user else "unknown_user"},
+            success=False,
+        )
         raise HTTPException(
             status_code=401,
             detail="Invalid username or password / ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง",
         )
 
     if not user.get("is_active", True):
+        await audit(
+            http_request,
+            action=AuditActions.LOGIN_FAILED,
+            actor=user,
+            details={"reason": "account_disabled"},
+            success=False,
+        )
         raise HTTPException(
             status_code=403,
             detail="Account disabled / บัญชีถูกปิดการใช้งาน",
@@ -651,6 +715,15 @@ async def auth_login(request: UserLoginRequest, http_request: Request):
     # Success: update last_login, reset failed counter, reset rate limiter for this user
     await db.update_user_last_login(user["user_id"])
     login_rate_limiter_user.reset(username_key)
+    user_cache.invalidate(user["username"])  # force re-cache with new last_login
+
+    await audit(
+        http_request,
+        action=AuditActions.LOGIN_SUCCESS,
+        actor=user,
+        resource_type="user",
+        resource_id=str(user["user_id"]),
+    )
 
     token = create_access_token({
         "sub": user["username"],
@@ -666,7 +739,10 @@ async def auth_login(request: UserLoginRequest, http_request: Request):
 
 
 @app.post("/auth/logout", response_model=GenericSuccessResponse, tags=["Auth"])
-async def auth_logout(current_user: dict = Depends(get_current_user)):
+async def auth_logout(
+    http_request: Request,
+    current_user: dict = Depends(get_current_user),
+):
     """
     Logout by revoking the current JWT.
 
@@ -686,6 +762,14 @@ async def auth_logout(current_user: dict = Depends(get_current_user)):
         token_blocklist.add(jti, float(exp))
         logger.info(f"User '{current_user['username']}' logged out (jti={jti[:8]}...)")
 
+    await audit(
+        http_request,
+        action=AuditActions.LOGOUT,
+        actor=current_user,
+        resource_type="token",
+        resource_id=jti[:16] if jti else None,
+    )
+
     return GenericSuccessResponse(
         success=True,
         message="Logged out successfully / ออกจากระบบสำเร็จ",
@@ -695,6 +779,7 @@ async def auth_logout(current_user: dict = Depends(get_current_user)):
 @app.patch("/auth/me/password", response_model=GenericSuccessResponse, tags=["Auth"])
 async def auth_change_password(
     request: PasswordChangeRequest,
+    http_request: Request,
     current_user: dict = Depends(get_current_user),
 ):
     """
@@ -710,6 +795,13 @@ async def auth_change_password(
     Returns 401 if the current password is wrong.
     """
     if not verify_password(request.current_password, current_user["password_hash"]):
+        await audit(
+            http_request,
+            action=AuditActions.PASSWORD_CHANGE_FAILED,
+            actor=current_user,
+            details={"reason": "wrong_current_password"},
+            success=False,
+        )
         raise HTTPException(
             status_code=401,
             detail="Current password is incorrect / รหัสผ่านปัจจุบันไม่ถูกต้อง",
@@ -725,6 +817,17 @@ async def auth_change_password(
     success = await db.update_user_password(current_user["user_id"], new_hash)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to update password")
+
+    # Invalidate cache so the next get_current_user fetches fresh password_changed_at
+    user_cache.invalidate(current_user["username"])
+
+    await audit(
+        http_request,
+        action=AuditActions.PASSWORD_CHANGED,
+        actor=current_user,
+        resource_type="user",
+        resource_id=str(current_user["user_id"]),
+    )
 
     logger.info(f"User '{current_user['username']}' changed password — all tokens invalidated")
     return GenericSuccessResponse(
@@ -742,6 +845,7 @@ async def auth_me(current_user: dict = Depends(get_current_user)):
 @app.post("/auth/admin/register", response_model=UserResponse, tags=["Auth"])
 async def auth_admin_register(
     request: UserRegisterRequest,
+    http_request: Request,
     current_admin: dict = Depends(require_admin),
 ):
     """
@@ -762,11 +866,20 @@ async def auth_admin_register(
     logger.info(
         f"Admin '{current_admin['username']}' created new admin '{user['username']}'"
     )
+    await audit(
+        http_request,
+        action=AuditActions.ADMIN_CREATED,
+        actor=current_admin,
+        resource_type="user",
+        resource_id=str(user["user_id"]),
+        details={"new_admin_username": user["username"], "email": user["email"]},
+    )
     return UserResponse(**serialize_user(user))
 
 
 @app.get("/auth/users", tags=["Auth"])
 async def auth_list_users(
+    http_request: Request,
     role: Optional[str] = None,
     limit: int = 100,
     current_admin: dict = Depends(require_admin),
@@ -775,6 +888,12 @@ async def auth_list_users(
     List all users (admin only). Optionally filter by role ('user' or 'admin').
     """
     users = await db.list_users(role=role, limit=limit)
+    await audit(
+        http_request,
+        action=AuditActions.USERS_LISTED,
+        actor=current_admin,
+        details={"role_filter": role, "count": len(users)},
+    )
     return {
         "users": [serialize_user(u) for u in users],
         "count": len(users),
@@ -1765,6 +1884,7 @@ async def get_llm_configuration():
 @app.put("/settings/llm", response_model=LLMSettingsResponse, tags=["Settings"])
 async def update_llm_configuration(
     request: LLMSettingsUpdateRequest,
+    http_request: Request,
     current_admin: dict = Depends(require_admin),
 ):
     """
@@ -1796,6 +1916,14 @@ async def update_llm_configuration(
     )
 
     logger.info(f"LLM settings updated via API: {changes}")
+    await audit(
+        http_request,
+        action=AuditActions.LLM_CONFIG_CHANGED,
+        actor=current_admin,
+        resource_type="settings",
+        resource_id="llm",
+        details=changes,
+    )
 
     return LLMSettingsResponse(
         backend=runtime_config.backend.value,
@@ -2022,6 +2150,7 @@ async def get_feedback_stats():
 async def admin_set_room_status(
     room_id: int,
     request: AdminRoomStatusRequest,
+    http_request: Request,
     current_admin: dict = Depends(require_admin),
 ):
     """
@@ -2031,10 +2160,27 @@ async def admin_set_room_status(
     """
     result = await db.admin_update_room_status(room_id, request.status, request.notes)
     if not result:
+        await audit(
+            http_request,
+            action=AuditActions.ROOM_STATUS_CHANGED,
+            actor=current_admin,
+            resource_type="room",
+            resource_id=str(room_id),
+            details={"attempted_status": request.status, "error": "failed"},
+            success=False,
+        )
         raise HTTPException(
             status_code=400,
             detail=f"Failed to update room {room_id}. Check room_id and status value.",
         )
+    await audit(
+        http_request,
+        action=AuditActions.ROOM_STATUS_CHANGED,
+        actor=current_admin,
+        resource_type="room",
+        resource_id=str(room_id),
+        details={"new_status": request.status, "notes": request.notes},
+    )
     return {"success": True, **result}
 
 
@@ -2042,6 +2188,7 @@ async def admin_set_room_status(
 async def admin_set_booking_status(
     reservation_id: str,
     request: AdminBookingStatusRequest,
+    http_request: Request,
     current_admin: dict = Depends(require_admin),
 ):
     """
@@ -2052,16 +2199,34 @@ async def admin_set_booking_status(
     """
     result = await db.admin_update_booking_status(reservation_id, request.status, request.notes)
     if not result:
+        await audit(
+            http_request,
+            action=AuditActions.BOOKING_STATUS_CHANGED,
+            actor=current_admin,
+            resource_type="booking",
+            resource_id=str(reservation_id),
+            details={"attempted_status": request.status, "error": "failed"},
+            success=False,
+        )
         raise HTTPException(
             status_code=400,
             detail=f"Failed to update booking {reservation_id}. Check ID and status value.",
         )
+    await audit(
+        http_request,
+        action=AuditActions.BOOKING_STATUS_CHANGED,
+        actor=current_admin,
+        resource_type="booking",
+        resource_id=str(reservation_id),
+        details={"new_status": request.status, "notes": request.notes},
+    )
     return {"success": True, **result}
 
 
 @app.post("/admin/chat/override", response_model=AdminChatOverrideResponse, tags=["Admin"])
 async def admin_chat_override(
     request: AdminChatOverrideRequest,
+    http_request: Request,
     current_admin: dict = Depends(require_admin),
 ):
     """
@@ -2074,6 +2239,15 @@ async def admin_chat_override(
     success = await db.admin_send_message_to_session(request.session_id, request.message)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to send admin message")
+
+    await audit(
+        http_request,
+        action=AuditActions.CHAT_OVERRIDE,
+        actor=current_admin,
+        resource_type="session",
+        resource_id=request.session_id,
+        details={"message_length": len(request.message)},
+    )
     return AdminChatOverrideResponse(
         success=True,
         session_id=request.session_id,
@@ -2084,6 +2258,7 @@ async def admin_chat_override(
 @app.post("/admin/sessions/{session_id}/takeover", tags=["Admin"])
 async def admin_takeover_session(
     session_id: str,
+    http_request: Request,
     current_admin: dict = Depends(require_admin),
 ):
     """
@@ -2098,12 +2273,20 @@ async def admin_takeover_session(
         session_id,
         "[System] Hotel staff has joined the conversation / เจ้าหน้าที่โรงแรมเข้าร่วมสนทนาแล้ว",
     )
+    await audit(
+        http_request,
+        action=AuditActions.SESSION_TAKEOVER,
+        actor=current_admin,
+        resource_type="session",
+        resource_id=session_id,
+    )
     return {"success": True, "session_id": session_id, "status": "admin_controlled"}
 
 
 @app.post("/admin/sessions/{session_id}/release", tags=["Admin"])
 async def admin_release_session(
     session_id: str,
+    http_request: Request,
     current_admin: dict = Depends(require_admin),
 ):
     """
@@ -2116,11 +2299,21 @@ async def admin_release_session(
         session_id,
         "[System] AI assistant has resumed / ผู้ช่วย AI กลับมาให้บริการแล้ว",
     )
+    await audit(
+        http_request,
+        action=AuditActions.SESSION_RELEASE,
+        actor=current_admin,
+        resource_type="session",
+        resource_id=session_id,
+    )
     return {"success": True, "session_id": session_id, "status": "bot_active"}
 
 
 @app.get("/admin/sessions", tags=["Admin"])
-async def admin_list_active_sessions(current_admin: dict = Depends(require_admin)):
+async def admin_list_active_sessions(
+    http_request: Request,
+    current_admin: dict = Depends(require_admin),
+):
     """
     Admin: List active chat sessions with last message preview.
 
@@ -2161,6 +2354,12 @@ async def admin_list_active_sessions(current_admin: dict = Depends(require_admin
                     "status": "admin_controlled" if sid in admin_controlled_sessions else "bot_active",
                 })
 
+        await audit(
+            http_request,
+            action=AuditActions.SESSIONS_LISTED,
+            actor=current_admin,
+            details={"count": len(sessions)},
+        )
         return {"sessions": sessions, "count": len(sessions)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -2169,6 +2368,7 @@ async def admin_list_active_sessions(current_admin: dict = Depends(require_admin
 @app.get("/admin/sessions/{session_id}/messages", tags=["Admin"])
 async def admin_get_session_messages(
     session_id: str,
+    http_request: Request,
     limit: int = 100,
     current_admin: dict = Depends(require_admin),
 ):
@@ -2188,6 +2388,16 @@ async def admin_get_session_messages(
                 LIMIT %s
             """, (session_id, min(limit, 500)))
             messages = [dict(r) for r in cur.fetchall()]
+
+        # Privacy-sensitive: admin is viewing a guest conversation
+        await audit(
+            http_request,
+            action=AuditActions.SESSION_VIEWED,
+            actor=current_admin,
+            resource_type="session",
+            resource_id=session_id,
+            details={"message_count": len(messages)},
+        )
         return {
             "session_id": session_id,
             "status": "admin_controlled" if session_id in admin_controlled_sessions else "bot_active",
@@ -2203,8 +2413,92 @@ async def admin_get_session_messages(
 # =============================================================================
 
 
+@app.get("/admin/audit", tags=["Admin"])
+async def admin_get_audit_log(
+    http_request: Request,
+    limit: int = 50,
+    offset: int = 0,
+    actor_username: Optional[str] = None,
+    action: Optional[str] = None,
+    action_prefix: Optional[str] = None,
+    resource_type: Optional[str] = None,
+    resource_id: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    success_only: Optional[bool] = None,
+    current_admin: dict = Depends(require_admin),
+):
+    """
+    Admin: Query the audit log with filters and pagination.
+
+    Every admin action, authentication event, and privacy-sensitive
+    operation (admin reading guest conversations) is recorded here.
+
+    Filters:
+    - `actor_username`: exact match (case-insensitive)
+    - `action`: exact action name (e.g., `auth.login.success`)
+    - `action_prefix`: prefix match (e.g., `auth.` or `admin.session.`)
+    - `resource_type`: e.g., `session`, `user`, `booking`, `room`
+    - `resource_id`: specific resource
+    - `start_date` / `end_date`: ISO date strings (e.g., `2026-04-05`)
+    - `success_only`: `true` for only successful, `false` for only failed
+
+    Pagination:
+    - `limit`: max 500 per page (default 50)
+    - `offset`: 0-indexed
+
+    Returns `{entries, total, limit, offset, has_more}` for pagination UI.
+    """
+    entries, total = await db.list_audit_entries(
+        limit=limit,
+        offset=offset,
+        actor_username=actor_username,
+        action=action,
+        action_prefix=action_prefix,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        start_date=start_date,
+        end_date=end_date,
+        success_only=success_only,
+    )
+    await audit(
+        http_request,
+        action=AuditActions.AUDIT_VIEWED,
+        actor=current_admin,
+        details={
+            "filters": {
+                "actor_username": actor_username,
+                "action": action,
+                "action_prefix": action_prefix,
+                "resource_type": resource_type,
+            },
+            "returned": len(entries),
+        },
+    )
+    return {
+        "entries": entries,
+        "total": total,
+        "limit": min(limit, 500),
+        "offset": max(offset, 0),
+        "has_more": (offset + len(entries)) < total,
+    }
+
+
+@app.get("/admin/audit/stats", tags=["Admin"])
+async def admin_get_audit_stats(
+    current_admin: dict = Depends(require_admin),
+):
+    """
+    Admin: Summary statistics of audit log (last 24h).
+
+    Returns total events, failed events, top actions, and top actors.
+    """
+    return await db.get_audit_stats()
+
+
 @app.get("/admin/escalations", tags=["Admin"])
 async def admin_get_escalations(
+    http_request: Request,
     limit: int = 20,
     current_admin: dict = Depends(require_admin),
 ):
@@ -2221,6 +2515,12 @@ async def admin_get_escalations(
                 LIMIT %s
             """, (min(limit, 100),))
             rows = [dict(r) for r in cur.fetchall()]
+        await audit(
+            http_request,
+            action=AuditActions.ESCALATIONS_VIEWED,
+            actor=current_admin,
+            details={"count": len(rows)},
+        )
         return {"escalations": rows, "count": len(rows)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -2292,6 +2592,7 @@ async def admin_get_state_history(
 async def admin_rollback_session(
     session_id: str,
     checkpoint_id: str,
+    http_request: Request,
     current_admin: dict = Depends(require_admin),
 ):
     """
@@ -2340,6 +2641,19 @@ async def admin_rollback_session(
             f"[System] Session rolled back to step {step} (checkpoint: {checkpoint_id[:12]}...)",
         )
 
+        await audit(
+            http_request,
+            action=AuditActions.SESSION_ROLLBACK,
+            actor=current_admin,
+            resource_type="session",
+            resource_id=session_id,
+            details={
+                "checkpoint_id": checkpoint_id,
+                "step": step,
+                "new_checkpoint_id": new_checkpoint_id,
+            },
+        )
+
         return {
             "success": True,
             "session_id": session_id,
@@ -2362,6 +2676,7 @@ async def admin_replay_from_checkpoint(
     session_id: str,
     checkpoint_id: str,
     message: str,
+    http_request: Request,
     current_admin: dict = Depends(require_admin),
 ):
     """
@@ -2412,6 +2727,19 @@ async def admin_replay_from_checkpoint(
             if hasattr(msg, "content") and msg.content and getattr(msg, "type", "") == "ai":
                 response_text = msg.content
                 break
+
+        await audit(
+            http_request,
+            action=AuditActions.SESSION_REPLAY,
+            actor=current_admin,
+            resource_type="session",
+            resource_id=session_id,
+            details={
+                "checkpoint_id": checkpoint_id,
+                "step": from_step,
+                "message_length": len(message),
+            },
+        )
 
         return {
             "success": True,

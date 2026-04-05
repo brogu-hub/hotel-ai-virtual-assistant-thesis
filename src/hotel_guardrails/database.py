@@ -13,55 +13,101 @@ wrapped for async compatibility.
 """
 
 import os
+import json
 import logging
+import threading
 from datetime import datetime, date, timedelta
 from typing import Optional, List, Dict, Any, Tuple
 from contextlib import contextmanager
 
 import psycopg2
 import psycopg2.extras
+from psycopg2 import pool as pg_pool
 
 logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# Database Connection
+# Database Connection Pool (ThreadedConnectionPool — safe for FastAPI
+# handlers that mix sync DB calls inside async endpoints)
 # =============================================================================
+
+_db_pool: Optional[pg_pool.ThreadedConnectionPool] = None
+_db_pool_lock = threading.Lock()
+
+
+def _create_pool() -> pg_pool.ThreadedConnectionPool:
+    """Build the connection pool from environment variables."""
+    min_conn = int(os.getenv("DB_POOL_MIN", "2"))
+    max_conn = int(os.getenv("DB_POOL_MAX", "20"))
+
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        return pg_pool.ThreadedConnectionPool(min_conn, max_conn, dsn=database_url)
+
+    return pg_pool.ThreadedConnectionPool(
+        min_conn,
+        max_conn,
+        host=os.getenv("POSTGRES_HOST", "localhost"),
+        port=os.getenv("POSTGRES_PORT", "5432"),
+        dbname=os.getenv("POSTGRES_DB", "railway"),
+        user=os.getenv("POSTGRES_USER", "postgres"),
+        password=os.getenv("POSTGRES_PASSWORD", "password"),
+    )
+
+
+def get_db_pool() -> pg_pool.ThreadedConnectionPool:
+    """Lazily initialize and return the connection pool (thread-safe)."""
+    global _db_pool
+    if _db_pool is None:
+        with _db_pool_lock:
+            if _db_pool is None:
+                _db_pool = _create_pool()
+                logger.info(
+                    f"DB connection pool initialized: "
+                    f"min={os.getenv('DB_POOL_MIN', '2')}, "
+                    f"max={os.getenv('DB_POOL_MAX', '20')}"
+                )
+    return _db_pool
+
+
+def close_db_pool() -> None:
+    """Close all pool connections (call during shutdown)."""
+    global _db_pool
+    with _db_pool_lock:
+        if _db_pool is not None:
+            _db_pool.closeall()
+            _db_pool = None
+            logger.info("DB connection pool closed")
 
 
 def get_db_connection():
-    """Get database connection from environment."""
-    database_url = os.getenv("DATABASE_URL")
-    if database_url:
-        return psycopg2.connect(database_url)
+    """
+    Backwards-compat shim: checkout a connection from the pool.
 
-    # Fallback to individual params
-    host = os.getenv("POSTGRES_HOST", "localhost")
-    port = os.getenv("POSTGRES_PORT", "5432")
-    dbname = os.getenv("POSTGRES_DB", "railway")
-    user = os.getenv("POSTGRES_USER", "postgres")
-    password = os.getenv("POSTGRES_PASSWORD", "password")
-
-    return psycopg2.connect(
-        host=host,
-        port=port,
-        dbname=dbname,
-        user=user,
-        password=password,
-    )
+    Prefer `get_cursor()` which handles checkout/return automatically.
+    """
+    return get_db_pool().getconn()
 
 
 @contextmanager
 def get_cursor():
-    """Context manager for database cursor with auto-cleanup."""
+    """Context manager for database cursor with auto-cleanup.
+
+    Returns the connection to the pool on exit instead of closing it.
+    """
+    pool = get_db_pool()
     conn = None
     try:
-        conn = get_db_connection()
+        conn = pool.getconn()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         yield cursor, conn
     finally:
         if conn:
-            conn.close()
+            try:
+                pool.putconn(conn)
+            except Exception as e:
+                logger.error(f"Failed to return connection to pool: {e}")
 
 
 # =============================================================================
@@ -1119,7 +1165,7 @@ async def update_guest(
 
 
 async def ensure_users_table() -> None:
-    """Create users table + indexes if they don't exist (idempotent).
+    """Create users + audit_log tables and indexes (idempotent).
 
     Also applies lazy migrations for hardening columns on existing deployments.
     """
@@ -1152,10 +1198,49 @@ async def ensure_users_table() -> None:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)")
+
+            # Audit log table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS audit_log (
+                    audit_id BIGSERIAL PRIMARY KEY,
+                    actor_user_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+                    actor_username VARCHAR(64),
+                    actor_role VARCHAR(20),
+                    action VARCHAR(100) NOT NULL,
+                    resource_type VARCHAR(50),
+                    resource_id VARCHAR(100),
+                    details JSONB,
+                    ip_address VARCHAR(45),
+                    user_agent VARCHAR(500),
+                    success BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_audit_log_actor ON audit_log(actor_user_id)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_audit_log_resource ON audit_log(resource_type, resource_id)"
+            )
+
+            # Supporting indexes for scaling hot queries
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_conversation_created ON conversation_history(created_at DESC)"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_conversation_session_created ON conversation_history(session_id, created_at DESC)"
+            )
+
             conn.commit()
-            logger.info("users table ensured (with hardening columns)")
+            logger.info("users + audit_log tables ensured (with hardening columns and indexes)")
     except Exception as e:
-        logger.error(f"Error ensuring users table: {e}")
+        logger.error(f"Error ensuring users/audit tables: {e}")
         raise
 
 
@@ -1347,6 +1432,187 @@ async def any_admin_still_uses_default_password() -> bool:
     except Exception as e:
         logger.error(f"Error checking default admin password: {e}")
         return False
+
+
+# =============================================================================
+# Audit Log Operations
+# =============================================================================
+
+
+async def log_audit(
+    action: str,
+    actor_user_id: Optional[int] = None,
+    actor_username: Optional[str] = None,
+    actor_role: Optional[str] = None,
+    resource_type: Optional[str] = None,
+    resource_id: Optional[str] = None,
+    details: Optional[Dict[str, Any]] = None,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None,
+    success: bool = True,
+) -> None:
+    """
+    Insert an audit log entry.
+
+    Silent on error — audit logging must never break the business flow.
+    """
+    try:
+        with get_cursor() as (cur, conn):
+            cur.execute(
+                """
+                INSERT INTO audit_log (
+                    actor_user_id, actor_username, actor_role,
+                    action, resource_type, resource_id,
+                    details, ip_address, user_agent, success
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    actor_user_id,
+                    actor_username,
+                    actor_role,
+                    action,
+                    resource_type,
+                    resource_id,
+                    json.dumps(details) if details else None,
+                    ip_address,
+                    (user_agent or "")[:500] if user_agent else None,
+                    success,
+                ),
+            )
+            conn.commit()
+    except Exception as e:
+        logger.error(f"Failed to write audit log entry (action={action}): {e}")
+
+
+async def list_audit_entries(
+    limit: int = 50,
+    offset: int = 0,
+    actor_username: Optional[str] = None,
+    action: Optional[str] = None,
+    action_prefix: Optional[str] = None,
+    resource_type: Optional[str] = None,
+    resource_id: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    success_only: Optional[bool] = None,
+) -> Tuple[List[Dict[str, Any]], int]:
+    """
+    List audit log entries with filters and pagination.
+
+    Returns (entries, total_count) for pagination metadata.
+    """
+    try:
+        with get_cursor() as (cur, conn):
+            clauses: List[str] = []
+            params: List[Any] = []
+
+            if actor_username:
+                clauses.append("LOWER(actor_username) = LOWER(%s)")
+                params.append(actor_username)
+            if action:
+                clauses.append("action = %s")
+                params.append(action)
+            if action_prefix:
+                clauses.append("action LIKE %s")
+                params.append(f"{action_prefix}%")
+            if resource_type:
+                clauses.append("resource_type = %s")
+                params.append(resource_type)
+            if resource_id:
+                clauses.append("resource_id = %s")
+                params.append(resource_id)
+            if start_date:
+                clauses.append("created_at >= %s")
+                params.append(start_date)
+            if end_date:
+                clauses.append("created_at <= %s")
+                params.append(end_date)
+            if success_only is not None:
+                clauses.append("success = %s")
+                params.append(success_only)
+
+            where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+
+            # Total count for pagination
+            cur.execute(f"SELECT COUNT(*) as c FROM audit_log {where}", params)
+            total = cur.fetchone()["c"]
+
+            # Page of results
+            cur.execute(
+                f"""
+                SELECT audit_id, actor_user_id, actor_username, actor_role,
+                       action, resource_type, resource_id, details,
+                       ip_address, user_agent, success, created_at
+                FROM audit_log
+                {where}
+                ORDER BY created_at DESC, audit_id DESC
+                LIMIT %s OFFSET %s
+                """,
+                params + [min(limit, 500), max(offset, 0)],
+            )
+            rows = [dict(r) for r in cur.fetchall()]
+            # Serialize datetime fields for JSON response
+            for r in rows:
+                if r.get("created_at"):
+                    r["created_at"] = r["created_at"].isoformat()
+            return rows, total
+    except Exception as e:
+        logger.error(f"Error listing audit entries: {e}")
+        return [], 0
+
+
+async def get_audit_stats() -> Dict[str, Any]:
+    """Summary statistics for dashboard: total events, top actions, failures."""
+    try:
+        with get_cursor() as (cur, conn):
+            cur.execute("SELECT COUNT(*) as total FROM audit_log")
+            total = cur.fetchone()["total"]
+
+            cur.execute(
+                """
+                SELECT action, COUNT(*) as count
+                FROM audit_log
+                WHERE created_at > NOW() - INTERVAL '24 hours'
+                GROUP BY action
+                ORDER BY count DESC
+                LIMIT 10
+                """
+            )
+            top_actions = [dict(r) for r in cur.fetchall()]
+
+            cur.execute(
+                """
+                SELECT COUNT(*) as failed_count
+                FROM audit_log
+                WHERE success = FALSE
+                  AND created_at > NOW() - INTERVAL '24 hours'
+                """
+            )
+            failed_24h = cur.fetchone()["failed_count"]
+
+            cur.execute(
+                """
+                SELECT actor_username, COUNT(*) as count
+                FROM audit_log
+                WHERE created_at > NOW() - INTERVAL '24 hours'
+                  AND actor_username IS NOT NULL
+                GROUP BY actor_username
+                ORDER BY count DESC
+                LIMIT 5
+                """
+            )
+            top_actors = [dict(r) for r in cur.fetchall()]
+
+            return {
+                "total_events": total,
+                "failed_events_24h": failed_24h,
+                "top_actions_24h": top_actions,
+                "top_actors_24h": top_actors,
+            }
+    except Exception as e:
+        logger.error(f"Error getting audit stats: {e}")
+        return {"error": str(e)}
 
 
 async def list_users(

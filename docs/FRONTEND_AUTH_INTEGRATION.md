@@ -254,6 +254,96 @@ Security scheme in the spec:
 
 If you auto-generate a TypeScript client from the spec (e.g. with `openapi-typescript-codegen`), the bearer auth will be wired in automatically.
 
+## Audit log (admin dashboard)
+
+Two new endpoints for hotel staff to track "who did what, when, from where". Both require admin JWT.
+
+### `GET /admin/audit` — query with filters + pagination
+
+```http
+GET /admin/audit?action_prefix=auth.&limit=50&offset=0
+Authorization: Bearer <admin-JWT>
+```
+
+Query parameters:
+
+| Param | Type | Purpose |
+|---|---|---|
+| `limit` | int (≤500) | Page size, default 50 |
+| `offset` | int | 0-indexed pagination |
+| `actor_username` | string | Filter by actor (case-insensitive exact match) |
+| `action` | string | Exact action, e.g. `auth.login.success` |
+| `action_prefix` | string | Prefix match, e.g. `admin.session.` |
+| `resource_type` | string | e.g. `session`, `user`, `booking`, `room` |
+| `resource_id` | string | Specific resource |
+| `start_date` | ISO date | e.g. `2026-04-01` |
+| `end_date` | ISO date | e.g. `2026-04-05` |
+| `success_only` | bool | `true` = only successful, `false` = only failed |
+
+Response:
+```jsonc
+{
+  "entries": [
+    {
+      "audit_id": 1234,
+      "actor_user_id": 1,
+      "actor_username": "admin",
+      "actor_role": "admin",
+      "action": "admin.session.viewed",
+      "resource_type": "session",
+      "resource_id": "abc-123",
+      "details": { "message_count": 14 },
+      "ip_address": "192.168.1.50",
+      "user_agent": "Mozilla/5.0 ...",
+      "success": true,
+      "created_at": "2026-04-05T12:34:56"
+    }
+  ],
+  "total": 1247,
+  "limit": 50,
+  "offset": 0,
+  "has_more": true
+}
+```
+
+### `GET /admin/audit/stats` — 24h summary
+
+Returns total events, failures in last 24h, top 10 actions, top 5 actors. Use for dashboard widgets.
+
+### Action taxonomy
+
+Use these prefixes in your audit UI to group events:
+
+- `auth.*` — login/logout/register/password change
+- `user.*` — user management (admin creates another admin)
+- `admin.room.*` — room status overrides
+- `admin.booking.*` — booking status overrides
+- `admin.chat.*`, `admin.session.*` — chat/session intervention (includes `session.viewed` which is privacy-sensitive — admin reading a guest's chat history)
+- `settings.*` — system config changes
+- `admin.audit.*` — meta-audit (someone queried the audit log)
+
+### Dashboard integration example
+
+```typescript
+// Recent admin actions widget
+const res = await fetch('/api/hotel/admin/audit?action_prefix=admin.&limit=20', {
+  headers: { 'Authorization': `Bearer ${adminToken}` }
+});
+const { entries } = await res.json();
+
+// Failed login attempts (security monitoring)
+const failed = await fetch(
+  '/api/hotel/admin/audit?action=auth.login.failed&limit=50',
+  { headers: { 'Authorization': `Bearer ${adminToken}` } }
+);
+
+// Who accessed a specific guest's conversation?
+const views = await fetch(
+  `/api/hotel/admin/audit?action=admin.session.viewed&resource_id=${sessionId}`,
+  { headers: { 'Authorization': `Bearer ${adminToken}` } }
+);
+```
+
 ## Testing credentials (local dev)
 
 ```

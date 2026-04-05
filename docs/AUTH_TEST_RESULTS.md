@@ -1,8 +1,8 @@
 # Authentication Test Results
 
 **Date:** 2026-04-05
-**Test scripts:** `scripts/test_auth.py` + `scripts/test_auth_hardening.py`
-**Result:** **110 / 110 tests passed** (72 baseline auth + 38 hardening)
+**Test scripts:** `scripts/test_auth.py` + `scripts/test_auth_hardening.py` + `scripts/test_audit_and_scaling.py`
+**Result:** **156 / 156 tests passed** (72 baseline + 38 hardening + 46 audit/scaling)
 
 ## Environment
 - Backend: `hotel-api` container (Docker)
@@ -39,6 +39,27 @@
 | O | Server operational despite insecure JWT_SECRET warning | 1/1 |
 | P | JWT `jti` claim — present, hex string ≥16 chars, unique per token | 3/3 |
 | Q | Edge cases — user token rejected from admin even after hardening, password change preserves role, tampered JWT → 401, blocklist persistence across multiple requests | 8/8 |
+
+### Audit + Scaling (`test_audit_and_scaling.py`) — 46/46
+
+| Part | Area | Tests |
+|---|---|---|
+| R | Audit log basics (endpoint exists, entry structure, total count, admin login captured) | 7/7 |
+| S | Audit log filters (action, action_prefix, actor_username, success_only) | 10/10 |
+| T | Audit log pagination (limit, offset, has_more, deep offset distinctness, 500 cap) | 4/4 |
+| U | Audit endpoint access control (no-auth → 401, user → 403, admin → 200, stats endpoint same rules) | 9/9 |
+| V | Specific action coverage (login.failed, password.changed, settings.llm.changed, user.list, admin.session.listed, ip_address + user_agent captured) | 7/7 |
+| W | Scaling: 30 concurrent /auth/me under latency budgets | 3/3 |
+| X | User cache correctness (password change invalidates cache) | 3/3 |
+| Y | DB connection pool: 50 sequential + 20 concurrent requests all succeed | 2/2 |
+
+### Measured scaling performance
+
+| Benchmark | Result |
+|---|---|
+| 30 concurrent `GET /auth/me` | total **0.06s**, avg **16ms**, p95 **20ms** |
+| 50 sequential `GET /admin/audit` | **50/50** success |
+| 20 concurrent `GET /admin/audit` | total **0.16s**, all 200 |
 
 ## Key Verifications
 
@@ -141,12 +162,16 @@ PRODUCTION SECURITY WARNINGS:
 - [x] **JWT `jti` claim** for per-token identity
 - [x] **Password change preserves role** (verified)
 - [x] **Tampered JWT signature rejected** (verified)
+- [x] **Audit log for admin actions + auth events + guest-privacy-sensitive reads** — full action taxonomy, JSONB details, ip+user_agent capture, `GET /admin/audit` with filters/pagination, `GET /admin/audit/stats` summary, meta-audit on audit queries
+- [x] **Scaling: DB connection pool** (`ThreadedConnectionPool`, min=2, max=20 configurable)
+- [x] **Scaling: User lookup cache** (TTL-based, invalidated on password change / account disable, 30s default)
+- [x] **Scaling: Indexes** on `audit_log(created_at)`, `audit_log(action)`, `conversation_history(session_id, created_at)`
 
 ## Still Recommended (not yet done)
 
-- [ ] Redis-backed token blocklist for multi-worker/multi-container deployments (in-memory works for single-container demo)
+- [ ] Redis-backed token blocklist + rate limiter for multi-worker/multi-container deployments (in-memory works for single-container demo)
 - [ ] Refresh token flow for shorter access token lifetimes without re-login
 - [ ] Password strength meter on frontend (min 8 chars enforced on backend only)
-- [ ] Audit log for admin actions (who locked whom, who created admins)
 - [ ] 2FA/TOTP for admin accounts
 - [ ] HTTPS enforcement (HSTS header) — deployment-level concern
+- [ ] Audit log retention policy + archive to cold storage for long-term compliance

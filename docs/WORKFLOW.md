@@ -596,7 +596,109 @@ shows guests the actual price before booking.
     |<-----------------------------------------------|                 |
 ```
 
-## API Endpoints (49 total)
+## Audit Log
+
+Every admin action, authentication event, and privacy-sensitive operation is recorded in the `audit_log` table. This gives hotel management full traceability over "who did what, when, from where" — critical for compliance, incident investigation, and guest-privacy protection.
+
+### Schema
+
+```sql
+audit_log (
+    audit_id       BIGSERIAL PK
+    actor_user_id  INTEGER (FK users)
+    actor_username VARCHAR(64)
+    actor_role     VARCHAR(20)      -- 'user' | 'admin'
+    action         VARCHAR(100)     -- e.g., 'auth.login.success'
+    resource_type  VARCHAR(50)      -- e.g., 'session', 'user', 'booking'
+    resource_id    VARCHAR(100)
+    details        JSONB            -- action-specific metadata
+    ip_address     VARCHAR(45)
+    user_agent     VARCHAR(500)
+    success        BOOLEAN
+    created_at     TIMESTAMP
+)
+```
+
+### Action taxonomy
+
+| Domain | Actions |
+|---|---|
+| **Auth** | `auth.login.success`, `auth.login.failed`, `auth.login.locked`, `auth.login.rate_limited`, `auth.logout`, `auth.register`, `auth.password.changed`, `auth.password.change_failed` |
+| **User management** | `user.admin.created`, `user.list` |
+| **Room / booking overrides** | `admin.room.status_changed`, `admin.booking.status_changed` |
+| **Chat / session (privacy-sensitive)** | `admin.chat.override`, `admin.session.takeover`, `admin.session.release`, `admin.session.viewed`, `admin.session.listed`, `admin.session.rollback`, `admin.session.replay`, `admin.escalations.viewed` |
+| **System** | `settings.llm.changed`, `admin.audit.viewed` |
+
+### Query flow
+
+```
+  Admin Dashboard              /admin/audit API            DB
+       |                             |                     |
+       | GET /admin/audit?           |                     |
+       |   action_prefix=admin.      |                     |
+       |   &actor_username=john_doe  |                     |
+       |   &limit=50&offset=0        |                     |
+       |---------------------------->|                     |
+       |                             | require_admin       |
+       |                             | list_audit_entries()|
+       |                             |-------------------->|
+       |                             |                     |
+       |                             | COUNT + LIMIT/OFFSET|
+       |                             |<--------------------|
+       | {entries, total, has_more}  |                     |
+       |<----------------------------|                     |
+       |                             | audit: AUDIT_VIEWED |  <- meta-audit
+       |                             |-------------------->|
+```
+
+**Meta-audit**: Every call to `GET /admin/audit` is itself logged as `admin.audit.viewed`, so you can trace who's been querying the audit log.
+
+### Privacy note
+
+When an admin reads guest conversations via `GET /admin/sessions/{id}/messages`, an `admin.session.viewed` entry is written. This creates an auditable trail of who accessed which guest's chat history — a guest-privacy control required by most data-protection frameworks.
+
+## Scaling
+
+The authenticated request path is optimized for concurrent traffic:
+
+```
+  Request                          |  With N concurrent users
+                                   |
+  1. JWT decode (cpu)              |  O(1) per request
+  2. JTI blocklist lookup          |  O(1) in-memory hash
+  3. User lookup                   |  DB hit ONCE per 30s per user
+     via UserCache (30s TTL)       |  ~99% cache hit rate at steady state
+  4. Password-change check         |  Free — uses cached user dict
+  5. DB connection                 |  Checked out from pool (not created)
+     via ThreadedConnectionPool    |  min=2, max=20 pooled connections
+```
+
+### Scaling components
+
+| Component | Config | Benefit |
+|---|---|---|
+| **DB connection pool** | `DB_POOL_MIN=2`, `DB_POOL_MAX=20` | No Postgres connection setup cost per request |
+| **User lookup cache** | `USER_CACHE_TTL_SECONDS=30` | 1 DB hit per user per 30s instead of per request |
+| **JWT blocklist** | In-memory dict with auto-purge | Thread-safe, bounded memory |
+| **Login rate limiter** | Sliding window per IP + per user | Rejects abuse without DB hits |
+| **Composite indexes** | `(session_id, created_at DESC)`, `(resource_type, resource_id)` | Cheap audit + session queries |
+
+### Measured performance (local Docker, single worker)
+
+| Benchmark | Result |
+|---|---|
+| 30 concurrent `GET /auth/me` | total 0.06s, p95 20ms |
+| 50 sequential `GET /admin/audit` | 50/50 success |
+| 20 concurrent `GET /admin/audit` | total 0.16s, all 200 |
+
+### Scaling notes for production
+
+- **Token blocklist** is in-memory and per-process. For horizontal scaling (multiple workers/containers), replace with Redis (`redis.set(f"blocklist:{jti}", "", ex=ttl)`).
+- **Rate limiter** is also in-memory and per-process — same caveat. Use Redis `INCR` with expiry for cross-worker rate limiting.
+- **Password-change invalidation** via `password_changed_at` IS persistent across restarts and workers — no Redis needed for this path.
+- **User cache** uses TTL-based invalidation. In multi-worker deployments, stale entries propagate within `USER_CACHE_TTL_SECONDS` after a password change.
+
+## API Endpoints (51 total)
 
 Full OpenAPI spec: [docs/api_references/openapi.json](api_references/openapi.json)
 Swagger UI: `http://localhost:8088/docs`
@@ -649,6 +751,8 @@ All routes below require `Authorization: Bearer <admin-JWT>`. Non-admin tokens g
 | POST | /admin/sessions/{id}/rollback | Rewind to previous checkpoint |
 | POST | /admin/sessions/{id}/replay | Branch from checkpoint with new message |
 | GET | /admin/escalations | List auto-escalated sessions |
+| GET | /admin/audit | Audit log query (filters + pagination) |
+| GET | /admin/audit/stats | Audit log summary stats (last 24h) |
 
 ### Dashboard Monitoring [Admin]
 

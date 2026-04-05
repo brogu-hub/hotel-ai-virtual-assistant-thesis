@@ -147,9 +147,31 @@ CREATE TABLE IF NOT EXISTS users (
     is_active BOOLEAN DEFAULT TRUE,
     guest_id INTEGER REFERENCES guests(guest_id) ON DELETE SET NULL,
     last_login TIMESTAMP,
+    failed_login_attempts INTEGER DEFAULT 0,
+    locked_until TIMESTAMP,
+    password_changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    password_is_default BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT users_role_check CHECK (role IN ('user', 'admin'))
+);
+
+-- =============================================================================
+-- Audit Log Table (admin actions + auth events + privacy-sensitive ops)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS audit_log (
+    audit_id BIGSERIAL PRIMARY KEY,
+    actor_user_id INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+    actor_username VARCHAR(64),
+    actor_role VARCHAR(20),
+    action VARCHAR(100) NOT NULL,
+    resource_type VARCHAR(50),
+    resource_id VARCHAR(100),
+    details JSONB,
+    ip_address VARCHAR(45),
+    user_agent VARCHAR(500),
+    success BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- =============================================================================
@@ -158,6 +180,12 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_audit_log_actor ON audit_log(actor_user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action);
+CREATE INDEX IF NOT EXISTS idx_audit_log_resource ON audit_log(resource_type, resource_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_created ON conversation_history(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_conversation_session_created ON conversation_history(session_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_reservations_guest ON reservations(guest_id);
 CREATE INDEX IF NOT EXISTS idx_reservations_dates ON reservations(check_in_date, check_out_date);
 CREATE INDEX IF NOT EXISTS idx_reservations_status ON reservations(status);

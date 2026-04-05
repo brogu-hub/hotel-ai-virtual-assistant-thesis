@@ -1606,6 +1606,216 @@
         }
       }
     },
+    "/admin/audit": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Admin Get Audit Log",
+        "description": "Admin: Query the audit log with filters and pagination.\n\nEvery admin action, authentication event, and privacy-sensitive\noperation (admin reading guest conversations) is recorded here.\n\nFilters:\n- `actor_username`: exact match (case-insensitive)\n- `action`: exact action name (e.g., `auth.login.success`)\n- `action_prefix`: prefix match (e.g., `auth.` or `admin.session.`)\n- `resource_type`: e.g., `session`, `user`, `booking`, `room`\n- `resource_id`: specific resource\n- `start_date` / `end_date`: ISO date strings (e.g., `2026-04-05`)\n- `success_only`: `true` for only successful, `false` for only failed\n\nPagination:\n- `limit`: max 500 per page (default 50)\n- `offset`: 0-indexed\n\nReturns `{entries, total, limit, offset, has_more}` for pagination UI.",
+        "operationId": "admin_get_audit_log_admin_audit_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "actor_username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Actor Username"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action"
+            }
+          },
+          {
+            "name": "action_prefix",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action Prefix"
+            }
+          },
+          {
+            "name": "resource_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resource Type"
+            }
+          },
+          {
+            "name": "resource_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resource Id"
+            }
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start Date"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End Date"
+            }
+          },
+          {
+            "name": "success_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Success Only"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/audit/stats": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Admin Get Audit Stats",
+        "description": "Admin: Summary statistics of audit log (last 24h).\n\nReturns total events, failed events, top actions, and top actors.",
+        "operationId": "admin_get_audit_stats_admin_audit_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/admin/escalations": {
       "get": {
         "tags": [

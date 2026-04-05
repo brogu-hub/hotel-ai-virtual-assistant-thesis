@@ -167,6 +167,11 @@ services:
       DEFAULT_ADMIN_EMAIL: ${DEFAULT_ADMIN_EMAIL:-admin@grandhorizon.hotel}
       DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-admin123}
 
+      # --- Scaling: DB pool + user cache ---
+      DB_POOL_MIN: ${DB_POOL_MIN:-2}
+      DB_POOL_MAX: ${DB_POOL_MAX:-20}
+      USER_CACHE_TTL_SECONDS: ${USER_CACHE_TTL_SECONDS:-30}
+
       # --- Logging ---
       LOGLEVEL: DEBUG
       LOG_LEVEL: DEBUG
