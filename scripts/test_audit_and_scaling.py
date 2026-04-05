@@ -436,6 +436,12 @@ cache_user, cache_pw, cache_tok = register_user("cachetest")
 r = requests.get(f"{BASE_URL}/auth/me", headers=auth(cache_tok), timeout=10)
 assert_status(r, 200, "X1. Initial /auth/me populates cache")
 
+# Sleep >1s so the subsequent password change lands in a strictly later
+# whole-second bucket than the token's iat (iat is truncated to whole seconds,
+# and password_change invalidation works at second granularity to avoid
+# racing freshly-issued tokens in the same second).
+time.sleep(1.2)
+
 # X2. Change password — should invalidate cache entry
 r = requests.patch(
     f"{BASE_URL}/auth/me/password",

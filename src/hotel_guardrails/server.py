@@ -109,6 +109,16 @@ from .auth import (
     LOGIN_RATE_LIMIT_PER_USER,
 )
 from .audit import audit, AuditActions
+from .chat_scaling import (
+    llm_limiter,
+    session_locks,
+    chat_rate_limiter,
+    stream_limiter,
+    knowledge_cache,
+    get_chat_metrics,
+    LLMQueueTimeout,
+    LLM_QUEUE_TIMEOUT_SEC,
+)
 
 # Request ID context variable for tracing
 request_id_ctx: ContextVar[str] = ContextVar("request_id", default="")
@@ -295,6 +305,21 @@ async def lifespan(app: FastAPI):
         logger.info("Hybrid routing + escalation monitor initialized")
     except Exception as e:
         logger.error(f"Failed to initialize hybrid routing: {e}")
+
+    # Log chat scaling config on startup
+    try:
+        from src.hotel_guardrails.chat_scaling import get_chat_metrics
+        cfg = get_chat_metrics()["config"]
+        logger.info(
+            "Chat scaling: "
+            f"max_llm_concurrent={cfg['max_concurrent_llm_calls']}, "
+            f"max_streams={cfg['max_concurrent_streams']}, "
+            f"chat_rate_per_session={cfg['chat_rate_limit_per_session']}/min, "
+            f"knowledge_cache={cfg['knowledge_cache_size']} entries, "
+            f"TTL={cfg['knowledge_cache_ttl_sec']}s"
+        )
+    except Exception as e:
+        logger.warning(f"Failed to log chat scaling config: {e}")
 
     # Export OpenAPI spec on startup
     try:
@@ -942,6 +967,44 @@ async def chat(request: ChatRequest):
     routing_reason = "LangGraph primary"
     complexity = "moderate"
 
+    # Step 0a: Per-session chat rate limit (cheap, run before anything else)
+    allowed, retry_after = chat_rate_limiter.check(session_id)
+    if not allowed:
+        logger.warning(f"Chat rate limit exceeded for session {session_id}")
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Too many messages for this session. Retry in {retry_after}s. / "
+                f"ส่งข้อความบ่อยเกินไป กรุณารอ {retry_after} วินาที"
+            ),
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    # Step 0b: Acquire per-session lock (prevents concurrent requests to the
+    # same session from corrupting LangGraph checkpointer state)
+    session_lock = session_locks.get(session_id)
+    async with session_lock:
+        return await _process_chat_locked(
+            request, session_id, current_request_id, start_time,
+            content, sources, tool_calls, retrieval_context,
+            routing_path, routing_reason, complexity,
+        )
+
+
+async def _process_chat_locked(
+    request: ChatRequest,
+    session_id: str,
+    current_request_id: str,
+    start_time: float,
+    content: str,
+    sources,
+    tool_calls,
+    retrieval_context,
+    routing_path: str,
+    routing_reason: str,
+    complexity: str,
+) -> ChatResponse:
+    """Chat processing body, wrapped by per-session lock from chat()."""
     # Step 1: Safety check and routing
     if hybrid_router:
         try:
@@ -1007,12 +1070,30 @@ async def chat(request: ChatRequest):
         logger.warning(f"PII redaction failed: {e}")
 
     # Step 3: Process with LangGraph Agent (primary)
+    # Acquire LLM semaphore — caps concurrent LLM calls to prevent Ollama
+    # queue saturation under heavy load. If queue is full for longer than
+    # LLM_QUEUE_TIMEOUT_SEC, fail fast with 503.
     if langgraph_adapter:
         try:
-            result = await langgraph_adapter.invoke(
-                message=message_for_llm,
-                session_id=session_id,
-            )
+            try:
+                await llm_limiter.acquire()
+            except LLMQueueTimeout:
+                logger.warning(f"LLM queue saturated — rejecting request for session {session_id}")
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        "Chatbot is busy right now. Please try again in a moment. / "
+                        "ระบบกำลังยุ่ง กรุณาลองใหม่อีกครั้ง"
+                    ),
+                    headers={"Retry-After": str(int(LLM_QUEUE_TIMEOUT_SEC))},
+                )
+            try:
+                result = await langgraph_adapter.invoke(
+                    message=message_for_llm,
+                    session_id=session_id,
+                )
+            finally:
+                llm_limiter.release()
 
             if result["success"]:
                 content = result["response"]
@@ -1022,6 +1103,8 @@ async def chat(request: ChatRequest):
                 logger.warning(f"LangGraph failed: {result.get('error')}")
                 routing_reason = f"LangGraph failed: {result.get('error', 'unknown')[:50]}"
 
+        except HTTPException:
+            raise
         except Exception as e:
             logger.warning(f"LangGraph invocation failed: {e}")
             routing_reason = f"LangGraph error: {str(e)[:50]}"
@@ -1178,6 +1261,29 @@ async def chat_stream(request: ChatRequest):
     """
     session_id = request.session_id or str(uuid.uuid4())
 
+    # Rate limit per session (cheap, before acquiring resources)
+    allowed, retry_after = chat_rate_limiter.check(session_id)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Too many messages for this session. Retry in {retry_after}s. / "
+                f"ส่งข้อความบ่อยเกินไป กรุณารอ {retry_after} วินาที"
+            ),
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    # Cap concurrent SSE streams — each held connection consumes resources.
+    if not stream_limiter.try_acquire():
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Too many concurrent streaming connections. Please try again in a moment. / "
+                "การเชื่อมต่อสตรีมมิ่งเต็ม กรุณาลองใหม่อีกครั้ง"
+            ),
+            headers={"Retry-After": "5"},
+        )
+
     # PII redaction
     from src.hotel_guardrails.pii_redactor import redact_pii
     message_for_llm = request.message
@@ -1189,68 +1295,92 @@ async def chat_stream(request: ChatRequest):
     # Admin-controlled check
     if session_id in admin_controlled_sessions:
         async def admin_stream():
-            msg = ("เจ้าหน้าที่โรงแรมกำลังช่วยเหลือท่านอยู่ กรุณารอสักครู่ค่ะ / "
-                   "A hotel staff member is assisting you. Please wait.")
-            yield f"data: {json.dumps({'content': msg, 'done': False})}\n\n"
-            yield f"data: {json.dumps({'content': '', 'done': True, 'session_id': session_id})}\n\n"
+            try:
+                msg = ("เจ้าหน้าที่โรงแรมกำลังช่วยเหลือท่านอยู่ กรุณารอสักครู่ค่ะ / "
+                       "A hotel staff member is assisting you. Please wait.")
+                yield f"data: {json.dumps({'content': msg, 'done': False})}\n\n"
+                yield f"data: {json.dumps({'content': '', 'done': True, 'session_id': session_id})}\n\n"
+            finally:
+                stream_limiter.release()
         return StreamingResponse(admin_stream(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Session-ID": session_id})
 
     async def generate_stream() -> AsyncGenerator[str, None]:
         content = ""
+        session_lock = session_locks.get(session_id)
+        llm_acquired = False
         try:
-            if langgraph_adapter and langgraph_adapter._graph:
-                from langchain_core.messages import HumanMessage
-
-                graph = langgraph_adapter._graph
-                config = {"configurable": {"thread_id": session_id}}
-
-                # Stream events from LangGraph
-                async for event in graph.astream_events(
-                    {"messages": [HumanMessage(content=message_for_llm)]},
-                    config=config,
-                    version="v2",
-                ):
-                    kind = event.get("event", "")
-
-                    # Stream LLM token output
-                    if kind == "on_chat_model_stream":
-                        chunk = event.get("data", {}).get("chunk")
-                        if chunk and hasattr(chunk, "content") and chunk.content:
-                            token = chunk.content
-                            content += token
-                            yield f"data: {json.dumps({'content': token, 'done': False})}\n\n"
-
-                # Save conversation history
+            # Acquire per-session lock inside the generator (async lock can
+            # only be awaited in async context — the outer endpoint runs
+            # before the generator starts yielding)
+            async with session_lock:
+                # Acquire LLM semaphore for the streaming duration
                 try:
-                    await db.save_conversation_message(session_id, "user", request.message)
-                    if content:
-                        await db.save_conversation_message(session_id, "assistant", content)
-                except Exception:
-                    pass
+                    await llm_limiter.acquire()
+                    llm_acquired = True
+                except LLMQueueTimeout:
+                    err = ("Chatbot is busy right now. Please try again in a moment. / "
+                           "ระบบกำลังยุ่ง กรุณาลองใหม่อีกครั้ง")
+                    yield f"data: {json.dumps({'content': err, 'done': False, 'error': 'llm_queue_timeout'})}\n\n"
+                    yield f"data: {json.dumps({'content': '', 'done': True, 'session_id': session_id})}\n\n"
+                    return
 
-                # Escalation check
-                if escalation_monitor and content:
+                if langgraph_adapter and langgraph_adapter._graph:
+                    from langchain_core.messages import HumanMessage
+
+                    graph = langgraph_adapter._graph
+                    config = {"configurable": {"thread_id": session_id}}
+
+                    # Stream events from LangGraph
+                    async for event in graph.astream_events(
+                        {"messages": [HumanMessage(content=message_for_llm)]},
+                        config=config,
+                        version="v2",
+                    ):
+                        kind = event.get("event", "")
+
+                        # Stream LLM token output
+                        if kind == "on_chat_model_stream":
+                            chunk = event.get("data", {}).get("chunk")
+                            if chunk and hasattr(chunk, "content") and chunk.content:
+                                token = chunk.content
+                                content += token
+                                yield f"data: {json.dumps({'content': token, 'done': False})}\n\n"
+
+                    # Save conversation history
                     try:
-                        should_esc, reason, priority = escalation_monitor.should_escalate(
-                            session_id, request.message, {"response": content}
-                        )
-                        if should_esc:
-                            admin_controlled_sessions.add(session_id)
-                            await db.save_conversation_message(
-                                session_id, "system",
-                                f"[Auto-escalation] {reason} | Priority: {priority}",
-                            )
+                        await db.save_conversation_message(session_id, "user", request.message)
+                        if content:
+                            await db.save_conversation_message(session_id, "assistant", content)
                     except Exception:
                         pass
 
-            else:
-                # Fallback: non-streaming via /chat logic
-                yield f"data: {json.dumps({'content': 'Streaming not available. Please use /chat endpoint.', 'done': False})}\n\n"
+                    # Escalation check
+                    if escalation_monitor and content:
+                        try:
+                            should_esc, reason, priority = escalation_monitor.should_escalate(
+                                session_id, request.message, {"response": content}
+                            )
+                            if should_esc:
+                                admin_controlled_sessions.add(session_id)
+                                await db.save_conversation_message(
+                                    session_id, "system",
+                                    f"[Auto-escalation] {reason} | Priority: {priority}",
+                                )
+                        except Exception:
+                            pass
+
+                else:
+                    # Fallback: non-streaming via /chat logic
+                    yield f"data: {json.dumps({'content': 'Streaming not available. Please use /chat endpoint.', 'done': False})}\n\n"
 
         except Exception as e:
             logger.error(f"Stream failed: {e}")
             yield f"data: {json.dumps({'content': f'Error: {str(e)}', 'done': False})}\n\n"
+        finally:
+            if llm_acquired:
+                llm_limiter.release()
+            stream_limiter.release()
 
         yield f"data: {json.dumps({'content': '', 'done': True, 'session_id': session_id})}\n\n"
 
@@ -2494,6 +2624,26 @@ async def admin_get_audit_stats(
     Returns total events, failed events, top actions, and top actors.
     """
     return await db.get_audit_stats()
+
+
+@app.get("/admin/metrics/chat", tags=["Admin"])
+async def admin_get_chat_metrics(
+    current_admin: dict = Depends(require_admin),
+):
+    """
+    Admin: Chat scaling metrics for monitoring concurrent-user load.
+
+    Returns runtime stats for:
+    - `llm_limiter`: semaphore state (in_flight, waiting, acquired, rejected, timed_out)
+    - `session_locks`: per-session mutex tracking (tracked, currently_locked)
+    - `chat_rate_limiter`: per-session sliding-window rate limit state
+    - `stream_limiter`: concurrent SSE stream cap state
+    - `knowledge_cache`: RAG cache hit rate (hits, misses, size)
+    - `config`: effective environment values
+
+    Use this for Grafana dashboards, alerting, and capacity planning.
+    """
+    return get_chat_metrics()
 
 
 @app.get("/admin/escalations", tags=["Admin"])

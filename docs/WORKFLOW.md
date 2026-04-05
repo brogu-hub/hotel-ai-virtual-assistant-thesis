@@ -698,7 +698,162 @@ The authenticated request path is optimized for concurrent traffic:
 - **Password-change invalidation** via `password_changed_at` IS persistent across restarts and workers — no Redis needed for this path.
 - **User cache** uses TTL-based invalidation. In multi-worker deployments, stale entries propagate within `USER_CACHE_TTL_SECONDS` after a password change.
 
-## API Endpoints (51 total)
+## Chat Scaling (many concurrent users)
+
+The chatbot path is gated by five primitives that together let the server
+absorb concurrent traffic without saturating the local LLM or corrupting
+session state.
+
+```
+  POST /chat (user message)
+       |
+       v
+  +-----------------------+      429 + Retry-After
+  | Per-session rate      |----> "Too many messages
+  | limit (30/min)        |       for this session"
+  +-----------------------+
+       |
+       v
+  +-----------------------+
+  | Per-session async     |  <-- serializes requests for the SAME
+  | lock (asyncio.Lock)   |       session_id so LangGraph checkpointer
+  +-----------------------+       can't interleave messages
+       |
+       v
+  +-----------------------+     knowledge cache HIT
+  | Routing + PII scrub   |----> skip Qdrant + reranker
+  +-----------------------+
+       |
+       v
+  +-----------------------+      503 + Retry-After
+  | LLM concurrency       |----> "Chatbot is busy,
+  | semaphore (N slots)   |       try again in a moment"
+  +-----------------------+
+       |
+       v (LLM call to Ollama)
+  +-----------------------+
+  | Ollama (GPU, N_PARALLEL slots)
+  +-----------------------+
+       |
+       v
+  Response + audit log
+```
+
+### Scaling primitives (src/hotel_guardrails/chat_scaling.py)
+
+| Component | Config env var | Default | Purpose |
+|---|---|---|---|
+| `LLMConcurrencyLimiter` | `MAX_CONCURRENT_LLM_CALLS` | 4 | Async semaphore + queue timeout. Caps concurrent LLM calls so extras fast-fail instead of piling up. |
+| `LLMConcurrencyLimiter` | `LLM_QUEUE_TIMEOUT_SEC` | 30 | If a request waits >30s for an LLM slot → 503 Retry-After |
+| `SessionLockManager` | `SESSION_LOCK_MAX_ENTRIES` | 10000 | Per-session `asyncio.Lock` with bounded LRU eviction |
+| `ChatRateLimiter` | `CHAT_RATE_LIMIT_PER_SESSION` | 30/min | Sliding window per `session_id` → 429 when exceeded |
+| `StreamConnectionLimiter` | `MAX_CONCURRENT_STREAMS` | 20 | Hard cap on simultaneously-open SSE streams → 503 |
+| `KnowledgeCache` | `KNOWLEDGE_CACHE_SIZE` | 500 | LRU+TTL cache for RAG queries |
+| `KnowledgeCache` | `KNOWLEDGE_CACHE_TTL_SEC` | 300 | 5 min — quick invalidation of hotel-info changes |
+
+### Ollama-side parallelism
+
+Ollama serializes requests by default (`OLLAMA_NUM_PARALLEL=1`). With only one
+slot, the application-side semaphore just queues inside Ollama. The docker
+compose file now sets `OLLAMA_NUM_PARALLEL=4` so the semaphore + Ollama slots
+are aligned.
+
+```
+  App semaphore (MAX_CONCURRENT_LLM_CALLS=4)
+          |
+          v
+  Ollama slots (OLLAMA_NUM_PARALLEL=4)   <-- must be >= app semaphore
+          |
+          v
+  Single 9B model on GPU (shared KV-cache)
+```
+
+Guideline: keep `MAX_CONCURRENT_LLM_CALLS <= OLLAMA_NUM_PARALLEL`. Raising
+`OLLAMA_NUM_PARALLEL` consumes more VRAM per slot — with a 9B model and
+an 8-16GB GPU, 4 slots is realistic; for a single RTX 5080 (16GB) you could
+push to 6-8 if the model is quantized.
+
+### Reranker disabled by default
+
+The CrossEncoder reranker (`RERANKER_BACKEND=qwen`) was removed from the hot
+path because:
+
+- It added ~1-2 seconds of CPU-bound work per RAG query
+- Being synchronous inside an async endpoint, it **blocked the entire
+  FastAPI event loop** for that duration, stalling all other requests
+- The embedding-based vector search from Qdrant is already accurate enough
+  for the hotel knowledge base (10 markdown docs, well-structured)
+
+`RERANKER_BACKEND=none` is the new default. Legacy options (`qwen`, `nvidia`)
+are still available via env var but are only recommended when using
+low-quality embeddings.
+
+### Knowledge cache hot path
+
+```
+  search_hotel_knowledge("what time is breakfast?")
+       |
+       v
+  KnowledgeCache.get("what time is breakfast?")
+       |
+       +-- HIT --> return cached (content, sources)   [~1ms]
+       |
+       +-- MISS -> Qdrant vector search              [~500ms]
+                       |
+                       v
+                  trim to top_k (no reranker)         [~1ms]
+                       |
+                       v
+                  KnowledgeCache.set(...)
+                       |
+                       v
+                  return (content, sources)
+```
+
+Common questions hit the cache after the first ask, returning in ~1ms
+instead of ~500ms. Over 500 distinct queries are kept, with a 5 min TTL.
+
+### Observability: GET /admin/metrics/chat
+
+Returns live runtime stats for all scaling primitives:
+
+```jsonc
+{
+  "llm_limiter":     { "max_concurrent": 4, "in_flight": 2, "waiting": 0,
+                       "total_acquired": 1247, "total_rejected": 3,
+                       "total_timed_out": 3 },
+  "session_locks":   { "tracked_sessions": 42, "currently_locked": 2 },
+  "chat_rate_limiter": { "tracked_sessions": 42, "active_sessions": 15,
+                         "total_rejected": 17 },
+  "stream_limiter":  { "max_concurrent": 20, "active": 3,
+                       "total_accepted": 89, "total_rejected": 0 },
+  "knowledge_cache": { "size": 47, "hits": 312, "misses": 98,
+                       "hit_rate": 0.761 },
+  "config":          { ...effective env values... }
+}
+```
+
+Use this for Grafana dashboards and alerting (e.g., alert when
+`llm_limiter.total_rejected` grows quickly or `knowledge_cache.hit_rate`
+drops below 0.3).
+
+### Scaling notes for production
+
+Most primitives are **in-memory and per-process**:
+
+- `llm_limiter`, `session_locks`, `chat_rate_limiter`, `stream_limiter`,
+  `knowledge_cache` — all reset when the process restarts and don't
+  coordinate across workers.
+- For horizontal scaling across multiple workers/containers, replace
+  these with Redis-backed equivalents:
+  - `LLMConcurrencyLimiter` → Redis semaphore (`INCR` + `EXPIRE`)
+  - `SessionLockManager` → Redis `SET NX EX` for distributed locks
+  - `ChatRateLimiter` → Redis `INCR` with sliding window
+  - `KnowledgeCache` → Redis with TTL
+- For a single-container demo (current setup), in-memory is fine and
+  avoids an extra dependency.
+
+## API Endpoints (52 total)
 
 Full OpenAPI spec: [docs/api_references/openapi.json](api_references/openapi.json)
 Swagger UI: `http://localhost:8088/docs`
@@ -753,6 +908,7 @@ All routes below require `Authorization: Bearer <admin-JWT>`. Non-admin tokens g
 | GET | /admin/escalations | List auto-escalated sessions |
 | GET | /admin/audit | Audit log query (filters + pagination) |
 | GET | /admin/audit/stats | Audit log summary stats (last 24h) |
+| GET | /admin/metrics/chat | Chat scaling runtime metrics (LLM semaphore, locks, cache, rate limit) |
 
 ### Dashboard Monitoring [Admin]
 

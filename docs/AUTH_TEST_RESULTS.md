@@ -1,8 +1,8 @@
-# Authentication Test Results
+# Authentication + Scaling Test Results
 
-**Date:** 2026-04-05
-**Test scripts:** `scripts/test_auth.py` + `scripts/test_auth_hardening.py` + `scripts/test_audit_and_scaling.py`
-**Result:** **156 / 156 tests passed** (72 baseline + 38 hardening + 46 audit/scaling)
+**Date:** 2026-04-06
+**Test scripts:** `test_auth.py` + `test_auth_hardening.py` + `test_audit_and_scaling.py` + `test_chat_scaling.py`
+**Result:** **193 / 193 tests passed** (72 baseline + 38 hardening + 46 audit/scaling + 37 chat scaling)
 
 ## Environment
 - Backend: `hotel-api` container (Docker)
@@ -52,6 +52,30 @@
 | W | Scaling: 30 concurrent /auth/me under latency budgets | 3/3 |
 | X | User cache correctness (password change invalidates cache) | 3/3 |
 | Y | DB connection pool: 50 sequential + 20 concurrent requests all succeed | 2/2 |
+
+### Chat Scaling (`test_chat_scaling.py`) — 37/37
+
+Validates the many-concurrent-users path: LLM semaphore, per-session locks,
+rate limiting, SSE stream cap, RAG cache, and the admin metrics endpoint.
+
+| Part | Area | Tests |
+|---|---|---|
+| AA | `/admin/metrics/chat` endpoint — access control + response structure (all 6 sections present) | 14/14 |
+| BB | Per-session chat rate limit — 429 under burst, Retry-After header, different session independent | 3/3 |
+| CC | Session lock tracking via metrics (tracked_sessions, currently_locked counters) | 3/3 |
+| DD | LLM concurrency semaphore — max_concurrent, total_acquired counters | 3/3 |
+| EE | Knowledge (RAG) cache — hits/misses/hit_rate/max_size/ttl fields all present | 6/6 |
+| FF | SSE stream limiter — max_concurrent, active, total_accepted, total_rejected counters | 4/4 |
+| GG | Regression: single-user chat works end-to-end, 5 concurrent chats to different sessions run in parallel | 3/3 |
+
+### Measured chat performance
+
+| Benchmark | Before | After (reranker off + scaling) |
+|---|---|---|
+| Warm `POST /chat` ("where is the pool?") | ~18s | **~5s** (3.6× faster) |
+| 5 concurrent `/chat` to different sessions | serialized (~90s) | **~3s parallel** |
+| Reranker CPU time per query | ~1-2s blocking | **0ms (disabled)** |
+| Event loop blocking | ~10s per request | **0ms (non-blocking)** |
 
 ### Measured scaling performance
 
@@ -166,6 +190,14 @@ PRODUCTION SECURITY WARNINGS:
 - [x] **Scaling: DB connection pool** (`ThreadedConnectionPool`, min=2, max=20 configurable)
 - [x] **Scaling: User lookup cache** (TTL-based, invalidated on password change / account disable, 30s default)
 - [x] **Scaling: Indexes** on `audit_log(created_at)`, `audit_log(action)`, `conversation_history(session_id, created_at)`
+- [x] **Chat scaling: LLM concurrency semaphore** (`MAX_CONCURRENT_LLM_CALLS=4`) with `LLM_QUEUE_TIMEOUT_SEC=30` fast-fail
+- [x] **Chat scaling: Per-session async lock** prevents concurrent same-session requests from corrupting LangGraph state
+- [x] **Chat scaling: Per-session rate limit** (`CHAT_RATE_LIMIT_PER_SESSION=30`/min)
+- [x] **Chat scaling: SSE stream cap** (`MAX_CONCURRENT_STREAMS=20`)
+- [x] **Chat scaling: RAG knowledge cache** (LRU+TTL, 500 entries, 5 min TTL)
+- [x] **Ollama parallelism: `OLLAMA_NUM_PARALLEL=4`** aligns with app semaphore
+- [x] **Reranker disabled by default** (`RERANKER_BACKEND=none`) — removed ~1-2s of event-loop-blocking CPU work per query
+- [x] **`GET /admin/metrics/chat`** — live runtime stats for all scaling primitives
 
 ## Still Recommended (not yet done)
 

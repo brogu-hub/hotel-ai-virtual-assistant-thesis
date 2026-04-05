@@ -401,44 +401,36 @@ assert_status(r, 403, "H7. User cannot list users (403)")
 # =============================================================================
 section("I. Guest endpoints still public (no auth required)")
 
-# /chat should NOT require auth (guest flow). We don't care about LLM latency
-# — we only care that the endpoint doesn't reject with 401/403. Use a short
-# timeout and treat a timeout as "reachable without auth" (since auth errors
-# return immediately).
-try:
-    r = requests.post(
-        f"{BASE_URL}/chat",
-        json={"message": "hi", "session_id": f"test-{_suffix}"},
-        timeout=5,  # short — only care about fast-fail auth rejections
-    )
-    log_test(
-        f"I1. POST /chat without auth → {r.status_code}",
-        r.status_code not in (401, 403),
-        "guest chat should not require auth",
-    )
-except requests.exceptions.ReadTimeout:
-    # Timeout means the server accepted the request and is running the LLM.
-    # Auth rejection would return instantly (<100ms).
-    log_test(
-        "I1. POST /chat without auth → reachable (LLM processing)",
-        True,
-        "no 401/403 — request was accepted without token",
-    )
+# /chat should NOT require auth (guest flow). Rather than actually hitting
+# the LLM (which can block the server's event loop for 15+ seconds on
+# synchronous reranker work), we probe the endpoint with a deliberately
+# INVALID payload (empty message) and verify we get 422 (validation error)
+# not 401/403 (auth error). 422 proves the request passed through the
+# bearer-auth layer — exactly what we care about.
+r = requests.post(f"{BASE_URL}/chat", json={"message": ""}, timeout=5)
+log_test(
+    f"I1. POST /chat without auth → {r.status_code} (no auth rejection)",
+    r.status_code not in (401, 403),
+    "guest chat path does not require auth",
+)
+
+s = requests.Session()
+s.headers.update({"Connection": "close"})
 
 # /rooms is open for browsing
-r = requests.get(f"{BASE_URL}/rooms", timeout=10)
+r = s.get(f"{BASE_URL}/rooms", timeout=10)
 assert_status(r, 200, "I2. GET /rooms (room catalog) public")
 
 # /health is open
-r = requests.get(f"{BASE_URL}/health", timeout=10)
+r = s.get(f"{BASE_URL}/health", timeout=10)
 assert_status(r, 200, "I3. GET /health public")
 
 # /settings/llm GET is open (read-only)
-r = requests.get(f"{BASE_URL}/settings/llm", timeout=10)
+r = s.get(f"{BASE_URL}/settings/llm", timeout=10)
 assert_status(r, 200, "I4. GET /settings/llm public (read-only)")
 
 # /settings/llm PUT requires admin
-r = requests.put(
+r = s.put(
     f"{BASE_URL}/settings/llm",
     headers=auth_header(user_token),
     json={"temperature": 0.5},
@@ -446,12 +438,13 @@ r = requests.put(
 )
 assert_status(r, 403, "I5. PUT /settings/llm with user token → 403")
 
-r = requests.put(
+r = s.put(
     f"{BASE_URL}/settings/llm",
     json={"temperature": 0.5},
     timeout=10,
 )
 assert_status(r, 401, "I6. PUT /settings/llm without token → 401")
+s.close()
 
 # =============================================================================
 # Part J: JWT payload validation

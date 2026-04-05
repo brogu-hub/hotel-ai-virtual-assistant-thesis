@@ -3,8 +3,10 @@
 """
 Hotel Knowledge RAG Chain
 
-Retrieves hotel information from Qdrant using OpenRouter embeddings
-and configurable reranker (NVIDIA NIM or local Qwen). Supports bilingual Thai/English queries.
+Retrieves hotel information from Qdrant using OpenRouter embeddings.
+Supports bilingual Thai/English queries. Reranking is OFF by default
+(embedding search is already accurate enough and the reranker was
+blocking the event loop under load).
 
 Usage:
     from src.retrievers.hotel_knowledge.chains import HotelKnowledgeRetriever
@@ -14,8 +16,8 @@ Usage:
     results = retriever.document_search("What time is breakfast?")
 
 Environment Variables:
-    RERANKER_BACKEND: "nvidia" (default, fast API-based) or "qwen" (local CPU-based)
-    NVIDIA_API_KEY: Required if RERANKER_BACKEND=nvidia
+    RERANKER_BACKEND: "none" (default, fastest), "qwen" (local CPU), or "nvidia" (API)
+    NVIDIA_API_KEY: Required only if RERANKER_BACKEND=nvidia
 """
 
 import os
@@ -39,35 +41,41 @@ from src.common.vectorstore_qdrant import (
 
 logger = logging.getLogger(__name__)
 
-# Reranker selection: NVIDIA NIM (fast, API-based) or Qwen (local, CPU-based)
-RERANKER_BACKEND = os.getenv("RERANKER_BACKEND", "nvidia").lower()
+# Reranker selection:
+#   "none"   (DEFAULT) — skip reranking. The embedding model is already
+#            strong enough for hotel-knowledge recall and reranking was
+#            adding ~1-2 seconds of CPU-bound latency per query AND
+#            blocking the FastAPI event loop, hurting concurrent-user
+#            throughput. We fetch top_k_retrieval directly from Qdrant
+#            and return the top N.
+#   "qwen"   — local CPU CrossEncoder (legacy — very slow, single-threaded)
+#   "nvidia" — NVIDIA NIM reranker API (legacy — requires NVIDIA_API_KEY)
+RERANKER_BACKEND = os.getenv("RERANKER_BACKEND", "none").lower()
 
 
 def get_reranker(top_n: int = 4):
     """
-    Get the configured reranker based on RERANKER_BACKEND environment variable.
+    Get the configured reranker or None if reranking is disabled.
 
-    Args:
-        top_n: Number of top documents to return
-
-    Returns:
-        Reranker instance (NVIDIA or Qwen)
-
-    Environment Variables:
-        RERANKER_BACKEND: "nvidia" (default) or "qwen"
-        NVIDIA_API_KEY: Required if using nvidia backend
+    Returns None when RERANKER_BACKEND=none (default), which signals
+    document_search() to use vector-search results directly without a
+    second reranking pass.
     """
+    if RERANKER_BACKEND == "none" or RERANKER_BACKEND == "":
+        logger.info("Reranker disabled (RERANKER_BACKEND=none) — using vector search directly")
+        return None
     if RERANKER_BACKEND == "qwen":
         from src.common.reranker_qwen import get_qwen_reranker
 
-        logger.info("Using Qwen reranker (local CPU)")
+        logger.info("Using Qwen reranker (local CPU — slow, blocks event loop)")
         return get_qwen_reranker(top_n=top_n)
-    else:
-        # Default to NVIDIA
+    if RERANKER_BACKEND == "nvidia":
         from src.common.reranker_nvidia import get_nvidia_reranker
 
         logger.info("Using NVIDIA NIM reranker (API-based)")
         return get_nvidia_reranker(top_n=top_n)
+    logger.warning(f"Unknown RERANKER_BACKEND={RERANKER_BACKEND}, disabling reranker")
+    return None
 
 # Import audit logger
 try:
@@ -369,25 +377,40 @@ class HotelKnowledgeRetriever(BaseExample):
                 except Exception as log_error:
                     logger.debug(f"Audit logging failed: {log_error}")
 
-            # Rerank with configured reranker (NVIDIA or Qwen)
-            reranking_start = time.time()
-            self.reranker.top_n = num_docs
-            reranked_docs = self.reranker.compress_documents(
-                documents=docs,
-                query=content
-            )
-            reranking_time = (time.time() - reranking_start) * 1000
-
-            # Format response
-            results = []
-            for doc in reranked_docs:
-                results.append({
-                    "source": doc.metadata.get("source", "unknown"),
-                    "content": doc.page_content,
-                    "score": doc.metadata.get("relevance_score", 0.0)
-                })
-
-            logger.info(f"Returning {len(results)} reranked results")
+            # Optional reranking step. When RERANKER_BACKEND=none (default),
+            # self.reranker is None and we return the top-N vector-search
+            # results directly. This keeps the hot path fast and
+            # non-blocking. Reranking was adding ~1-2s of CPU-bound work
+            # inside an async tool, stalling the FastAPI event loop.
+            reranking_time = 0
+            if self.reranker is not None:
+                reranking_start = time.time()
+                self.reranker.top_n = num_docs
+                reranked_docs = self.reranker.compress_documents(
+                    documents=docs,
+                    query=content
+                )
+                reranking_time = (time.time() - reranking_start) * 1000
+                results = [
+                    {
+                        "source": doc.metadata.get("source", "unknown"),
+                        "content": doc.page_content,
+                        "score": doc.metadata.get("relevance_score", 0.0),
+                    }
+                    for doc in reranked_docs
+                ]
+                logger.info(f"Returning {len(results)} reranked results")
+            else:
+                # No reranker: trim to num_docs from the vector search output
+                results = [
+                    {
+                        "source": doc.metadata.get("source", "unknown"),
+                        "content": doc.page_content,
+                        "score": 0.0,  # vector score not propagated by LangChain
+                    }
+                    for doc in docs[:num_docs]
+                ]
+                logger.info(f"Returning {len(results)} results (no reranker)")
 
             # Log complete RAG pipeline
             total_time = (time.time() - total_start) * 1000

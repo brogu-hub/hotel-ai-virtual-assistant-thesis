@@ -302,6 +302,12 @@ r = requests.patch(
 )
 assert_status(r, 422, "N3. New password < 8 chars → 422")
 
+# Sleep > 1s so the password change lands in a strictly later whole-second
+# bucket than the token's iat. (iat is truncated to whole seconds by PyJWT,
+# and password_changed_at invalidation uses second-granularity to avoid
+# racing freshly-issued tokens in the same second.)
+time.sleep(1.2)
+
 # N4. Successful password change
 new_password = "BrandNewPass456!"
 r = requests.patch(
@@ -313,7 +319,7 @@ r = requests.patch(
 assert_status(r, 200, "N4. Valid password change → 200")
 
 # N5. CRITICAL: Old token invalidated after password change (via password_changed_at)
-time.sleep(0.2)  # give the DB timestamp a moment
+time.sleep(0.3)
 r = requests.get(f"{BASE_URL}/auth/me", headers=auth(pc_token), timeout=10)
 assert_status(r, 401, "N5. Old token invalidated after password change")
 

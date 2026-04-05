@@ -765,6 +765,16 @@ def search_hotel_knowledge(query: str) -> str:
     Returns:
         Relevant information from hotel knowledge base
     """
+    # Try the scaling cache first — normalizes query and checks TTL
+    try:
+        from src.hotel_guardrails.chat_scaling import knowledge_cache
+        cached = knowledge_cache.get(query)
+        if cached is not None:
+            logger.info(f"Knowledge cache HIT for query: {query[:50]}...")
+            return cached
+    except Exception:
+        knowledge_cache = None  # type: ignore
+
     try:
         from src.retrievers.hotel_knowledge.chains import HotelKnowledgeRetriever
 
@@ -776,7 +786,14 @@ def search_hotel_knowledge(query: str) -> str:
             response_parts = []
             for r in results:
                 response_parts.append(r["content"])
-            return "\n\n---\n\n".join(response_parts)
+            answer = "\n\n---\n\n".join(response_parts)
+            # Cache successful lookups only — don't cache transient failures
+            try:
+                if knowledge_cache is not None:
+                    knowledge_cache.set(query, answer)
+            except Exception:
+                pass
+            return answer
 
         # No results found in knowledge base
         logger.warning(f"No RAG results found for query: {query}")

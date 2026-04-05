@@ -1816,6 +1816,31 @@
         ]
       }
     },
+    "/admin/metrics/chat": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Admin Get Chat Metrics",
+        "description": "Admin: Chat scaling metrics for monitoring concurrent-user load.\n\nReturns runtime stats for:\n- `llm_limiter`: semaphore state (in_flight, waiting, acquired, rejected, timed_out)\n- `session_locks`: per-session mutex tracking (tracked, currently_locked)\n- `chat_rate_limiter`: per-session sliding-window rate limit state\n- `stream_limiter`: concurrent SSE stream cap state\n- `knowledge_cache`: RAG cache hit rate (hits, misses, size)\n- `config`: effective environment values\n\nUse this for Grafana dashboards, alerting, and capacity planning.",
+        "operationId": "admin_get_chat_metrics_admin_metrics_chat_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/admin/escalations": {
       "get": {
         "tags": [

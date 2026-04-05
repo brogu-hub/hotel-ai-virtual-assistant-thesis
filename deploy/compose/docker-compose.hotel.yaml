@@ -14,6 +14,20 @@ services:
       - hotel-ollama-data:/root/.ollama
     ports:
       - "11435:11434"
+    environment:
+      # Concurrent request slots inside Ollama. Default is 1 — every
+      # parallel request serializes inside Ollama itself. Bumping to 4
+      # lets our MAX_CONCURRENT_LLM_CALLS semaphore actually run chats
+      # in parallel on a single model (GPU) instead of just queuing.
+      # Trade-off: each slot consumes KV-cache VRAM, so on small GPUs
+      # reduce this to 2 or keep MAX_CONCURRENT_LLM_CALLS <= this value.
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-4}
+      # Max models loaded simultaneously. Keep at 1 for the hotel demo
+      # (single 9B model) unless you want multi-model A/B testing.
+      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-1}
+      # How long an idle model stays loaded. Longer = fewer cold starts,
+      # more VRAM held. 15m is a good default for active hotel traffic.
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-15m}
     deploy:
       resources:
         reservations:
@@ -153,7 +167,12 @@ services:
       NEMO_GUARDRAILS_ENABLED: "false"
 
       # --- Reranker: Local Qwen (no NVIDIA API needed) ---
-      RERANKER_BACKEND: qwen
+      # Reranker disabled — embedding search is already accurate for our
+      # hotel knowledge base, and the CrossEncoder reranker was adding
+      # ~1-2s of CPU-bound work per query AND blocking the FastAPI event
+      # loop (stalling all other requests). Set to "qwen" or "nvidia" to
+      # re-enable if you add less accurate embedding models later.
+      RERANKER_BACKEND: ${RERANKER_BACKEND:-none}
 
       # --- Authentication (JWT + bcrypt) ---
       JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-in-prod-8f3a9e2b1c7d4f6e5a8b9c0d1e2f3a4b}
@@ -171,6 +190,14 @@ services:
       DB_POOL_MIN: ${DB_POOL_MIN:-2}
       DB_POOL_MAX: ${DB_POOL_MAX:-20}
       USER_CACHE_TTL_SECONDS: ${USER_CACHE_TTL_SECONDS:-30}
+
+      # --- Scaling: Chat concurrency (many simultaneous users) ---
+      MAX_CONCURRENT_LLM_CALLS: ${MAX_CONCURRENT_LLM_CALLS:-5}
+      LLM_QUEUE_TIMEOUT_SEC: ${LLM_QUEUE_TIMEOUT_SEC:-30}
+      MAX_CONCURRENT_STREAMS: ${MAX_CONCURRENT_STREAMS:-20}
+      CHAT_RATE_LIMIT_PER_SESSION: ${CHAT_RATE_LIMIT_PER_SESSION:-30}
+      KNOWLEDGE_CACHE_SIZE: ${KNOWLEDGE_CACHE_SIZE:-500}
+      KNOWLEDGE_CACHE_TTL_SEC: ${KNOWLEDGE_CACHE_TTL_SEC:-300}
 
       # --- Logging ---
       LOGLEVEL: DEBUG

@@ -402,14 +402,17 @@ async def get_current_user(
             detail="Account disabled / บัญชีถูกปิดการใช้งาน",
         )
 
-    # Password-change invalidation: reject tokens issued before last password change
+    # Password-change invalidation: reject tokens issued before last password
+    # change. PyJWT truncates iat to whole seconds, so we truncate
+    # password_changed_at the same way for a fair comparison. A token is
+    # rejected only if its integer-second iat is strictly less than the
+    # integer-second password_changed_at.
     iat = payload.get("iat")
     pwd_changed = user.get("password_changed_at")
     if iat is not None and pwd_changed is not None:
-        iat_ts = float(iat)
-        pwd_changed_ts = pwd_changed.timestamp() if hasattr(pwd_changed, "timestamp") else 0
-        # Allow 1 second grace period for clock skew between insert and token creation
-        if iat_ts + 1 < pwd_changed_ts:
+        iat_sec = int(iat)
+        pwd_changed_sec = int(pwd_changed.timestamp()) if hasattr(pwd_changed, "timestamp") else 0
+        if iat_sec < pwd_changed_sec:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token invalidated by password change / โทเค็นถูกยกเลิกเนื่องจากการเปลี่ยนรหัสผ่าน",

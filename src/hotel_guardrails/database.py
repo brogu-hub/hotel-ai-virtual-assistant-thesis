@@ -1274,10 +1274,17 @@ async def create_user(
                     None,
                 )
 
+            # Set password_changed_at to 1 second in the past so the JWT we
+            # issue immediately after (iat=floor(now)) is guaranteed to be
+            # >= password_changed_at. Without this, JWT iat (truncated to
+            # whole seconds) could be less than password_changed_at in the
+            # same subsecond window, and the freshly-issued token would be
+            # rejected by the password-change invalidation check.
             cur.execute(
                 """
-                INSERT INTO users (username, email, password_hash, role, full_name, guest_id)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO users (username, email, password_hash, role, full_name, guest_id,
+                                   password_changed_at)
+                VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP - INTERVAL '1 second')
                 RETURNING user_id, username, email, role, full_name, guest_id,
                           is_active, last_login, created_at
                 """,
@@ -1669,8 +1676,10 @@ async def seed_default_admin(
 
             cur.execute(
                 """
-                INSERT INTO users (username, email, password_hash, role, full_name, password_is_default)
-                VALUES (%s, %s, %s, 'admin', %s, TRUE)
+                INSERT INTO users (username, email, password_hash, role, full_name,
+                                   password_is_default, password_changed_at)
+                VALUES (%s, %s, %s, 'admin', %s, TRUE,
+                        CURRENT_TIMESTAMP - INTERVAL '1 second')
                 ON CONFLICT (username) DO NOTHING
                 """,
                 (username, email, password_hash, full_name),
