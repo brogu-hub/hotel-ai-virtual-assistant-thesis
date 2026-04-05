@@ -81,6 +81,8 @@ from .models import (
     UserLoginRequest,
     UserResponse,
     TokenResponse,
+    PasswordChangeRequest,
+    GenericSuccessResponse,
 )
 from .hybrid_router import HybridRouter, RoutingPath
 from .langgraph_adapter import LangGraphAdapter
@@ -93,7 +95,17 @@ from .auth import (
     get_current_user,
     require_admin,
     serialize_user,
+    check_account_lockout,
+    get_client_ip,
+    token_blocklist,
+    login_rate_limiter_ip,
+    login_rate_limiter_user,
+    is_jwt_secret_insecure,
     JWT_EXPIRE_HOURS,
+    LOCKOUT_THRESHOLD,
+    LOCKOUT_MINUTES,
+    LOGIN_RATE_LIMIT_PER_IP,
+    LOGIN_RATE_LIMIT_PER_USER,
 )
 
 # Request ID context variable for tracing
@@ -240,10 +252,32 @@ async def lifespan(app: FastAPI):
         if created:
             logger.warning(
                 f"Default admin created: username={default_admin_username} "
-                f"(CHANGE THE PASSWORD in production via DEFAULT_ADMIN_PASSWORD env var)"
+                f"(CHANGE THE PASSWORD via PATCH /auth/me/password)"
             )
         else:
             logger.info("Admin user already exists — skipping default admin seed")
+
+        # Production safety checks
+        warnings = []
+        if is_jwt_secret_insecure():
+            warnings.append(
+                "JWT_SECRET is insecure (default or <32 chars). "
+                "Tokens can be forged. Set a long random JWT_SECRET env var."
+            )
+
+        if await db.any_admin_still_uses_default_password():
+            warnings.append(
+                "At least one admin still uses the default seed password. "
+                "Log in and call PATCH /auth/me/password to rotate it, or "
+                "change DEFAULT_ADMIN_PASSWORD env var before first startup."
+            )
+
+        if warnings:
+            logger.warning("=" * 70)
+            logger.warning("PRODUCTION SECURITY WARNINGS:")
+            for w in warnings:
+                logger.warning(f"  [!] {w}")
+            logger.warning("=" * 70)
     except Exception as e:
         logger.error(f"Failed to ensure users table / seed admin: {e}")
 
@@ -534,15 +568,75 @@ async def auth_register(request: UserRegisterRequest):
 
 
 @app.post("/auth/login", response_model=TokenResponse, tags=["Auth"])
-async def auth_login(request: UserLoginRequest):
+async def auth_login(request: UserLoginRequest, http_request: Request):
     """
     Login with username (or email) and password. Returns a JWT access token.
 
     Works for both `user` and `admin` roles — the returned JWT contains
     the role which downstream endpoints use for authorization.
+
+    **Hardening:**
+    - Per-IP rate limit: 10 attempts/minute (429 on exceeded)
+    - Per-username rate limit: 5 attempts/minute (429 on exceeded)
+    - Account lockout: 5 failed attempts → 15-minute lockout (423 while locked)
+    - Successful login resets failed counter and lockout
     """
+    client_ip = get_client_ip(http_request)
+    username_key = request.username.lower().strip()
+
+    # Per-IP rate limit (stops distributed username guessing from one host)
+    allowed, retry_after = login_rate_limiter_ip.check_and_record(client_ip)
+    if not allowed:
+        logger.warning(f"Login rate limit exceeded for IP {client_ip}")
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many login attempts from this IP. Retry in {retry_after}s. / ลองเข้าสู่ระบบมากเกินไป",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    # Per-username rate limit (stops slow credential-stuffing on one account)
+    allowed_u, retry_after_u = login_rate_limiter_user.check_and_record(username_key)
+    if not allowed_u:
+        logger.warning(f"Login rate limit exceeded for username {username_key}")
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many login attempts for this account. Retry in {retry_after_u}s. / ลองเข้าสู่ระบบบัญชีนี้มากเกินไป",
+            headers={"Retry-After": str(retry_after_u)},
+        )
+
     user = await db.get_user_by_username(request.username)
+
+    # Account lockout check (before password verification to prevent timing attacks)
+    if user:
+        lockout_seconds = check_account_lockout(user)
+        if lockout_seconds is not None:
+            logger.warning(
+                f"Login attempted on locked account: {user['username']} "
+                f"(remaining: {lockout_seconds}s)"
+            )
+            raise HTTPException(
+                status_code=423,  # Locked
+                detail=(
+                    f"Account locked due to too many failed attempts. "
+                    f"Try again in {lockout_seconds}s. / "
+                    f"บัญชีถูกล็อคเนื่องจากพยายามเข้าสู่ระบบผิดเกินไป"
+                ),
+                headers={"Retry-After": str(lockout_seconds)},
+            )
+
+    # Password verification
     if not user or not verify_password(request.password, user["password_hash"]):
+        # Record failed attempt for lockout (only if user exists — no info leak)
+        if user:
+            attempts, now_locked = await db.record_failed_login(
+                user["user_id"],
+                lockout_threshold=LOCKOUT_THRESHOLD,
+                lockout_minutes=LOCKOUT_MINUTES,
+            )
+            if now_locked:
+                logger.warning(
+                    f"Account locked after {attempts} failed attempts: {user['username']}"
+                )
         raise HTTPException(
             status_code=401,
             detail="Invalid username or password / ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง",
@@ -554,7 +648,9 @@ async def auth_login(request: UserLoginRequest):
             detail="Account disabled / บัญชีถูกปิดการใช้งาน",
         )
 
+    # Success: update last_login, reset failed counter, reset rate limiter for this user
     await db.update_user_last_login(user["user_id"])
+    login_rate_limiter_user.reset(username_key)
 
     token = create_access_token({
         "sub": user["username"],
@@ -566,6 +662,74 @@ async def auth_login(request: UserLoginRequest):
         token_type="bearer",
         expires_in=JWT_EXPIRE_HOURS * 3600,
         user=UserResponse(**serialize_user(user)),
+    )
+
+
+@app.post("/auth/logout", response_model=GenericSuccessResponse, tags=["Auth"])
+async def auth_logout(current_user: dict = Depends(get_current_user)):
+    """
+    Logout by revoking the current JWT.
+
+    The token's jti is added to an in-memory blocklist until its natural expiry.
+    Subsequent requests with the same token will return 401.
+
+    **Note:** Blocklist is per-process memory. In multi-worker/container
+    deployments, use Redis-backed blocklist for cross-worker invalidation.
+    For immediate cross-process invalidation of ALL user tokens, use
+    `PATCH /auth/me/password` instead (persistent via password_changed_at).
+    """
+    payload = current_user.get("_jwt_payload", {})
+    jti = payload.get("jti")
+    exp = payload.get("exp", 0)
+
+    if jti:
+        token_blocklist.add(jti, float(exp))
+        logger.info(f"User '{current_user['username']}' logged out (jti={jti[:8]}...)")
+
+    return GenericSuccessResponse(
+        success=True,
+        message="Logged out successfully / ออกจากระบบสำเร็จ",
+    )
+
+
+@app.patch("/auth/me/password", response_model=GenericSuccessResponse, tags=["Auth"])
+async def auth_change_password(
+    request: PasswordChangeRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Change the current user's password.
+
+    Requires the current password for verification. On success:
+    - Password is re-hashed with bcrypt
+    - `password_changed_at` is updated to now
+    - **ALL previously-issued JWTs for this user are invalidated** (via
+      iat vs password_changed_at check in get_current_user)
+    - The user must log in again to obtain a fresh token
+
+    Returns 401 if the current password is wrong.
+    """
+    if not verify_password(request.current_password, current_user["password_hash"]):
+        raise HTTPException(
+            status_code=401,
+            detail="Current password is incorrect / รหัสผ่านปัจจุบันไม่ถูกต้อง",
+        )
+
+    if request.current_password == request.new_password:
+        raise HTTPException(
+            status_code=400,
+            detail="New password must differ from current password / รหัสผ่านใหม่ต้องแตกต่างจากรหัสผ่านเดิม",
+        )
+
+    new_hash = hash_password(request.new_password)
+    success = await db.update_user_password(current_user["user_id"], new_hash)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to update password")
+
+    logger.info(f"User '{current_user['username']}' changed password — all tokens invalidated")
+    return GenericSuccessResponse(
+        success=True,
+        message="Password changed successfully. Please log in again. / เปลี่ยนรหัสผ่านสำเร็จ กรุณาเข้าสู่ระบบใหม่",
     )
 
 

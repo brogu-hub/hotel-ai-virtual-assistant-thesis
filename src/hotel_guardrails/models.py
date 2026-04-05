@@ -756,6 +756,29 @@ class TokenResponse(BaseModel):
     user: UserResponse = Field(..., description="Authenticated user profile")
 
 
+class PasswordChangeRequest(BaseModel):
+    """Request model for PATCH /auth/me/password endpoint."""
+
+    current_password: str = Field(
+        ...,
+        min_length=1,
+        description="Current password (for verification)",
+    )
+    new_password: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+        description="New password (minimum 8 characters)",
+    )
+
+
+class GenericSuccessResponse(BaseModel):
+    """Generic success response."""
+
+    success: bool = Field(True, description="Whether the operation succeeded")
+    message: str = Field(..., description="Human-readable confirmation")
+
+
 # =============================================================================
 # Admin Models
 # =============================================================================

@@ -1119,7 +1119,10 @@ async def update_guest(
 
 
 async def ensure_users_table() -> None:
-    """Create users table + indexes if they don't exist (idempotent)."""
+    """Create users table + indexes if they don't exist (idempotent).
+
+    Also applies lazy migrations for hardening columns on existing deployments.
+    """
     try:
         with get_cursor() as (cur, conn):
             cur.execute("""
@@ -1138,11 +1141,19 @@ async def ensure_users_table() -> None:
                     CONSTRAINT users_role_check CHECK (role IN ('user', 'admin'))
                 )
             """)
+            # Lazy migrations for hardening columns (idempotent)
+            cur.execute("""
+                ALTER TABLE users
+                    ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER DEFAULT 0,
+                    ADD COLUMN IF NOT EXISTS locked_until TIMESTAMP,
+                    ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    ADD COLUMN IF NOT EXISTS password_is_default BOOLEAN DEFAULT FALSE
+            """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)")
             conn.commit()
-            logger.info("users table ensured")
+            logger.info("users table ensured (with hardening columns)")
     except Exception as e:
         logger.error(f"Error ensuring users table: {e}")
         raise
@@ -1195,14 +1206,20 @@ async def create_user(
         return False, f"Error creating user: {str(e)}", None
 
 
+_USER_COLUMNS = """
+    user_id, username, email, password_hash, role, full_name,
+    is_active, guest_id, last_login, created_at, updated_at,
+    failed_login_attempts, locked_until, password_changed_at, password_is_default
+"""
+
+
 async def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
     """Look up a user by username or email (case-insensitive). Includes password_hash."""
     try:
         with get_cursor() as (cur, conn):
             cur.execute(
-                """
-                SELECT user_id, username, email, password_hash, role, full_name,
-                       is_active, guest_id, last_login, created_at, updated_at
+                f"""
+                SELECT {_USER_COLUMNS}
                 FROM users
                 WHERE LOWER(username) = LOWER(%s) OR LOWER(email) = LOWER(%s)
                 LIMIT 1
@@ -1221,12 +1238,7 @@ async def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
     try:
         with get_cursor() as (cur, conn):
             cur.execute(
-                """
-                SELECT user_id, username, email, password_hash, role, full_name,
-                       is_active, guest_id, last_login, created_at, updated_at
-                FROM users
-                WHERE user_id = %s
-                """,
+                f"SELECT {_USER_COLUMNS} FROM users WHERE user_id = %s",
                 (user_id,),
             )
             row = cur.fetchone()
@@ -1237,16 +1249,104 @@ async def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
 
 
 async def update_user_last_login(user_id: int) -> None:
-    """Update the last_login timestamp to now."""
+    """Update the last_login timestamp to now. Also resets failed login counter."""
     try:
         with get_cursor() as (cur, conn):
             cur.execute(
-                "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = %s",
+                """
+                UPDATE users
+                SET last_login = CURRENT_TIMESTAMP,
+                    failed_login_attempts = 0,
+                    locked_until = NULL
+                WHERE user_id = %s
+                """,
                 (user_id,),
             )
             conn.commit()
     except Exception as e:
         logger.warning(f"Failed to update last_login for user {user_id}: {e}")
+
+
+async def record_failed_login(
+    user_id: int,
+    lockout_threshold: int = 5,
+    lockout_minutes: int = 15,
+) -> Tuple[int, bool]:
+    """
+    Increment failed_login_attempts. If it reaches the threshold, lock the
+    account for `lockout_minutes`.
+
+    Returns (new_attempt_count, is_now_locked).
+    """
+    try:
+        with get_cursor() as (cur, conn):
+            cur.execute(
+                """
+                UPDATE users
+                SET failed_login_attempts = failed_login_attempts + 1,
+                    locked_until = CASE
+                        WHEN failed_login_attempts + 1 >= %s
+                        THEN CURRENT_TIMESTAMP + (%s * INTERVAL '1 minute')
+                        ELSE locked_until
+                    END
+                WHERE user_id = %s
+                RETURNING failed_login_attempts, locked_until
+                """,
+                (lockout_threshold, lockout_minutes, user_id),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            if not row:
+                return 0, False
+            return row["failed_login_attempts"], row["locked_until"] is not None
+    except Exception as e:
+        logger.error(f"Error recording failed login: {e}")
+        return 0, False
+
+
+async def update_user_password(
+    user_id: int,
+    new_password_hash: str,
+) -> bool:
+    """
+    Update the user's password and set password_changed_at to now.
+
+    The password_changed_at timestamp invalidates all previously-issued JWTs
+    for this user (tokens with iat < password_changed_at are rejected).
+    """
+    try:
+        with get_cursor() as (cur, conn):
+            cur.execute(
+                """
+                UPDATE users
+                SET password_hash = %s,
+                    password_changed_at = CURRENT_TIMESTAMP,
+                    password_is_default = FALSE,
+                    failed_login_attempts = 0,
+                    locked_until = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = %s
+                """,
+                (new_password_hash, user_id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+    except Exception as e:
+        logger.error(f"Error updating password: {e}")
+        return False
+
+
+async def any_admin_still_uses_default_password() -> bool:
+    """Return True if any admin still has password_is_default=TRUE."""
+    try:
+        with get_cursor() as (cur, conn):
+            cur.execute(
+                "SELECT 1 FROM users WHERE role = 'admin' AND password_is_default = TRUE LIMIT 1"
+            )
+            return cur.fetchone() is not None
+    except Exception as e:
+        logger.error(f"Error checking default admin password: {e}")
+        return False
 
 
 async def list_users(
@@ -1290,6 +1390,8 @@ async def seed_default_admin(
     """
     Create a default admin if NO admin user exists yet.
 
+    Marks password_is_default=TRUE so startup can warn until it's rotated.
+
     Returns True if a new admin was created, False if one already exists
     or on error.
     """
@@ -1301,8 +1403,8 @@ async def seed_default_admin(
 
             cur.execute(
                 """
-                INSERT INTO users (username, email, password_hash, role, full_name)
-                VALUES (%s, %s, %s, 'admin', %s)
+                INSERT INTO users (username, email, password_hash, role, full_name, password_is_default)
+                VALUES (%s, %s, %s, 'admin', %s, TRUE)
                 ON CONFLICT (username) DO NOTHING
                 """,
                 (username, email, password_hash, full_name),

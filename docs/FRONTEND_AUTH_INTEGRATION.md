@@ -4,11 +4,12 @@ Backend now has JWT-based authentication separating **registered users** (websit
 
 ## TL;DR
 
-- **New endpoints:** `/auth/register`, `/auth/login`, `/auth/me`, `/auth/admin/register`, `/auth/users`
+- **7 auth endpoints:** `/auth/register`, `/auth/login`, `/auth/me`, `/auth/logout`, `/auth/me/password`, `/auth/admin/register`, `/auth/users`
 - **Default admin:** `admin` / `admin123` (change in prod via `DEFAULT_ADMIN_PASSWORD` env var)
-- **All `/admin/*`, `/dashboard/*`, and `PUT /settings/llm` now require an admin JWT** — hit them without a token and you'll get 401; with a user token you'll get 403
+- **All `/admin/*`, `/dashboard/*`, and `PUT /settings/llm` require an admin JWT** — 401 without token, 403 with user token
 - **Guest endpoints stay open:** `/chat`, `/chat/stream`, `/rooms`, `/bookings`, `/guests`, `/health`, `GET /settings/llm`
-- OpenAPI spec updated: [docs/api_references/openapi.json](api_references/openapi.json) — 47 endpoints, `HTTPBearer` security scheme
+- **Hardening built in:** rate limiting, account lockout, token blocklist, password-change invalidation
+- OpenAPI spec: [docs/api_references/openapi.json](api_references/openapi.json) — 49 endpoints, `HTTPBearer` security scheme
 
 ## Auth endpoints
 
@@ -70,11 +71,90 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 // 403 if account disabled
 ```
 
+### `POST /auth/logout` (requires bearer token)
+Revokes the current JWT by adding its `jti` to an in-memory blocklist. Subsequent requests with the same token return 401.
+
+```http
+POST /auth/logout
+Authorization: Bearer <token>
+```
+
+```jsonc
+// 200
+{ "success": true, "message": "Logged out successfully / ออกจากระบบสำเร็จ" }
+// 401 if token already revoked or invalid
+```
+
+**Gotcha:** The blocklist is **in-memory** (reset on server restart). For a "force logout everywhere" effect that persists across restarts, use `PATCH /auth/me/password` instead — the `password_changed_at` check invalidates all tokens persistently.
+
+### `PATCH /auth/me/password` (requires bearer token)
+Change the current user's password. Requires current password for verification. On success, **all previously-issued tokens for this user become invalid** — the user must log in again.
+
+```jsonc
+// request
+{ "current_password": "OldPass123", "new_password": "NewPass456" }
+
+// 200
+{ "success": true, "message": "Password changed successfully. Please log in again." }
+// 400 if new == current
+// 401 if current_password is wrong
+// 422 if new_password < 8 chars
+```
+
+**Frontend action on success:**
+1. Show success toast
+2. Clear stored token (localStorage / cookie)
+3. Redirect to `/login`
+
 ### `POST /auth/admin/register` (admin only)
 Used inside the admin dashboard to provision additional staff accounts. Non-admin tokens → 403.
 
 ### `GET /auth/users?role=admin&limit=100` (admin only)
 List users for the admin UI. Filter by role.
+
+## Rate limiting and lockout handling
+
+Login is protected by three layers. Your UI must handle each:
+
+| Status | Meaning | What to show | Action |
+|---|---|---|---|
+| **429** | Per-IP or per-username rate limit (too many attempts in 60s) | "Too many login attempts. Please wait N seconds." | Disable submit button for `Retry-After` seconds |
+| **423** | Account locked after 5 failed attempts (15 min) | "Account temporarily locked. Try again in N minutes." | Disable submit, show countdown |
+| **401** | Wrong username/password | "Invalid credentials" | Allow retry |
+
+All three responses include a `Retry-After` header (integer seconds):
+
+```typescript
+async function handleLogin(username: string, password: string) {
+  const res = await fetch('/api/hotel/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+
+  if (res.status === 429 || res.status === 423) {
+    const retryAfter = parseInt(res.headers.get('Retry-After') ?? '60');
+    const isLocked = res.status === 423;
+    const message = isLocked
+      ? `Account locked. Try again in ${retryAfter}s.`
+      : `Too many attempts. Try again in ${retryAfter}s.`;
+    showToast(message, 'error');
+    disableLoginFormFor(retryAfter);
+    return;
+  }
+
+  if (res.status === 401) {
+    showToast('Invalid username or password', 'error');
+    return;
+  }
+
+  if (res.ok) {
+    const { access_token, user } = await res.json();
+    localStorage.setItem('auth_token', access_token);
+    router.push(user.role === 'admin' ? '/dashboard' : '/account');
+  }
+}
+```
 
 ## How to integrate
 

@@ -96,7 +96,7 @@
           "Auth"
         ],
         "summary": "Auth Login",
-        "description": "Login with username (or email) and password. Returns a JWT access token.\n\nWorks for both `user` and `admin` roles — the returned JWT contains\nthe role which downstream endpoints use for authorization.",
+        "description": "Login with username (or email) and password. Returns a JWT access token.\n\nWorks for both `user` and `admin` roles — the returned JWT contains\nthe role which downstream endpoints use for authorization.\n\n**Hardening:**\n- Per-IP rate limit: 10 attempts/minute (429 on exceeded)\n- Per-username rate limit: 5 attempts/minute (429 on exceeded)\n- Account lockout: 5 failed attempts → 15-minute lockout (423 while locked)\n- Successful login resets failed counter and lockout",
         "operationId": "auth_login_auth_login_post",
         "requestBody": {
           "content": {
@@ -130,6 +130,80 @@
             }
           }
         }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Auth Logout",
+        "description": "Logout by revoking the current JWT.\n\nThe token's jti is added to an in-memory blocklist until its natural expiry.\nSubsequent requests with the same token will return 401.\n\n**Note:** Blocklist is per-process memory. In multi-worker/container\ndeployments, use Redis-backed blocklist for cross-worker invalidation.\nFor immediate cross-process invalidation of ALL user tokens, use\n`PATCH /auth/me/password` instead (persistent via password_changed_at).",
+        "operationId": "auth_logout_auth_logout_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericSuccessResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/auth/me/password": {
+      "patch": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Auth Change Password",
+        "description": "Change the current user's password.\n\nRequires the current password for verification. On success:\n- Password is re-hashed with bcrypt\n- `password_changed_at` is updated to now\n- **ALL previously-issued JWTs for this user are invalidated** (via\n  iat vs password_changed_at check in get_current_user)\n- The user must log in again to obtain a fresh token\n\nReturns 401 if the current password is wrong.",
+        "operationId": "auth_change_password_auth_me_password_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericSuccessResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/auth/me": {
@@ -2976,6 +3050,27 @@
         "title": "DashboardStatsResponse",
         "description": "Hotel dashboard overview statistics."
       },
+      "GenericSuccessResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "description": "Whether the operation succeeded",
+            "default": true
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable confirmation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "GenericSuccessResponse",
+        "description": "Generic success response."
+      },
       "GuestCreateRequest": {
         "properties": {
           "email": {
@@ -3613,6 +3708,30 @@
         "type": "object",
         "title": "LLMSettingsUpdateRequest",
         "description": "Request model for PUT /settings/llm endpoint."
+      },
+      "PasswordChangeRequest": {
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Current Password",
+            "description": "Current password (for verification)"
+          },
+          "new_password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "New Password",
+            "description": "New password (minimum 8 characters)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "PasswordChangeRequest",
+        "description": "Request model for PATCH /auth/me/password endpoint."
       },
       "RoomAvailabilityDay": {
         "properties": {

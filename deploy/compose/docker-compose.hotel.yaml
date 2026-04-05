@@ -155,6 +155,18 @@ services:
       # --- Reranker: Local Qwen (no NVIDIA API needed) ---
       RERANKER_BACKEND: qwen
 
+      # --- Authentication (JWT + bcrypt) ---
+      JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-in-prod-8f3a9e2b1c7d4f6e5a8b9c0d1e2f3a4b}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_EXPIRE_HOURS: ${JWT_EXPIRE_HOURS:-24}
+      LOGIN_RATE_LIMIT_PER_IP: ${LOGIN_RATE_LIMIT_PER_IP:-100}
+      LOGIN_RATE_LIMIT_PER_USER: ${LOGIN_RATE_LIMIT_PER_USER:-5}
+      LOCKOUT_THRESHOLD: ${LOCKOUT_THRESHOLD:-5}
+      LOCKOUT_MINUTES: ${LOCKOUT_MINUTES:-15}
+      DEFAULT_ADMIN_USERNAME: ${DEFAULT_ADMIN_USERNAME:-admin}
+      DEFAULT_ADMIN_EMAIL: ${DEFAULT_ADMIN_EMAIL:-admin@grandhorizon.hotel}
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-admin123}
+
       # --- Logging ---
       LOGLEVEL: DEBUG
       LOG_LEVEL: DEBUG

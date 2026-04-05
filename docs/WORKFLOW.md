@@ -352,11 +352,90 @@ Two identity systems coexist:
 ### Security properties
 
 - **bcrypt 12 rounds** for password hashing (all DB hashes start with `$2b$12$`)
-- **JWT HS256** signed with `JWT_SECRET`, 24h lifetime (`JWT_EXPIRE_HOURS`)
+- **JWT HS256** signed with `JWT_SECRET`, 24h lifetime (`JWT_EXPIRE_HOURS`), unique `jti` per token
 - **No `password_hash` ever leaks** in API responses (serialized via `serialize_user()`)
 - **Admin-only admin creation** — users cannot self-promote; `/auth/admin/register` requires existing admin JWT
 - **Last-login tracking** — `users.last_login` updated on every successful login
 - **Login accepts username OR email** as the identifier for ergonomics
+
+### Production hardening
+
+```
+  Login attempt
+       |
+       v
+  +------------------+       429 + Retry-After
+  | Per-IP rate      |-----> "Too many attempts
+  | limit (100/min)  |        from this IP"
+  +------------------+
+       |
+       v
+  +------------------+       429 + Retry-After
+  | Per-user rate    |-----> "Too many attempts
+  | limit (5/min)    |        for this account"
+  +------------------+
+       |
+       v
+  +------------------+       423 + Retry-After
+  | Account lockout  |-----> "Locked for 15m
+  | check (5 fails)  |        after 5 failures"
+  +------------------+
+       |
+       v
+  +------------------+       401
+  | Password verify  |-----> Increment failed_
+  | (bcrypt)         |        login_attempts
+  +------------------+
+       |
+       v (success)
+  Issue JWT with jti + reset failed counter
+```
+
+| Protection | How | Triggers |
+|---|---|---|
+| **Rate limit per IP** | Sliding window, `LOGIN_RATE_LIMIT_PER_IP=100`/min | 429 + `Retry-After` header |
+| **Rate limit per user** | Sliding window, `LOGIN_RATE_LIMIT_PER_USER=5`/min | 429 + `Retry-After` header |
+| **Account lockout** | `users.locked_until` column, `LOCKOUT_THRESHOLD=5` fails → `LOCKOUT_MINUTES=15` | 423 Locked + `Retry-After` |
+| **Token revocation** | `/auth/logout` adds `jti` to in-memory blocklist until natural expiry | 401 on subsequent use |
+| **Password change invalidation** | `users.password_changed_at`; tokens with `iat` before change are rejected | 401, works across server restarts |
+| **Startup warnings** | Lifespan check for insecure `JWT_SECRET` or unchanged default admin password | Logged as WARNING |
+
+### Password change flow (time-travel safe)
+
+```
+  Frontend                Server                      DB
+     |                      |                         |
+     | PATCH /auth/me/password                        |
+     | Authorization: Bearer <token issued at t=100>  |
+     | {current_password, new_password}               |
+     |--------------------->|                         |
+     |                      | verify current_password |
+     |                      | hash new_password       |
+     |                      | UPDATE users SET        |
+     |                      |   password_hash=$NEW,   |
+     |                      |   password_changed_at=t=200 |
+     |                      |------------------------>|
+     |                      |<------------------------|
+     | 200 "Please log in   |                         |
+     |      again"          |                         |
+     |<---------------------|                         |
+     |                                                |
+     | GET /auth/me  (same old token issued at t=100) |
+     |--------------------->|                         |
+     |                      | iat=100 < password_changed_at=200 |
+     |                      |   => reject             |
+     | 401 "Token invalidated                         |
+     |      by password change"                       |
+     |<---------------------|                         |
+     |                                                |
+     | POST /auth/login                               |
+     | (with NEW password)                            |
+     |--------------------->|                         |
+     | 200 {fresh token}    |                         |
+     |<---------------------|                         |
+```
+
+The `password_changed_at` timestamp is **persistent in the DB**, so password-based invalidation survives server restarts — unlike the in-memory jti blocklist, which is reset when the process restarts. Use password change for "force logout everywhere" scenarios.
 
 ## Flow 5: Admin Monitoring & Intervention
 
@@ -517,7 +596,7 @@ shows guests the actual price before booking.
     |<-----------------------------------------------|                 |
 ```
 
-## API Endpoints (44 total)
+## API Endpoints (49 total)
 
 Full OpenAPI spec: [docs/api_references/openapi.json](api_references/openapi.json)
 Swagger UI: `http://localhost:8088/docs`
@@ -529,8 +608,10 @@ Legend: **[Public]** no auth · **[User]** any logged-in user · **[Admin]** adm
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
 | POST | /auth/register | Public | Create `user` account, returns JWT |
-| POST | /auth/login | Public | Login by username or email, returns JWT |
+| POST | /auth/login | Public | Login by username or email, rate-limited, lockout-protected, returns JWT |
 | GET | /auth/me | User | Current user profile (from Bearer token) |
+| POST | /auth/logout | User | Revoke current token (jti added to in-memory blocklist) |
+| PATCH | /auth/me/password | User | Change password — invalidates ALL prior tokens via `password_changed_at` |
 | POST | /auth/admin/register | Admin | Create a new admin account |
 | GET | /auth/users | Admin | List all users (filter `?role=admin`) |
 
