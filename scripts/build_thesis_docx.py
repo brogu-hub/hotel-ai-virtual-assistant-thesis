@@ -23,7 +23,7 @@ import json
 import argparse
 import time
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional
 
 import requests
 from docx import Document
@@ -346,11 +346,132 @@ def add_list_of_tables(doc: Document, table_count: int):
     doc.add_page_break()
 
 
-def md_to_docx_section(doc: Document, md_text: str):
-    """Convert a markdown section to docx paragraphs."""
+def add_rich_paragraph(doc: Document, text: str):
+    """Add a paragraph with **bold**, *italic*, and `code` rendered as Word formatting."""
+    p = doc.add_paragraph()
+    # Split on bold, italic, and code patterns
+    # Process in order: **bold** first, then *italic*, then `code`
+    parts = re.split(r'(\*\*.*?\*\*|\*.*?\*|`.*?`)', text)
+    for part in parts:
+        if not part:
+            continue
+        if part.startswith("**") and part.endswith("**"):
+            run = p.add_run(part[2:-2])
+            run.bold = True
+        elif part.startswith("*") and part.endswith("*") and not part.startswith("**"):
+            run = p.add_run(part[1:-1])
+            run.italic = True
+        elif part.startswith("`") and part.endswith("`"):
+            run = p.add_run(part[1:-1])
+            run.font.name = 'Consolas'
+            run.font.size = Pt(12)
+        else:
+            p.add_run(part)
+    return p
+
+
+def add_latex_equation(doc: Document, latex: str):
+    """Add a LaTeX equation as a centered Word paragraph with Unicode rendering."""
+    # Map common LaTeX symbols to Unicode
+    unicode_map = {
+        r'\kappa': 'κ', r'\alpha': 'α', r'\beta': 'β', r'\gamma': 'γ',
+        r'\delta': 'δ', r'\sigma': 'σ', r'\mu': 'μ', r'\lambda': 'λ',
+        r'\pi': 'π', r'\theta': 'θ', r'\epsilon': 'ε', r'\phi': 'φ',
+        r'\leq': '≤', r'\geq': '≥', r'\neq': '≠', r'\approx': '≈',
+        r'\times': '×', r'\cdot': '·', r'\infty': '∞', r'\sum': 'Σ',
+    }
+    # Handle \frac{a}{b} → a/b or (a)/(b)
+    rendered = latex.strip().strip('$')
+    for tex, uni in unicode_map.items():
+        rendered = rendered.replace(tex, uni)
+    # Convert \frac{num}{den} to (num)/(den)
+    rendered = re.sub(r'\\frac\{([^}]+)\}\{([^}]+)\}', r'(\1) / (\2)', rendered)
+    # Remove remaining backslashes from unknown commands
+    rendered = re.sub(r'\\(\w+)', r'\1', rendered)
+    # Clean up braces
+    rendered = rendered.replace('{', '').replace('}', '')
+
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = p.add_run(rendered)
+    run.font.name = 'Cambria Math'
+    run.font.size = Pt(14)
+    run.italic = True
+    return p
+
+
+def add_code_block(doc: Document, code_lines: List[str], lang: str = "",
+                   source_file: str = "", source_lines: str = ""):
+    """Add a code block as a bordered, monospace paragraph with source reference."""
+    # Source file reference header
+    if source_file:
+        ref_text = f"📁 {source_file}"
+        if source_lines:
+            ref_text += f" (lines {source_lines})"
+        p = doc.add_paragraph()
+        run = p.add_run(ref_text)
+        run.font.size = Pt(10)
+        run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+        run.italic = True
+
+    # Code content
+    for line in code_lines:
+        p = doc.add_paragraph()
+        pf = p.paragraph_format
+        pf.left_indent = Cm(1)
+        pf.space_before = Pt(0)
+        pf.space_after = Pt(0)
+        run = p.add_run(line)
+        run.font.name = 'Consolas'
+        run.font.size = Pt(10)
+
+    # Blank line after code block
+    doc.add_paragraph("")
+
+
+def add_figure_placeholder(doc: Document, figure_text: str, ascii_art: str = ""):
+    """Add a figure placeholder as a bordered centered box with optional ASCII art."""
+    # Extract figure number and description
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    pf = p.paragraph_format
+    pf.space_before = Pt(12)
+    pf.space_after = Pt(6)
+
+    if ascii_art:
+        # Render ASCII diagram as monospace
+        p2 = doc.add_paragraph()
+        p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        for art_line in ascii_art.split("\n"):
+            run = p2.add_run(art_line + "\n")
+            run.font.name = 'Consolas'
+            run.font.size = Pt(9)
+
+    # Figure caption
+    run = p.add_run("━" * 40 + "\n")
+    run.font.size = Pt(8)
+    run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
+    run = p.add_run(figure_text)
+    run.italic = True
+    run.font.size = Pt(11)
+    run = p.add_run("\n[แทรกภาพที่นี่ / Insert diagram here]")
+    run.font.size = Pt(10)
+    run.font.color.rgb = RGBColor(0xCC, 0x00, 0x00)
+    run = p.add_run("\n" + "━" * 40)
+    run.font.size = Pt(8)
+    run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
+
+
+def md_to_docx_section(doc: Document, md_text: str, workflow_diagrams: Optional[Dict] = None):
+    """Convert a markdown section to docx paragraphs with rich formatting."""
+    if workflow_diagrams is None:
+        workflow_diagrams = {}
+
     lines = md_text.split("\n")
     i = 0
     in_code_block = False
+    code_block_lines: List[str] = []
+    code_block_lang = ""
     in_table = False
     table_rows = []
 
@@ -358,41 +479,77 @@ def md_to_docx_section(doc: Document, md_text: str):
         line = lines[i]
         stripped = line.strip()
 
-        # Code blocks
-        if stripped.startswith("```"):
-            if in_code_block:
-                in_code_block = False
-                i += 1
-                continue
+        # LaTeX display equations: $$..$$
+        if stripped.startswith("$$"):
+            latex_content = stripped[2:]
+            if stripped.endswith("$$") and len(stripped) > 4:
+                # Single-line equation
+                add_latex_equation(doc, latex_content[:-2])
             else:
-                in_code_block = True
+                # Multi-line: collect until closing $$
+                eq_lines = [latex_content]
                 i += 1
-                continue
-
-        if in_code_block:
-            p = doc.add_paragraph(line)
-            p.style.font.name = 'Consolas'
-            p.style.font.size = Pt(12)
-            pf = p.paragraph_format
-            pf.left_indent = Cm(1)
+                while i < len(lines):
+                    if lines[i].strip().endswith("$$"):
+                        eq_lines.append(lines[i].strip()[:-2])
+                        break
+                    eq_lines.append(lines[i].strip())
+                    i += 1
+                add_latex_equation(doc, " ".join(eq_lines))
             i += 1
             continue
 
-        # Headings
+        # Code blocks — collect and render with source reference
+        if stripped.startswith("```"):
+            if in_code_block:
+                # Detect source file reference from the code or preceding comment
+                source_file = ""
+                source_lines_ref = ""
+                # Check if the first line of code is a comment with file path
+                if code_block_lines and code_block_lines[0].strip().startswith("#"):
+                    comment = code_block_lines[0].strip()
+                    # Match "# src/hotel_guardrails/auth.py" or similar
+                    fm = re.match(r'^#\s*(src/\S+|deploy/\S+)', comment)
+                    if fm:
+                        source_file = fm.group(1)
+                        code_block_lines = code_block_lines[1:]  # remove the comment
+
+                add_code_block(doc, code_block_lines, code_block_lang,
+                              source_file, source_lines_ref)
+                in_code_block = False
+                code_block_lines = []
+                code_block_lang = ""
+            else:
+                in_code_block = True
+                code_block_lang = stripped[3:].strip()  # e.g., "python", "yaml"
+                code_block_lines = []
+            i += 1
+            continue
+
+        if in_code_block:
+            code_block_lines.append(line)
+            i += 1
+            continue
+
+        # Headings — strip any ** from heading text
         if stripped.startswith("# "):
-            doc.add_heading(stripped[2:], level=1)
+            heading = stripped[2:].replace("**", "")
+            doc.add_heading(heading, level=1)
             i += 1
             continue
         if stripped.startswith("## "):
-            doc.add_heading(stripped[3:], level=2)
+            heading = stripped[3:].replace("**", "")
+            doc.add_heading(heading, level=2)
             i += 1
             continue
         if stripped.startswith("### "):
-            doc.add_heading(stripped[4:], level=3)
+            heading = stripped[4:].replace("**", "")
+            doc.add_heading(heading, level=3)
             i += 1
             continue
         if stripped.startswith("#### "):
-            doc.add_heading(stripped[5:], level=4)
+            heading = stripped[5:].replace("**", "")
+            doc.add_heading(heading, level=4)
             i += 1
             continue
 
@@ -401,15 +558,14 @@ def md_to_docx_section(doc: Document, md_text: str):
             if not in_table:
                 in_table = True
                 table_rows = []
-            # Skip separator rows (|---|---|)
             if re.match(r'^\|[\s\-:|]+\|$', stripped):
                 i += 1
                 continue
             cells = [c.strip() for c in stripped.split("|")[1:-1]]
+            # Clean ** from cell content
+            cells = [re.sub(r'\*\*(.+?)\*\*', r'\1', c) for c in cells]
             table_rows.append(cells)
-            # Check if next line is NOT a table row
             if i + 1 >= len(lines) or not lines[i + 1].strip().startswith("|"):
-                # Flush table
                 if table_rows:
                     try:
                         max_cols = max(len(r) for r in table_rows)
@@ -419,7 +575,6 @@ def md_to_docx_section(doc: Document, md_text: str):
                             for ci, cell in enumerate(row):
                                 if ci < max_cols:
                                     tbl.rows[ri].cells[ci].text = cell
-                                    # Bold header row
                                     if ri == 0:
                                         for paragraph in tbl.rows[ri].cells[ci].paragraphs:
                                             for run in paragraph.runs:
@@ -431,30 +586,38 @@ def md_to_docx_section(doc: Document, md_text: str):
             i += 1
             continue
 
-        # Figure placeholders
+        # Figure placeholders — with optional ASCII art from WORKFLOW.md
         if stripped.startswith("[Figure"):
-            p = doc.add_paragraph(stripped)
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            p.runs[0].italic = True if p.runs else None
+            # Check if there's a matching ASCII diagram
+            fig_match = re.match(r'\[Figure (\d+\.\d+)', stripped)
+            ascii_art = ""
+            if fig_match:
+                fig_id = fig_match.group(1)
+                ascii_art = workflow_diagrams.get(fig_id, "")
+            add_figure_placeholder(doc, stripped, ascii_art)
             i += 1
             continue
 
         # Horizontal rules
         if stripped == "---":
-            doc.add_paragraph("─" * 50)
+            p = doc.add_paragraph()
+            run = p.add_run("─" * 50)
+            run.font.color.rgb = RGBColor(0xCC, 0xCC, 0xCC)
+            run.font.size = Pt(8)
             i += 1
             continue
 
-        # Bullet points
+        # Bullet points — with rich text
         if stripped.startswith("- ") or stripped.startswith("* "):
-            doc.add_paragraph(stripped[2:], style='List Bullet')
+            content = stripped[2:]
+            add_rich_paragraph(doc, content).style = doc.styles['List Bullet']
             i += 1
             continue
 
         # Numbered items
         m = re.match(r'^(\d+)\.\s+(.*)', stripped)
         if m:
-            doc.add_paragraph(m.group(2), style='List Number')
+            add_rich_paragraph(doc, m.group(2)).style = doc.styles['List Number']
             i += 1
             continue
 
@@ -463,12 +626,8 @@ def md_to_docx_section(doc: Document, md_text: str):
             i += 1
             continue
 
-        # Regular paragraph — clean up bold/italic markdown
-        clean = stripped
-        clean = re.sub(r'\*\*(.+?)\*\*', r'\1', clean)  # remove ** bold markers
-        clean = re.sub(r'\*(.+?)\*', r'\1', clean)  # remove * italic markers
-        clean = re.sub(r'`(.+?)`', r'\1', clean)  # remove inline code markers
-        doc.add_paragraph(clean)
+        # Regular paragraph — with rich formatting (bold, italic, code)
+        add_rich_paragraph(doc, stripped)
         i += 1
 
 
@@ -513,6 +672,20 @@ def main():
     table_count = all_text.count("| ") // 3  # rough estimate
     print(f"\nFound {len(figures)} figure references, ~{table_count} tables")
 
+    # Step 2b: Load ASCII diagrams from WORKFLOW.md for figure placeholders
+    workflow_diagrams: Dict[str, str] = {}
+    workflow_path = THESIS_DIR.parent / "docs" / "WORKFLOW.md"
+    if workflow_path.exists():
+        wf_text = workflow_path.read_text(encoding="utf-8")
+        # Extract all ``` code blocks (ASCII diagrams)
+        code_blocks = re.findall(r'```\n(.*?)```', wf_text, re.DOTALL)
+        # Map figure IDs to the nearest preceding code block
+        # For simplicity, store all code blocks and let figure placeholders pick them up
+        for idx_b, block in enumerate(code_blocks):
+            if any(c in block for c in ['│', '├', '→', '┌', '└', '+--', '|']):
+                workflow_diagrams[f"workflow_{idx_b}"] = block.strip()
+        print(f"  Loaded {len(workflow_diagrams)} ASCII diagrams from WORKFLOW.md")
+
     # Step 3: Translate abstract
     thai_abstract = ""
     if not args.skip_translation:
@@ -551,10 +724,10 @@ def main():
             translated = translate_to_thai(section_text, model=args.model, api=args.api)
             elapsed = time.time() - start
             print(f" → translated ({elapsed:.1f}s)")
-            md_to_docx_section(doc, translated)
+            md_to_docx_section(doc, translated, workflow_diagrams)
         else:
             print(" → English")
-            md_to_docx_section(doc, section_text)
+            md_to_docx_section(doc, section_text, workflow_diagrams)
 
     # Step 6: Save
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
