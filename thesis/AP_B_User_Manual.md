@@ -99,6 +99,79 @@ curl -X POST http://localhost:8088/chat \
 open http://localhost:8088/docs
 ```
 
+## B.2b Frontend Installation (Next.js)
+
+### Prerequisites
+
+| Software | Version | Purpose |
+|----------|---------|---------|
+| Node.js | 18+ | JavaScript runtime |
+| npm or pnpm | latest | Package manager |
+
+### Step 1: Clone and Install
+
+```bash
+cd z:/Dev_Drive
+git clone https://github.com/<your-repo>/hotel-ai-nextjs.git
+cd hotel-ai-nextjs
+npm install
+```
+
+### Step 2: Configure Environment
+
+Create `.env.local`:
+
+```bash
+# Backend API URL (the hotel-api container)
+NEXT_PUBLIC_API_URL=http://localhost:8088
+```
+
+### Step 3: Start Development Server
+
+```bash
+npm run dev
+```
+
+Frontend will be available at `http://localhost:3000`.
+
+### Step 4: Verify
+
+- Open `http://localhost:3000/hotel` — main chat interface
+- Open `http://localhost:3000/hotel/rooms` — room catalog
+- Open `http://localhost:3000/hotel/admin` — admin dashboard (requires login)
+
+### Frontend Pages Overview
+
+| Path | Page | Auth Required |
+|------|------|---------------|
+| `/hotel` | Main chat interface | No |
+| `/hotel/rooms` | Room catalog and availability | No |
+| `/hotel/rooms/[roomId]` | Room detail page | No |
+| `/hotel/bookings` | Booking search / list | No |
+| `/hotel/bookings/[id]` | Booking detail and modify | No |
+| `/hotel/payment/[token]` | Mock payment page | No |
+| `/hotel/settings` | LLM model switcher | Admin |
+| `/hotel/admin` | Dashboard overview (stats, revenue) | Admin |
+| `/hotel/admin/sessions` | Live session monitor | Admin |
+| `/hotel/admin/sessions/[id]` | Chat viewer + takeover | Admin |
+| `/hotel/admin/bookings` | Booking management | Admin |
+| `/hotel/admin/rooms` | Room status management | Admin |
+| `/hotel/admin/timetravel` | LangGraph checkpoint browser | Admin |
+
+### Frontend Technology Stack
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `next` | 15.5 | React framework (App Router, RSC) |
+| `react` | 18.3 | UI runtime |
+| `typescript` | 5.x | Static typing |
+| `antd` | 5.29 | Enterprise UI component library |
+| `antd-style` | 3.7 | CSS-in-JS with Ant Design tokens |
+| `zustand` | 5.0 | Global state management |
+| `swr` | 2.4 | stale-while-revalidate data fetching |
+| `lucide-react` | 0.468 | Icon library |
+| `dayjs` | 1.11 | Date/time formatting |
+
 ## B.3 Guest Usage (Chat)
 
 ### Starting a Conversation
