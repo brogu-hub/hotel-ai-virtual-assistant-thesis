@@ -1,6 +1,6 @@
-# Chapter 4: Implementation
+# Chapter 5: Implementation
 
-## 4.1 Development Environment and Tools
+## 5.1 Development Environment and Tools
 
 | Layer | Technology | Version | Purpose |
 |-------|-----------|---------|---------|
@@ -20,9 +20,9 @@
 | Auth | PyJWT + bcrypt | 2.12 / 5.0 | JWT tokens + password hashing |
 | Containerization | Docker Compose | — | 5-service orchestration |
 
-## 4.2 LLM Integration
+## 5.2 LLM Integration
 
-### 4.2.1 Runtime Model Switching
+### 5.2.1 Runtime Model Switching
 
 The system supports switching between local and cloud LLM at runtime without server restart, via `PUT /settings/llm`:
 
@@ -53,7 +53,7 @@ def get_llm(temperature=0.3, max_tokens=2048, streaming=False):
 
 [Figure 4.1: Runtime model switching — Admin calls PUT /settings/llm with `{"backend": "openrouter"}`. The RuntimeLLMConfig singleton updates thread-safely. The next `/chat` call uses the new backend. Switching back to Ollama is equally instant.]
 
-### 4.2.2 Model Presets
+### 5.2.2 Model Presets
 
 Each model has optimized presets tuned for hotel tasks:
 
@@ -62,9 +62,9 @@ Each model has optimized presets tuned for hotel tasks:
 | Qwen3.5 Opus 9B (Ollama) | 0.3 | 2048 | Off | Native `<think>` tags; explicit thinking adds overhead |
 | Qwen3 Max (OpenRouter) | 0.1 | 4096 | On | Cloud model benefits from extended reasoning |
 
-## 4.3 LangGraph Agent Implementation
+## 5.3 LangGraph Agent Implementation
 
-### 4.3.1 Prompt Engineering
+### 5.3.1 Prompt Engineering
 
 The system prompt was iteratively optimized from ~5,500 characters to ~2,800 characters (50% reduction) to improve 9B model comprehension:
 
@@ -89,7 +89,7 @@ main_prompt: |
 
 [Figure 4.2: Prompt template structure — main_prompt (core rules, language detection, tool catalog) is combined with booking_flow (multi-step booking guide) or service_prompt (service request handling) depending on the routed sub-agent.]
 
-### 4.3.2 Knowledge Sub-Agent with RAG
+### 5.3.2 Knowledge Sub-Agent with RAG
 
 The knowledge sub-agent retrieves hotel information using direct RAG search (not via LLM tool calling, for efficiency):
 
@@ -119,9 +119,9 @@ async def handle_knowledge(state, config):
 
 **Key design decision**: placing the user message *before* the knowledge context prevents the 9B model from summarizing the context instead of answering the question — a failure mode discovered during testing.
 
-## 4.4 RAG Pipeline Implementation
+## 5.4 RAG Pipeline Implementation
 
-### 4.4.1 Knowledge Cache
+### 5.4.1 Knowledge Cache
 
 Common hotel queries ("what time is breakfast?", "WiFi password?") hit repeatedly. A TTL+LRU cache avoids redundant Qdrant searches:
 
@@ -148,7 +148,7 @@ class KnowledgeCache:
 
 Cache configuration: 500 entries max, 5-minute TTL. Hit rate measured at 76% during sustained testing.
 
-### 4.4.2 Reranker Removal
+### 5.4.2 Reranker Removal
 
 The CrossEncoder reranker (`BAAI/bge-reranker-v2-m3`) was initially used to re-score the top-30 Qdrant results. It was disabled after profiling revealed:
 
@@ -156,9 +156,9 @@ The CrossEncoder reranker (`BAAI/bge-reranker-v2-m3`) was initially used to re-s
 2. **Event loop blocking** — being synchronous inside an async endpoint, it froze the entire FastAPI server for that duration
 3. **No accuracy improvement** — embedding search already achieved 8/8 on knowledge tests
 
-## 4.5 Security Implementation
+## 5.5 Security Implementation
 
-### 4.5.1 Password Hashing and JWT
+### 5.5.1 Password Hashing and JWT
 
 ```python
 # src/hotel_guardrails/auth.py
@@ -180,7 +180,7 @@ def create_access_token(data: Dict[str, Any], ...) -> str:
     return jwt.encode(to_encode, JWT_SECRET, algorithm="HS256")
 ```
 
-### 4.5.2 Login Rate Limiting and Account Lockout
+### 5.5.2 Login Rate Limiting and Account Lockout
 
 Login is protected by three layers:
 
@@ -188,7 +188,7 @@ Login is protected by three layers:
 2. **Per-username sliding window** (5 attempts/minute) — stops credential stuffing on one account
 3. **Account lockout** — 5 cumulative failures lock the account for 15 minutes (`users.locked_until` column)
 
-### 4.5.3 PII Redaction
+### 5.5.3 PII Redaction
 
 ```python
 # src/hotel_guardrails/pii_redactor.py
@@ -204,13 +204,13 @@ PII_PATTERNS = {
 
 [Figure 4.5: PII redaction flow — guest types "My card is 4111-1111-1111-1111" → regex matches CREDIT_CARD → LLM sees "My card is [CREDIT_CARD]" → response does not echo the number.]
 
-### 4.5.4 Audit Logging
+### 5.5.4 Audit Logging
 
 Every admin action, authentication event, and privacy-sensitive operation (admin reading guest conversations) is recorded in the `audit_log` table with actor identity, IP address, user agent, success flag, and JSONB details.
 
-## 4.6 Scaling Implementation
+## 5.6 Scaling Implementation
 
-### 4.6.1 LLM Concurrency Semaphore
+### 5.6.1 LLM Concurrency Semaphore
 
 The core scaling primitive — prevents Ollama queue saturation:
 
@@ -237,17 +237,17 @@ class LLMConcurrencyLimiter:
 
 [Figure 4.3: Scaling component pipeline — POST /chat → chat_rate_limiter (429 if exceeded) → session_lock (serialize same-session requests) → llm_limiter (503 if all slots busy for 45s) → LangGraph → knowledge_cache (skip Qdrant if cached) → Ollama (OLLAMA_NUM_PARALLEL=2 GPU slots)]
 
-### 4.6.2 DB Connection Pool
+### 5.6.2 DB Connection Pool
 
 Replaced per-request `psycopg2.connect()` with `ThreadedConnectionPool` (min=2, max=20). Connections are checked out for the duration of a query and returned to the pool on completion — eliminating connection setup overhead.
 
-### 4.6.3 User Lookup Cache
+### 5.6.3 User Lookup Cache
 
 Every authenticated request triggers `get_current_user` which queries the `users` table. A TTL-based in-memory cache (30-second TTL, max 5,000 entries) reduces this to one DB hit per user per 30 seconds. The cache is invalidated on password change, account disable, and failed login attempts.
 
-## 4.7 Frontend Implementation
+## 5.7 Frontend Implementation
 
-### 4.7.1 Chat Interface with SSE Streaming
+### 5.7.1 Chat Interface with SSE Streaming
 
 The chat interface uses Server-Sent Events for real-time token-by-token streaming:
 - Frontend opens a `POST /chat/stream` connection
@@ -255,7 +255,7 @@ The chat interface uses Server-Sent Events for real-time token-by-token streamin
 - Final event: `data: {"content": "", "done": true, "session_id": "..."}`
 - Frontend renders tokens as they arrive using a Zustand store
 
-### 4.7.2 Admin Dashboard
+### 5.7.2 Admin Dashboard
 
 The admin dashboard provides:
 - **Session monitor** — live list of active chat sessions with last-message preview
@@ -266,11 +266,11 @@ The admin dashboard provides:
 - **LLM model switcher** — dropdown to change backend at runtime
 - **Metrics dashboard** — scaling primitive stats (LLM slots, cache hit rate, active streams)
 
-### 4.7.3 Authentication Flow
+### 5.7.3 Authentication Flow
 
 The frontend stores the JWT in localStorage (demo-appropriate; httpOnly cookies recommended for production). Every admin API call includes `Authorization: Bearer <token>`. On 401, the user is redirected to the login page. On 403, an "access denied" message is shown.
 
-## 4.8 Human Escalation System
+## 5.8 Human Escalation System
 
 The escalation monitor checks three triggers after every bot response:
 

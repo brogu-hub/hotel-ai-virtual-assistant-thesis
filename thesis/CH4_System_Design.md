@@ -1,8 +1,8 @@
-# Chapter 3: System Design
+# Chapter 4: System Design
 
-## 3.1 Requirements Analysis
+## 4.1 Requirements Analysis
 
-### 3.1.1 Functional Requirements
+### 4.1.1 Functional Requirements
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
@@ -19,7 +19,7 @@
 | FR11 | Automatic escalation to human staff on frustrated guests | Could |
 | FR12 | Mock payment link generation | Could |
 
-### 3.1.2 Non-Functional Requirements
+### 4.1.2 Non-Functional Requirements
 
 | ID | Requirement | Target |
 |----|-------------|--------|
@@ -30,9 +30,9 @@
 | NFR5 | Security | bcrypt hashing, JWT with jti, rate limiting, audit log |
 | NFR6 | Deployment | Docker Compose, single-command startup |
 
-## 3.2 System Architecture
+## 4.2 System Architecture
 
-### 3.2.1 Microservice Topology
+### 4.2.1 Microservice Topology
 
 The system consists of five Docker services communicating over a dedicated bridge network:
 
@@ -46,7 +46,7 @@ The system consists of five Docker services communicating over a dedicated bridg
 | hotel-qdrant | Qdrant | 6334 | Vector store (hotel knowledge embeddings) |
 | hotel-redis | Redis 7 | 6380 | Session cache |
 
-### 3.2.2 Request Flow
+### 4.2.2 Request Flow
 
 The complete request flow for a guest chat message:
 
@@ -75,9 +75,9 @@ POST /chat {message, session_id}
   └─ Return ChatResponse {response, session_id, tool_calls, routing_path}
 ```
 
-## 3.3 LangGraph Agent Design
+## 4.3 LangGraph Agent Design
 
-### 3.3.1 State Definition
+### 4.3.1 State Definition
 
 The agent's state is defined as a TypedDict that flows through every node in the graph:
 
@@ -96,7 +96,7 @@ class HotelState(TypedDict):
 
 The `messages` field uses LangGraph's `add_messages` reducer, which appends new messages to the existing list rather than replacing it — enabling multi-turn conversation history.
 
-### 3.3.2 Primary Router and Sub-Agent Dispatch
+### 4.3.2 Primary Router and Sub-Agent Dispatch
 
 The primary assistant acts as a **router**, not a responder. It receives the guest's message and decides which specialized sub-agent should handle it by emitting a tool call:
 
@@ -128,7 +128,7 @@ def route_primary_assistant(state: HotelState) -> Literal[
 
 [Figure 3.2: LangGraph state machine diagram — Nodes: START → primary_assistant → {enter_booking → hotel_booking ↔ booking_tools, enter_service → hotel_service ↔ service_tools, enter_knowledge → hotel_knowledge, other_talk → handle_other}. Conditional edges route from primary_assistant based on tool call names. Booking and service sub-agents have tool loops (cyclic edges) that continue until the LLM stops emitting tool calls.]
 
-### 3.3.3 Sub-Agent Architecture
+### 4.3.3 Sub-Agent Architecture
 
 Each sub-agent has:
 - **A specialized system prompt** loaded from `hotel_prompt.yaml`
@@ -142,13 +142,13 @@ Each sub-agent has:
 | Knowledge | RAG search (not a tool call — direct invocation) | 1024 | Hotel information Q&A |
 | Other Talk | None (direct LLM response) | 512 | Greetings, thanks, off-topic |
 
-## 3.4 Database Design
+## 4.4 Database Design
 
-### 3.4.1 Entity-Relationship Diagram
+### 4.4.1 Entity-Relationship Diagram
 
 [Figure 3.3: ER diagram — Core entities: room_types (1:N rooms), rooms (1:N reservations), guests (1:N reservations, 0:1 users), reservations (1:N service_requests), users (1:N audit_log), conversation_history (session_id as logical FK). Additional tables: housekeeping, hotel_services, payment_links.]
 
-### 3.4.2 Key Tables
+### 4.4.2 Key Tables
 
 The PostgreSQL schema (`deploy/compose/init-scripts/init-hotel.sql`) defines 10 tables:
 
@@ -165,11 +165,11 @@ The PostgreSQL schema (`deploy/compose/init-scripts/init-hotel.sql`) defines 10 
 | payment_links | Dynamic | Mock payment tokens (UUID, 30-min expiry) |
 | hotel_services | ~10 | Available hotel services catalog |
 
-## 3.5 RAG Pipeline Design
+## 4.5 RAG Pipeline Design
 
 [Figure 3.4: RAG pipeline — 10 hotel knowledge markdown files (dining.md, spa.md, facilities.md, policies.md, FAQ.md, etc.) are chunked with auto-calculated chunk size based on embedding model token limit, embedded via OpenRouter qwen3-embedding-8b (4096 dimensions), and stored in Qdrant collection "hotel_knowledge". At query time: user message → embed → Qdrant top-k search (k=30 initial, top 3 returned) → context injection → LLM generates grounded response.]
 
-### 3.5.1 Embedding Configuration
+### 4.5.1 Embedding Configuration
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
@@ -179,13 +179,13 @@ The PostgreSQL schema (`deploy/compose/init-scripts/init-hotel.sql`) defines 10 
 | Chunk overlap | 20% of chunk size | Preserve context across chunk boundaries |
 | Distance metric | Cosine similarity | Standard for text embeddings |
 
-## 3.6 Authentication and Authorization Design
+## 4.6 Authentication and Authorization Design
 
-### 3.6.1 JWT Authentication Flow
+### 4.6.1 JWT Authentication Flow
 
 [Figure 3.5: JWT authentication sequence diagram — (1) POST /auth/register or /auth/login → (2) bcrypt password verify → (3) generate JWT with {sub, role, user_id, iat, exp, jti} → (4) return {access_token, user}. Subsequent requests: (5) Authorization: Bearer <token> → (6) decode + verify signature → (7) check jti blocklist → (8) check password_changed_at vs iat → (9) return user dict or 401.]
 
-### 3.6.2 Access Control Matrix
+### 4.6.2 Access Control Matrix
 
 [Figure 3.6: Access control matrix]
 
@@ -199,9 +199,9 @@ The PostgreSQL schema (`deploy/compose/init-scripts/init-hotel.sql`) defines 10 
 
 This design ensures that **guest chat flow requires no authentication** (email-only identification), while all hotel staff operations are protected behind admin JWT.
 
-## 3.7 Frontend Design
+## 4.7 Frontend Design
 
-### 3.7.1 Next.js 15 App Router
+### 4.7.1 Next.js 15 App Router
 
 The frontend uses the **App Router** with React Server Components for server-rendered pages and `'use client'` directives for interactive components (chat, forms, dashboard). Key architectural decisions:
 
@@ -209,7 +209,7 @@ The frontend uses the **App Router** with React Server Components for server-ren
 - **Client Components** for interactive features (chat with SSE streaming, admin dashboard with real-time updates)
 - **API Routes** (`/api/hotel/[...path]`) as a proxy to the backend — all backend calls go through Next.js, avoiding CORS issues
 
-### 3.7.2 State Management Architecture
+### 4.7.2 State Management Architecture
 
 | Concern | Solution | Justification |
 |---------|----------|---------------|
@@ -218,7 +218,7 @@ The frontend uses the **App Router** with React Server Components for server-ren
 | Form state | React local state | No need for global store for form inputs |
 | Chat messages | Zustand + SSE | Real-time streaming with persistent client state |
 
-## 3.8 Deployment Architecture
+## 4.8 Deployment Architecture
 
 [Figure 3.7: Docker Compose topology showing 5 services on hotel-ai-network bridge. Volume mounts: hotel-db-data (PostgreSQL persistent), hotel-ollama-data (model weights), hotel-qdrant-data (vector index). Health checks on all services. hotel-api depends_on all others with condition: service_healthy.]
 

@@ -1,6 +1,6 @@
-# Chapter 6: Discussion
+# Chapter 7: Discussion
 
-## 6.1 Achievement of Objectives
+## 7.1 Achievement of Objectives
 
 | Objective | Status | Evidence |
 |-----------|--------|----------|
@@ -9,9 +9,9 @@
 | (c) Production-grade fullstack | Achieved | 193/193 infrastructure tests, JWT auth, audit log, scaling primitives, Docker deployment |
 | (d) Local vs cloud model comparison | Achieved | 25-case evaluation: 92% local, 100% cloud, with latency and cost analysis |
 
-## 6.2 Local vs. Cloud Model Trade-offs
+## 7.2 Local vs. Cloud Model Trade-offs
 
-### 6.2.1 The Cost-Accuracy-Latency Triangle
+### 7.2.1 The Cost-Accuracy-Latency Triangle
 
 [Figure 6.1: Cost-accuracy-latency triangle — Local 9B sits at (low cost, 92% accuracy, medium latency). Cloud Qwen3 Max sits at (medium cost, 100% accuracy, variable latency). Each hotel must choose based on traffic volume, budget, and accuracy requirements.]
 
@@ -26,11 +26,11 @@
 | Max concurrent users | 2 (GPU-bound) | Unlimited (cloud-side scaling) |
 | Offline capability | Fully operational | Requires internet |
 
-### 6.2.2 Privacy Implications
+### 7.2.2 Privacy Implications
 
 For hotels processing guest personal data (names, passport numbers, credit cards), running the LLM locally means PII never leaves the hotel network. The PII redactor provides a defense-in-depth layer (scrubbing before LLM), but the local model eliminates the risk entirely. This is particularly relevant under Thailand's PDPA (Personal Data Protection Act) and the EU's GDPR.
 
-### 6.2.3 Where 9B Falls Short
+### 7.2.3 Where 9B Falls Short
 
 The two local failures reveal the 9B model's limitations:
 1. **Complex multi-entity intent parsing** — "3 rooms for 10 people" requires understanding quantities, mapping them to multiple bookings, and routing correctly. The 9B model lacks the reasoning depth to decompose this request without additional prompt engineering.
@@ -38,16 +38,16 @@ The two local failures reveal the 9B model's limitations:
 
 **Recommendation**: Use local 9B for the 92% of routine queries and fall back to cloud for complex multi-step operations detected by query complexity analysis.
 
-## 6.3 RAG Effectiveness
+## 7.3 RAG Effectiveness
 
-### 6.3.1 Retrieval Quality
+### 7.3.1 Retrieval Quality
 
 The RAG pipeline achieves **100% accuracy on all 8 knowledge test cases** with both models. Key factors:
 - Hotel knowledge base is well-structured (10 markdown documents with clear headings)
 - Embedding model (qwen3-embedding-8b, 4096 dimensions) handles bilingual Thai/English effectively
 - Auto-calculated chunk size (80% of model's token limit) prevents information loss
 
-### 6.3.2 Impact of Removing the Reranker
+### 7.3.2 Impact of Removing the Reranker
 
 Disabling the CrossEncoder reranker had **zero impact on retrieval accuracy** but **3.6× reduction in latency**. This finding contradicts the general RAG literature recommendation to always rerank — but is explained by the domain characteristics:
 - Only 10 documents in the knowledge base (not thousands)
@@ -56,13 +56,13 @@ Disabling the CrossEncoder reranker had **zero impact on retrieval accuracy** bu
 
 For larger or less-structured knowledge bases, reranking would likely be necessary.
 
-### 6.3.3 Knowledge Cache Effectiveness
+### 7.3.3 Knowledge Cache Effectiveness
 
 The knowledge cache (500 entries, 5-minute TTL) achieves a **76% hit rate** during sustained testing. This means 3 out of 4 knowledge queries are served from memory (~1ms) rather than Qdrant (~500ms). The 5-minute TTL ensures that knowledge base updates propagate quickly without admin intervention.
 
-## 6.4 Architectural Decisions and Trade-offs
+## 7.4 Architectural Decisions and Trade-offs
 
-### 6.4.1 LangGraph vs. Alternative Orchestrators
+### 7.4.1 LangGraph vs. Alternative Orchestrators
 
 [Figure 6.2: Orchestrator comparison matrix]
 
@@ -77,7 +77,7 @@ The knowledge cache (500 entries, 5-minute TTL) achieves a **76% hit rate** duri
 
 LangGraph was selected for its **checkpointed state persistence** (conversation memory survives server restarts) and **time-travel debugging** (admin can rewind and replay conversations from any checkpoint).
 
-### 6.4.2 In-Memory vs. Redis Scaling Primitives
+### 7.4.2 In-Memory vs. Redis Scaling Primitives
 
 All five scaling primitives (LLM semaphore, session locks, chat rate limiter, stream cap, knowledge cache) are **in-memory and per-process**. This is appropriate for the single-worker Docker deployment but creates limitations:
 - Primitives reset on server restart
@@ -88,7 +88,7 @@ All five scaling primitives (LLM semaphore, session locks, chat rate limiter, st
 
 For production horizontal scaling, these should be replaced with Redis-backed equivalents (documented in `docs/WORKFLOW.md`).
 
-## 6.5 Limitations
+## 7.5 Limitations
 
 1. **No real payment integration** — payment links are mock (UUID tokens with 30-minute expiry). Production would require Stripe or PromptPay integration.
 2. **Single-language knowledge base** — documents are bilingual within each file, but the system does not support adding a third language without restructuring the knowledge base.

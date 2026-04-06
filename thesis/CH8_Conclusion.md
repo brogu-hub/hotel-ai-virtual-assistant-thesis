@@ -1,6 +1,6 @@
-# Chapter 7: Conclusion
+# Chapter 8: Conclusion
 
-## 7.1 Summary of Contributions
+## 8.1 Summary of Contributions
 
 This thesis presents the design, implementation, and evaluation of a full-stack AI virtual assistant for The Grand Horizon Hotel, a luxury 5-star hotel in Thailand. The system demonstrates that modern LLM-based multi-agent architectures can effectively handle real hotel operations — from answering guest questions about breakfast hours to creating database-backed reservations — while maintaining production-grade security and scalability.
 
@@ -20,32 +20,32 @@ This thesis presents the design, implementation, and evaluation of a full-stack 
 
 5. **A complete test and evaluation framework** including 25 domain-specific test cases with keyword scoring, language detection, and Cohen's Kappa inter-model agreement — reproducible for future hotel chatbot research.
 
-## 7.2 Future Work
+## 8.2 Future Work
 
-### 7.2.1 Voice Integration
+### 8.2.1 Voice Integration
 
 Integrating speech-to-text (e.g., Whisper) and text-to-speech (e.g., Vapi, Twilio) would extend the assistant to phone calls and in-room voice devices. The existing text-based pipeline can serve as the language understanding backbone with minimal modification.
 
-### 7.2.2 Payment Gateway Integration
+### 8.2.2 Payment Gateway Integration
 
 Replacing mock payment links with real payment processing (Stripe for international guests, PromptPay for Thai guests) would close the booking loop end-to-end. The existing `payment_links` table and `generate_payment_link` tool provide the integration surface.
 
-### 7.2.3 MCP (Model Context Protocol) Integration
+### 8.2.3 MCP (Model Context Protocol) Integration
 
 Anthropic's Model Context Protocol could enable the AI assistant to connect directly to existing hotel PMS systems (Opera, Cloudbeds) as MCP servers, eliminating the need for custom API integration per PMS vendor.
 
-### 7.2.4 Domain Fine-tuning
+### 8.2.4 Domain Fine-tuning
 
 Fine-tuning the 9B model on hotel-domain conversational data (booking dialogues, service requests, FAQ pairs) could close the 8% accuracy gap with the cloud model. LoRA (Low-Rank Adaptation) would enable efficient fine-tuning on a single GPU.
 
-### 7.2.5 Multi-Property Support
+### 8.2.5 Multi-Property Support
 
 Adding tenant isolation to the database schema (hotel_id foreign key on all tables) and the Qdrant collection naming (per-hotel knowledge bases) would extend the system to hotel chains managing multiple properties from a single deployment.
 
-### 7.2.6 Redis-Backed Scaling
+### 8.2.6 Redis-Backed Scaling
 
 Migrating the five in-memory scaling primitives to Redis-backed equivalents would enable horizontal scaling across multiple workers and containers, supporting higher concurrent-user loads without changing the application logic.
 
-### 7.2.7 Automated Quality Monitoring
+### 8.2.7 Automated Quality Monitoring
 
 Implementing continuous evaluation — automatically running the 25-case test suite on a schedule and alerting on accuracy drops — would provide production quality assurance. The `eval_model_comparison.py` script provides the foundation for this monitoring.

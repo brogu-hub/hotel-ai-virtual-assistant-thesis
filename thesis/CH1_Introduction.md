@@ -59,11 +59,12 @@ This thesis aims to design, implement, and evaluate a hotel AI virtual assistant
 |---------|-------|---------|
 | 1 | Introduction | Background, objectives, scope |
 | 2 | Literature Review | AI in hospitality, LLMs, LangGraph, RAG, web technologies |
-| 3 | System Design | Architecture, agent design, database, RAG pipeline, auth, deployment |
-| 4 | Implementation | Code-level details of backend, frontend, security, scaling |
-| 5 | Testing and Evaluation | Model comparison, infrastructure tests, performance benchmarks |
-| 6 | Discussion | Trade-offs, limitations, architectural decisions |
-| 7 | Conclusion | Contributions summary and future work |
+| 3 | Methodology | Research approach, technology selection rationale, evaluation design |
+| 4 | System Design | Architecture, agent design, database, RAG pipeline, auth, deployment |
+| 5 | Implementation | Code-level details of backend, frontend, security, scaling |
+| 6 | Testing and Evaluation | Model comparison, infrastructure tests, performance benchmarks |
+| 7 | Discussion | Trade-offs, limitations, architectural decisions |
+| 8 | Conclusion | Contributions summary and future work |
 | A | Appendix: Test Results | Full evaluation data, Gantt timeline, repository structure |
 | B | Appendix: User Manual | Installation, configuration, usage guide |
 
