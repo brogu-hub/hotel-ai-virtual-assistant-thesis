@@ -148,7 +148,7 @@ For English speakers, be professional and warm.
 # LLM Initialization
 # =============================================================================
 
-def get_llm(temperature: float = 0.3, max_tokens: int = 1024, streaming: bool = False):
+def get_llm(temperature: float = 0.3, max_tokens: int = 2048, streaming: bool = False):
     """
     Get LLM using RuntimeLLMConfig.
     Supports Ollama (local) and OpenRouter (cloud), switchable at runtime.
@@ -475,20 +475,29 @@ def build_hotel_graph(checkpointer=None):
     prompts = load_hotel_prompts()
     main_prompt = prompts.get('main_prompt', 'You are a hotel assistant.')
 
-    # Primary assistant prompt
+    # Primary assistant prompt with explicit routing examples
+    # (the 9B model needs concrete examples to get edge cases right)
     primary_prompt = f"""{main_prompt}
 
 ## Your Role
-You are the primary router for guest requests. Based on the guest's message,
-route to the appropriate specialist:
+You are the primary router. Route every guest message to exactly ONE specialist:
 
-1. **ToHotelBooking** - For reservations, room availability, check-in/out,
-   booking modifications, cancellations
-2. **ToHotelService** - For service requests, hotel amenities info, spa, gym, pool
-3. **ToHotelKnowledge** - For general hotel information (WiFi, breakfast, policies)
-4. **HandleOtherTalk** - For greetings, thank you, and off-topic messages
+1. **ToHotelBooking** — reservations, availability, check-in/out, modify/cancel bookings, payment
+   Examples: "Is there a room available?", "I want to cancel my booking", "Check me in", "ยกเลิกการจอง"
+2. **ToHotelService** — room service, extra amenities, housekeeping, maintenance, transportation, wake-up
+   Examples: "I need extra towels", "Can I get room service?", "จองสปา", "ขอหมอนเพิ่ม"
+3. **ToHotelKnowledge** — hotel info, facilities, dining, WiFi, policies, hours, directions
+   Examples: "What time is breakfast?", "Where is the gym?", "รหัส WiFi", "pet policy"
+4. **HandleOtherTalk** — greetings, thanks, goodbye, off-topic, unclear messages
+   Examples: "Hello", "Thank you", "สวัสดี", "ขอบคุณ"
 
-Analyze the guest's request and use the appropriate tool to route it.
+IMPORTANT routing rules:
+- "cancel my booking" / "ยกเลิกการจอง" → ToHotelBooking (NOT HandleOtherTalk)
+- "what services do you have?" → ToHotelKnowledge (general info, NOT ToHotelService)
+- "I need a spa booking" → ToHotelService (specific service request)
+- When in doubt between Knowledge and Service, prefer ToHotelKnowledge
+
+Always route. Never answer directly without routing first.
 """
 
     # Primary assistant tools (routing only)

@@ -1,0 +1,1016 @@
+{
+  "timestamp": "2026-04-06T16:23:48.147029",
+  "suites": [
+    {
+      "name": "Auth Baseline",
+      "script": "scripts/test_auth.py",
+      "expected_tests": 72,
+      "actual_tests": 72,
+      "passed": 72,
+      "failed": 0,
+      "elapsed_seconds": 4,
+      "tests": [
+        {
+          "name": "A1. Default admin login succeeds",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "A2. Response has access_token",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "A3. Response has token_type=bearer",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "A4. Response has expires_in > 0",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "A5. User role is 'admin'",
+          "passed": true,
+          "detail": "role=admin"
+        },
+        {
+          "name": "A6. User username is 'admin'",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "B1. New user registers successfully",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "B2. Registered user gets JWT",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "B3. Registered user role is 'user' (not admin)",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "B4. Duplicate username rejected (400)",
+          "passed": true,
+          "detail": "got 400"
+        },
+        {
+          "name": "B5. Short password rejected (422)",
+          "passed": true,
+          "detail": "got 422"
+        },
+        {
+          "name": "B6. Invalid username pattern rejected (422)",
+          "passed": true,
+          "detail": "got 422"
+        },
+        {
+          "name": "C1. Login with correct credentials",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "C2. Login returns same username",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "C3. Login with email (instead of username) works",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "C4. Wrong password rejected (401)",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "C5. Nonexistent user rejected (401)",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "D1. /auth/me without token → 401",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "D2. /auth/me with valid user token → 200",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "D3. /auth/me returns correct username",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "D4. /auth/me does NOT expose password_hash",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "D5. /auth/me with admin token → 200",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "D6. Admin /auth/me returns role='admin'",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "D7. Invalid JWT → 401",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "D8. Malformed auth header → 401",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "E. GET /admin/sessions without token → 401",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "E. GET /admin/sessions with user token → 403",
+          "passed": true,
+          "detail": "got 403"
+        },
+        {
+          "name": "E. GET /admin/sessions with admin token → 200",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "E. GET /admin/escalations without token → 401",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "E. GET /admin/escalations with user token → 403",
+          "passed": true,
+          "detail": "got 403"
+        },
+        {
+          "name": "E. GET /admin/escalations with admin token → 200",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "F. GET /dashboard/stats without token → 401",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "F. GET /dashboard/stats with user token → 403",
+          "passed": true,
+          "detail": "got 403"
+        },
+        {
+          "name": "F. GET /dashboard/stats with admin token → 200",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "F. GET /dashboard/sessions without token → 401",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "F. GET /dashboard/sessions with user token → 403",
+          "passed": true,
+          "detail": "got 403"
+        },
+        {
+          "name": "F. GET /dashboard/sessions with admin token → 200",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "F. GET /dashboard/rooms without token → 401",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "F. GET /dashboard/rooms with user token → 403",
+          "passed": true,
+          "detail": "got 403"
+        },
+        {
+          "name": "F. GET /dashboard/rooms with admin token → 200",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "F. GET /dashboard/revenue without token → 401",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "F. GET /dashboard/revenue with user token → 403",
+          "passed": true,
+          "detail": "got 403"
+        },
+        {
+          "name": "F. GET /dashboard/revenue with admin token → 200",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "F. GET /dashboard/bookings/recent without token → 401",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "F. GET /dashboard/bookings/recent with user token → 403",
+          "passed": true,
+          "detail": "got 403"
+        },
+        {
+          "name": "F. GET /dashboard/bookings/recent with admin token → 200",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "G1. User cannot create admin (403)",
+          "passed": true,
+          "detail": "got 403"
+        },
+        {
+          "name": "G2. Unauthenticated cannot create admin (401)",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "G3. Admin can create new admin",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "G4. New admin has role='admin'",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "G5. Newly created admin can login",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "G6. New admin has admin role in token",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "H1. Admin can list users",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "H2. Response has 'users' list",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "H3. At least 3 users exist",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "H4. Password hashes NOT exposed in list",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "H5. Filter users by role=admin",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "H6. All returned users are admin",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "H7. User cannot list users (403)",
+          "passed": true,
+          "detail": "got 403"
+        },
+        {
+          "name": "I1. POST /chat without auth → 422 (no auth rejection)",
+          "passed": true,
+          "detail": "guest chat path does not require auth"
+        },
+        {
+          "name": "I2. GET /rooms (room catalog) public",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "I3. GET /health public",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "I4. GET /settings/llm public (read-only)",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "I5. PUT /settings/llm with user token → 403",
+          "passed": true,
+          "detail": "got 403"
+        },
+        {
+          "name": "I6. PUT /settings/llm without token → 401",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "J1. JWT has 'sub' claim",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "J2. JWT has 'role' claim",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "J3. JWT has 'exp' claim",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "J4. JWT has 'iat' claim",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "J5. JWT 'sub' == admin username",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "J6. JWT 'role' == 'admin'",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "J7. JWT expiry is in the future (~24h)",
+          "passed": true,
+          "detail": ""
+        }
+      ]
+    },
+    {
+      "name": "Auth Hardening",
+      "script": "scripts/test_auth_hardening.py",
+      "expected_tests": 38,
+      "actual_tests": 38,
+      "passed": 38,
+      "failed": 0,
+      "elapsed_seconds": 10,
+      "tests": [
+        {
+          "name": "Prereq. Admin login",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "K1. Token works before logout",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "K2. /auth/logout succeeds",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "K3. Token rejected after logout",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "K4. Logout error mentions revoked/invalid",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "K5. Double logout → 401 (token already revoked)",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "K6. Logout without token → 401",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "K7. Can login again after logout (get new token)",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "K8. Fresh login token works",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "K9. Old token stays blocked after new login",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "L1. First wrong-password attempt → 401",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "L2. Per-username rate limit triggers 429 within 7 attempts",
+          "passed": true,
+          "detail": "sequence: [401, 401, 401, 401, 401, 429, 429]"
+        },
+        {
+          "name": "L3. 429 includes Retry-After header",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "L4. Retry-After is a positive integer",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "M1. Failed attempts return 401 or 429",
+          "passed": true,
+          "detail": "codes: [401, 401, 401, 401, 401]"
+        },
+        {
+          "name": "M2. Login with correct password after 5 failures → locked/rate-limited",
+          "passed": true,
+          "detail": "got 429"
+        },
+        {
+          "name": "M3. Rate limit 429 includes Retry-After",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "M4. Locked user visible in admin listing",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "N1. Wrong current password → 401",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "N2. New password same as current → 400",
+          "passed": true,
+          "detail": "got 400"
+        },
+        {
+          "name": "N3. New password < 8 chars → 422",
+          "passed": true,
+          "detail": "got 422"
+        },
+        {
+          "name": "N4. Valid password change → 200",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "N5. Old token invalidated after password change",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "N6. Can login with new password",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "N7. Cannot login with old password",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "N8. New login token works",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "N9. Password change without token → 401",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "O1. Server still operational despite insecure JWT_SECRET warning",
+          "passed": true,
+          "detail": "login status: 200"
+        },
+        {
+          "name": "P1. JWT has jti claim",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "P2. jti is a hex string (>=16 chars)",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "P3. Each token has a unique jti",
+          "passed": true,
+          "detail": "jti1=e6202948... jti2=88d167fd..."
+        },
+        {
+          "name": "Q1. User token still rejected from /admin/* (hardening preserved auth)",
+          "passed": true,
+          "detail": "got 403"
+        },
+        {
+          "name": "Q2. Password change for regular user succeeds",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "Q3. Role unchanged after password change",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "Q4. Tampered JWT signature → 401",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "Q5.1. Blocklisted token rejected on request #1",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "Q5.2. Blocklisted token rejected on request #2",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "Q5.3. Blocklisted token rejected on request #3",
+          "passed": true,
+          "detail": ""
+        }
+      ]
+    },
+    {
+      "name": "Audit + DB Scaling",
+      "script": "scripts/test_audit_and_scaling.py",
+      "expected_tests": 46,
+      "actual_tests": 46,
+      "passed": 46,
+      "failed": 0,
+      "elapsed_seconds": 8,
+      "tests": [
+        {
+          "name": "Prereq. Admin login",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "R1. GET /admin/audit with admin token → 200",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "R2. Response has 'entries' field",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "R3. Response has 'total' field",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "R4. Response has 'has_more' field",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "R5. Total is > 0 (previous activity exists)",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "R6. Entry has required fields",
+          "passed": true,
+          "detail": "missing=[]"
+        },
+        {
+          "name": "R7. Admin login recorded in audit log",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "S1. Filter by action_prefix=auth.",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "S2. All returned entries start with 'auth.'",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "S3. Filter by action=auth.register",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "S4. All returned entries are auth.register",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "S5. Newly registered user found in audit",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "S6. Filter by actor_username",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "S7. All entries match the actor filter",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "S8. Filter success_only=false",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "S9. success_only=false returns only failures",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "S10. At least one failure recorded",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "T1. limit=3 returns ≤ 3 entries",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "T2. has_more=true when total > limit",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "T3. Offset pagination returns distinct deep entries",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "T4. limit is capped at 500",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "U1. No token → 401",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "U2. User token → 403",
+          "passed": true,
+          "detail": "got 403"
+        },
+        {
+          "name": "U3. Admin token → 200",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "U4. Stats no token → 401",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "U5. Stats user token → 403",
+          "passed": true,
+          "detail": "got 403"
+        },
+        {
+          "name": "U6. Stats admin token → 200",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "U7. Stats has total_events",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "U8. Stats has top_actions_24h",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "U9. Stats has top_actors_24h",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "V1. Failed login recorded as auth.login.failed",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "V2. Password change recorded",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "V3. LLM config change recorded",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "V4. Admin user listing recorded",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "V5. Admin session listing recorded",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "V6. Audit entries capture ip_address",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "V7. Audit entries capture user_agent",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "W1. 30 concurrent /auth/me requests completed",
+          "passed": true,
+          "detail": "total=0.13s, avg=33ms, p95=42ms"
+        },
+        {
+          "name": "W2. Total time under 5s budget (pool+cache working)",
+          "passed": true,
+          "detail": "actual=0.13s"
+        },
+        {
+          "name": "W3. p95 latency under 500ms",
+          "passed": true,
+          "detail": "actual p95=42ms"
+        },
+        {
+          "name": "X1. Initial /auth/me populates cache",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "X2. Password change succeeds",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "X3. Old token rejected after password change (cache invalidated)",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "Y1. 50 sequential DB requests succeed (50/50)",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "Y2. 20 concurrent audit queries all succeed",
+          "passed": true,
+          "detail": "time=0.18s"
+        }
+      ]
+    },
+    {
+      "name": "Chat Scaling",
+      "script": "scripts/test_chat_scaling.py",
+      "expected_tests": 37,
+      "actual_tests": 37,
+      "passed": 37,
+      "failed": 0,
+      "elapsed_seconds": 8,
+      "tests": [
+        {
+          "name": "Prereq. Admin login",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "AA1. No token → 401",
+          "passed": true,
+          "detail": "got 401"
+        },
+        {
+          "name": "AA2. Admin token → 200",
+          "passed": true,
+          "detail": "got 200"
+        },
+        {
+          "name": "AA3.llm_limiter. Metrics contain 'llm_limiter' section",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "AA3.session_locks. Metrics contain 'session_locks' section",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "AA3.chat_rate_limiter. Metrics contain 'chat_rate_limiter' section",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "AA3.stream_limiter. Metrics contain 'stream_limiter' section",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "AA3.knowledge_cache. Metrics contain 'knowledge_cache' section",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "AA3.config. Metrics contain 'config' section",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "AA4.max_concurrent. llm_limiter has 'max_concurrent'",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "AA4.in_flight. llm_limiter has 'in_flight'",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "AA4.waiting. llm_limiter has 'waiting'",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "AA4.total_acquired. llm_limiter has 'total_acquired'",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "AA5. config.max_concurrent_llm_calls is positive",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "AA6. config.knowledge_cache_size > 0",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "BB1. Per-session rate limit triggers 429 under concurrent burst",
+          "passed": true,
+          "detail": "429 count: 5, sample codes: [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]"
+        },
+        {
+          "name": "BB2. 429 includes Retry-After header",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "BB3. Different session not rate-limited (LLM processing)",
+          "passed": true,
+          "detail": "no fast 429 = different session got accepted"
+        },
+        {
+          "name": "CC1. session_locks has 'tracked_sessions' counter",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "CC2. session_locks has 'currently_locked' counter",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "CC3. Tracked session count is > 0 after chat activity",
+          "passed": true,
+          "detail": "tracked=2"
+        },
+        {
+          "name": "DD1. max_concurrent is > 0",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "DD2. total_acquired counter present",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "DD3. total_acquired > 0 (semaphore was used by prior chats)",
+          "passed": true,
+          "detail": "acquired=2"
+        },
+        {
+          "name": "EE1. knowledge_cache has 'hits' counter",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "EE2. knowledge_cache has 'misses' counter",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "EE3. knowledge_cache has 'hit_rate' field",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "EE4. hit_rate is a float in [0, 1]",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "EE5. knowledge_cache has 'max_size' > 0",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "EE6. knowledge_cache has 'ttl_seconds' > 0",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "FF1. stream_limiter has 'max_concurrent'",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "FF2. stream_limiter has 'active'",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "FF3. stream_limiter has 'total_accepted'",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "FF4. stream_limiter has 'total_rejected'",
+          "passed": true,
+          "detail": ""
+        },
+        {
+          "name": "GG1. total_acquired counter monotonically non-decreasing",
+          "passed": true,
+          "detail": "m1=2, m2=2"
+        },
+        {
+          "name": "GG2. Single /chat request → LLM processing (accepted)",
+          "passed": true,
+          "detail": "no 401/403/500/503 — request was accepted and LLM is working"
+        },
+        {
+          "name": "GG3. 5 concurrent chats (different sessions) accepted in parallel",
+          "passed": true,
+          "detail": "codes=[200, 200, 200, 200, 200], elapsed=3.04s"
+        }
+      ]
+    }
+  ],
+  "total_tests": 193,
+  "total_passed": 193
+}

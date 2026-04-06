@@ -148,16 +148,19 @@ AVAILABLE_MODELS = [
         "name": "Qwen3.5 Opus 9B",
         "provider": "Ollama",
         "backend": "ollama",
-        "description": "Local 9B model with tool calling, thinking built-in",
-        "presets": {"temperature": 0.3, "max_tokens": 4096, "thinking": True},
+        "description": "Local 9B model with tool calling, native thinking tags",
+        # Qwen3.5 on Ollama outputs <think> tags automatically — explicit
+        # thinking=True only adds overhead via extra prompting.
+        # max_tokens=2048 is sufficient for hotel responses (typical < 500 tokens).
+        "presets": {"temperature": 0.3, "max_tokens": 2048, "thinking": False},
     },
     {
         "id": "qwen3.5:9b",
         "name": "Qwen3.5 9B",
         "provider": "Ollama",
         "backend": "ollama",
-        "description": "Local Qwen3.5 base model, thinking built-in",
-        "presets": {"temperature": 0.3, "max_tokens": 4096, "thinking": True},
+        "description": "Local Qwen3.5 base model, native thinking tags",
+        "presets": {"temperature": 0.3, "max_tokens": 2048, "thinking": False},
     },
     # OpenRouter (cloud)
     {
