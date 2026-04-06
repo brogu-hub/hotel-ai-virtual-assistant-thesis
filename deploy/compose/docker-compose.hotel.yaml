@@ -16,18 +16,22 @@ services:
       - "11435:11434"
     environment:
       # Concurrent request slots inside Ollama. Default is 1 — every
-      # parallel request serializes inside Ollama itself. Bumping to 4
-      # lets our MAX_CONCURRENT_LLM_CALLS semaphore actually run chats
-      # in parallel on a single model (GPU) instead of just queuing.
-      # Trade-off: each slot consumes KV-cache VRAM, so on small GPUs
-      # reduce this to 2 or keep MAX_CONCURRENT_LLM_CALLS <= this value.
-      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-4}
+      # parallel request serializes inside Ollama itself. Sizing tuned
+      # for RTX 5080 (16GB) + qwen3.5-opus:9b Q5_K_M (~6.5GB weights):
+      # 2 slots gives the best latency/concurrency trade-off (single
+      # GPU throughput divides across active slots). Cloud OpenRouter
+      # is available as failover for bursty traffic beyond 2 concurrent.
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-2}
       # Max models loaded simultaneously. Keep at 1 for the hotel demo
       # (single 9B model) unless you want multi-model A/B testing.
       OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-1}
       # How long an idle model stays loaded. Longer = fewer cold starts,
       # more VRAM held. 15m is a good default for active hotel traffic.
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-15m}
+      # Flash attention speeds up attention compute with no quality impact.
+      # NOTE: OLLAMA_KV_CACHE_TYPE=q8_0 was tested but caused CPU offload
+      # on RTX 5080 with this 9B model — disabled for now.
+      OLLAMA_FLASH_ATTENTION: ${OLLAMA_FLASH_ATTENTION:-1}
     deploy:
       resources:
         reservations:
