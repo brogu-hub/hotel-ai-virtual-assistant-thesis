@@ -22,4 +22,5 @@ One page per experiment, benchmark, or eval run. Use [[_templates/experiment]]. 
 
 ## Filed pages
 
-_(none yet)_
+- [[model-eval-local-vs-cloud-2026-04-06]] — Local (Qwen3.5 Opus 9B / Ollama) vs Cloud (Qwen3-max / OpenRouter) on 25-case hotel benchmark. Cloud: 100%, Local: 92%. Cohen's κ = 0.000. 193/193 infra tests pass.
+- [[model-tuning-and-test-results-2026-04-03]] — 34-case functional suite (Parts A–F), 94% pass (32/34) after 7 targeted fixes. Three-model comparison: Qwen3.5-Opus-9B vs Qwen3-max vs MiniMax M2.7.
