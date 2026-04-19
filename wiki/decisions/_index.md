@@ -22,4 +22,7 @@ Architectural Decision Records (ADRs) and methodology decisions for the thesis. 
 
 ## Filed pages
 
-_(none yet)_
+- [[reranker_disabled]] — CrossEncoder removed from the hot path; event-loop blocking was pushing p95 latency past SLA.
+- [[dual_identity_model]] — Separate `GUESTS` and `USERS` tables; why the schema is not unified.
+
+> Most of the "Known decisions to back-fill" list above is still unfiled. Surface these as ADRs on the next pass.
