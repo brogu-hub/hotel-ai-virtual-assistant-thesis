@@ -18,7 +18,9 @@ Three intertwined workstreams:
 
 ## Project context
 
-Hotel AI Virtual Assistant for **The Grand Horizon Hotel**. Forked from the NVIDIA AI Blueprint, adapted to use OpenRouter (Qwen3-max) as an alternative to NVIDIA NIM. Hybrid architecture combining LangGraph (state machine + sub-agent routing) with NeMo Guardrails (safety + intent filtering). Deployed on Railway.app.
+Hotel AI Virtual Assistant for **The Grand Horizon Hotel**. Forked from the NVIDIA AI Blueprint, adapted to use OpenRouter ([[Qwen3-max]]) for cloud and [[Ollama]] + [[Qwen3.5-Opus-9B]] for local dev. Hybrid architecture: [[hybrid_router]] (safety pre-filter) → [[langgraph_adapter]] → [[hotel_langgraph]] (4-sub-agent state machine: [[booking_subagent]], [[service_subagent]], [[knowledge_subagent]], [[other_talk_subagent]]). Deployed on [[Railway]].
+
+**Empirical status (April 2026)**: cloud model 100% / local model 92% on 25-case hotel benchmark — see [[model-eval-local-vs-cloud-2026-04-06]]. Functional suite 94% after 7 targeted fixes — see [[model-tuning-and-test-results-2026-04-03]]. 193/193 infra tests.
 
 ## Navigation
 
