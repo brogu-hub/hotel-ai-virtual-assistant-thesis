@@ -20,7 +20,7 @@ Overview and navigation page for the three RAG retriever microservices under `sr
 
 All three sub-services share a single FastAPI application defined in `src/retrievers/server.py`. The server discovers its concrete implementation at startup by scanning a path given in the `EXAMPLE_PATH` environment variable, looking for a class that implements the [[retriever_base_example]] interface (`ingest_docs`, `document_search`, `get_documents`, `delete_documents`).
 
-```
+```text
 POST /documents   — ingest a file (multipart upload)
 POST /search      — semantic / NL-to-SQL search
 GET  /documents   — list ingested files
