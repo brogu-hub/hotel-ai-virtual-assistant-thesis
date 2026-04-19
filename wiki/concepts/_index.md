@@ -33,4 +33,4 @@ Frameworks, patterns, and domain concepts. Use [[_templates/concept]].
 
 ## Filed pages
 
-_(none yet)_
+- [[keyword-match-eval]] — Deterministic keyword + language-detection eval methodology used in April 2026 hotel assistant benchmarks
