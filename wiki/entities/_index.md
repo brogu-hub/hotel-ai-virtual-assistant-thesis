@@ -48,3 +48,7 @@ Orgs, products, models, libraries, people. Use [[_templates/entity]].
 - [[Qwen3-max]] — Alibaba flagship cloud LLM, production default, 100% on hotel eval
 - [[Qwen3.5-Opus-9B]] — Local 9B model via Ollama, dev default, 92% on hotel eval
 - [[MiniMax-M2.7]] — MoE agentic model, budget production candidate, single-turn validated only
+
+### Products / tools (filed)
+
+- [[Ollama]] — local LLM inference server, port 11435, `OLLAMA_NUM_PARALLEL=4`
