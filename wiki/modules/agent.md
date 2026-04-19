@@ -63,7 +63,7 @@ The `/generate` endpoint accepts a `Prompt` payload (`messages[]`, `user_id`, `s
 
 ## Graph state
 
-```
+```python
 State: TypedDict {
   messages: list[AnyMessage]   # add_messages reducer
   user_id: str
