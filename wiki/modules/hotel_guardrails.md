@@ -39,7 +39,7 @@ The actively-developed hotel assistant service for The Grand Horizon Hotel. Expo
 | Group | Methods | Path(s) |
 |---|---|---|
 | Health | GET | `/health`, `/healthz` |
-| Auth | POST | `/auth/register`, `/auth/login`, `/auth/logout`; PATCH `/auth/me/password` |
+| Auth | POST | `/auth/register`, `/auth/login`, `/auth/logout` — PATCH `/auth/me/password` |
 | Chat | POST | `/chat`, `/chat/stream` (SSE) |
 | Rooms | GET | `/rooms`, `/rooms/{id}`, `/rooms/availability` |
 | Booking | GET/POST/PATCH/DELETE | `/bookings`, `/bookings/{id}` |
