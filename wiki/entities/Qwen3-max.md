@@ -28,7 +28,7 @@ Default development LLM for the [[hotel_guardrails]] service. Handles all primar
 ## Eval Results (2026-04-06, 25-case hotel benchmark)
 
 | Metric | Value |
-|--------|-------|
+| ------ | ----- |
 | Overall accuracy | 25/25 (100%) |
 | Keyword accuracy | 88% |
 | Language accuracy (EN+TH) | 100% |
