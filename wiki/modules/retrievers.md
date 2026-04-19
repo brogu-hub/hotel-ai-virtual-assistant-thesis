@@ -1,48 +1,75 @@
 ---
 type: module
-path: src/retrievers/
+path: "src/retrievers/"
 status: active
 language: python
-purpose: "RAG retriever microservices — unstructured (Milvus), structured (Vanna/SQL), hotel knowledge"
+purpose: "Three RAG retriever microservices — unstructured document search, structured NL-to-SQL, and hotel-specific knowledge"
 maintainer: Mangakorian
-last_updated: 2026-04-19
-depends_on: [common]
-used_by: [hotel_guardrails, agent]
-linked_issues: []
-tags: [module, retrievers, rag]
 created: 2026-04-19
 updated: 2026-04-19
+depends_on: [common]
+used_by: [hotel_guardrails, agent]
+tags: [module, retrievers, rag, fastapi]
 ---
 
 # retrievers
 
-## Purpose
+Overview and navigation page for the three RAG retriever microservices under `src/retrievers/`.
 
-Three retriever microservices that serve document and data retrieval to the agent systems. Each is a standalone FastAPI service that can be called independently.
+## Architecture
 
-## Sub-modules
+All three sub-services share a single FastAPI application defined in `src/retrievers/server.py`. The server discovers its concrete implementation at startup by scanning a path given in the `EXAMPLE_PATH` environment variable, looking for a class that implements the [[retriever_base_example]] interface (`ingest_docs`, `document_search`, `get_documents`, `delete_documents`).
 
-| Sub-module | Port | Storage | Purpose |
-|---|---|---|---|
-| `unstructured_data/` | 8086 | [[Milvus]] | PDF/document embedding + similarity search |
-| `structured_data/` | 8087 | [[PostgreSQL]] + [[Vanna.AI]] | NL-to-SQL for structured data |
-| `hotel_knowledge/` | — | [[Qdrant]] | Hotel-specific document RAG |
+```
+POST /documents   — ingest a file (multipart upload)
+POST /search      — semantic / NL-to-SQL search
+GET  /documents   — list ingested files
+DELETE /documents — remove a file by name
+GET  /health      — liveness probe
+```
 
-## Dependencies
+The same server binary serves whichever sub-service is mounted at startup. Docker Compose selects the sub-service via `EXAMPLE_PATH`.
 
-- External: [[Milvus]], [[Qdrant]], [[Vanna.AI]], [[PostgreSQL]], [[FastAPI]], [[NVIDIA]] NIM (embeddings/reranker in prod)
-- Internal: [[common]]
+## Sub-services
 
-## Notes & gotchas
+| Sub-service | Page | Port | Storage | Purpose |
+|---|---|---|---|---|
+| `unstructured_data/` | [[unstructured_retriever]] | 8086 | [[Milvus]] / [[Qdrant]] | Document embedding + similarity search |
+| `structured_data/` | [[structured_retriever]] | 8087 | [[PostgreSQL]] + [[Milvus]] | NL-to-SQL via [[Vanna.AI]] |
+| `hotel_knowledge/` | [[hotel_knowledge_retriever]] | — | [[Qdrant]] | Hotel-specific bilingual RAG |
 
-- `unstructured_data/` uses NVIDIA NIM embeddings in prod; sentence-transformers in dev
-- Each retriever has its own `prompt.yaml` for retrieval chain prompts
-- Data ingestion via `notebooks/ingest_data.ipynb`
+## Shared base contract
 
-## Related
+`src/retrievers/base.py` defines `BaseExample` (abstract base class). Every sub-service chain must implement:
 
-- [[RAG]]
-- [[Milvus]]
-- [[Qdrant]]
-- [[hotel_guardrails]]
-- [[agent]]
+- `document_search(content, num_docs, ...) -> List[Dict]`
+- `get_documents() -> List[str]`
+- `delete_documents(filenames) -> bool`
+- `ingest_docs(filepath, filename) -> None`
+
+## Data flow
+
+```
+Caller (hotel_guardrails / agent)
+  └─ POST /search {query, top_k, user_id?, conv_history?}
+       └─ server.py dispatch
+            ├─ UnstructuredRetriever.document_search()  (port 8086)
+            ├─ CSVChatbot.document_search()             (port 8087)
+            └─ HotelKnowledgeRetriever.document_search() (hotel_knowledge)
+```
+
+## Component pages
+
+- [[retriever_base_example]] — shared abstract interface
+- [[retriever_unstructured_ingest_pipeline]] — chunking + embedding + vectorstore write path
+- [[retriever_vanna_wrapper]] — Vanna.AI NL-to-SQL + SQL safety layer
+
+## Flow pages
+
+- [[rag_ingest_pipeline]] — end-to-end ingest flow (chunk → embed → index)
+
+## Related concepts & entities
+
+- [[RAG]], [[hybrid_rag_with_reranking]]
+- [[Milvus]], [[Qdrant]], [[Vanna.AI]], [[PostgreSQL]]
+- [[hotel_guardrails]], [[agent]]
