@@ -25,9 +25,29 @@ Default development LLM for the [[hotel_guardrails]] service. Handles all primar
 - Org: Alibaba Cloud
 - Prompts tuned for Llama 3.1/3.3 in the upstream blueprint; may need prompt adjustment for Qwen3
 
+## Eval Results (2026-04-06, 25-case hotel benchmark)
+
+| Metric | Value |
+|--------|-------|
+| Overall accuracy | 25/25 (100%) |
+| Keyword accuracy | 88% |
+| Language accuracy (EN+TH) | 100% |
+| Avg latency | 8,852 ms |
+| p50 latency | 6,703 ms |
+| p95 latency | 13,933 ms |
+| Cost | $0.78 / $3.90 per 1M tokens (in/out) |
+
+See [[model-eval-local-vs-cloud-2026-04-06]] and [[model-tuning-and-test-results-2026-04-03]].
+
+## Model Preset
+
+Temperature: 0.3, max tokens: 2048, thinking: on (reasoning param).
+
 ## Related
 
 - [[OpenRouter]]
 - [[Llama 3.3 70B]]
 - [[hotel_guardrails]]
 - [[ADR OpenRouter Dev Backend]]
+- [[Qwen3.5-Opus-9B]] — local dev counterpart
+- [[MiniMax-M2.7]] — budget cloud alternative
