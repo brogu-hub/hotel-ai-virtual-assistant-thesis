@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2024 Hotel AI Operations Assistant
 # SPDX-License-Identifier: Apache-2.0
 """
-Hotel Guardrails - FastAPI + NeMo Guardrails for Hotel Operations
+Hotel AI Virtual Assistant — FastAPI + LangGraph
 
 Provides:
 - /chat endpoint for AI conversations with guardrails

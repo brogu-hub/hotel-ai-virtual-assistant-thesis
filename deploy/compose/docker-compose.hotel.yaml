@@ -10,6 +10,7 @@ services:
   hotel-ollama:
     container_name: hotel-ollama
     image: ollama/ollama:latest
+    restart: unless-stopped
     volumes:
       - hotel-ollama-data:/root/.ollama
     ports:
@@ -54,6 +55,7 @@ services:
   hotel-db:
     container_name: hotel-db
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: hotel
       POSTGRES_USER: postgres
@@ -77,6 +79,7 @@ services:
   hotel-redis:
     container_name: hotel-redis
     image: redis:7.0.13-alpine
+    restart: unless-stopped
     command: redis-server --appendonly yes
     volumes:
       - hotel-redis-data:/data
@@ -96,6 +99,7 @@ services:
   hotel-qdrant:
     container_name: hotel-qdrant
     image: qdrant/qdrant:latest
+    restart: unless-stopped
     volumes:
       - hotel-qdrant-data:/qdrant/storage
     ports:
@@ -115,6 +119,7 @@ services:
   # ===========================================================================
   hotel-api:
     container_name: hotel-api
+    restart: unless-stopped
     build:
       context: ../../
       dockerfile: docker/dev/Dockerfile.dev
@@ -166,9 +171,6 @@ services:
       APP_CHECKPOINTER_NAME: postgres
       GRAPH_RECURSION_LIMIT: "20"
       GRAPH_TIMEOUT_IN_SEC: "60"
-
-      # --- NeMo Guardrails: Disabled for local Ollama ---
-      NEMO_GUARDRAILS_ENABLED: "false"
 
       # --- Reranker: Local Qwen (no NVIDIA API needed) ---
       # Reranker disabled — embedding search is already accurate for our
@@ -223,6 +225,23 @@ services:
     command: >
       python -m uvicorn src.hotel_guardrails.server:app
       --host 0.0.0.0 --port 8088 --reload
+    develop:
+      watch:
+        # Rebuild container when dependencies change
+        - action: rebuild
+          path: ../../requirements.dev.txt
+        - action: rebuild
+          path: ../../docker/dev/Dockerfile.dev
+        # Sync source code (hot reload via uvicorn --reload)
+        - action: sync
+          path: ../../src
+          target: /app/src
+        - action: sync
+          path: ../../scripts
+          target: /app/scripts
+        - action: sync
+          path: ../../data
+          target: /app/data
 
 networks:
   hotel-ai-network:

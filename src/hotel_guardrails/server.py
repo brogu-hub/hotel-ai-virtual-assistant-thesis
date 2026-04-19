@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2024 Hotel AI Operations Assistant
 # SPDX-License-Identifier: Apache-2.0
 """
-FastAPI Server for Hotel Operations with NeMo Guardrails
+FastAPI Server for Hotel AI Virtual Assistant
 
 Endpoints:
 - GET  /health      - Health check
@@ -32,11 +32,6 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 
-try:
-    from nemoguardrails import RailsConfig, LLMRails
-    NEMO_AVAILABLE = True
-except ImportError:
-    NEMO_AVAILABLE = False
 from langchain_openai import ChatOpenAI
 
 from .openrouter_llm import get_openrouter_llm
@@ -130,10 +125,6 @@ from .actions import (
     confirm_reservation,
     cancel_reservation,
     get_reservation_details,
-    check_input_safety,
-    check_output_safety,
-    detect_language,
-    format_bilingual_response,
 )
 
 # Configure logging
@@ -160,11 +151,9 @@ tags_metadata = [
     {"name": "Root", "description": "API information"},
 ]
 
-# Global rails instance
-rails: LLMRails = None
 # Admin-controlled sessions (bot paused, admin responding)
 admin_controlled_sessions: set = set()
-# Fallback LangChain LLM for when NeMo fails
+# LangChain LLM (fallback)
 langchain_llm: ChatOpenAI = None
 # Hybrid routing components
 hybrid_router: HybridRouter = None
@@ -176,22 +165,19 @@ escalation_monitor = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize NeMo Guardrails and hybrid routing on startup."""
-    global rails, langchain_llm, hybrid_router, langgraph_adapter, feedback_collector, escalation_monitor
+    """Initialize LLM, hybrid routing, and LangGraph on startup."""
+    global langchain_llm, hybrid_router, langgraph_adapter, feedback_collector, escalation_monitor
 
     # Initialize RuntimeLLMConfig singleton (reads env vars)
     runtime_config = get_runtime_llm_config()
     logger.info(f"LLM backend: {runtime_config.backend.value}, model: {runtime_config.active_model}")
 
-    # Set OpenRouter API key for NeMo
+    # Set OpenRouter API key
     api_key = os.getenv("OPENROUTER_API_KEY")
     if api_key:
         os.environ["OPENAI_API_KEY"] = api_key
 
-    # Get LLM settings from config
-    llm_settings = get_llm_settings()
-
-    # Initialize LangChain LLM (uses runtime config backend)
+    # Initialize LangChain LLM (fallback for when LangGraph fails)
     try:
         langchain_llm = get_openrouter_llm(
             model=runtime_config.active_model,
@@ -203,43 +189,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to initialize LangChain LLM: {e}")
         langchain_llm = None
-
-    # NeMo Guardrails (optional - disabled for Ollama backend)
-    nemo_enabled = (
-        NEMO_AVAILABLE
-        and os.getenv("NEMO_GUARDRAILS_ENABLED", "true").lower() == "true"
-    )
-
-    if nemo_enabled:
-        config_path = os.path.join(os.path.dirname(__file__), "config")
-        logger.info(f"Loading NeMo Guardrails config from {config_path}")
-
-        try:
-            config = RailsConfig.from_path(config_path)
-            rails = LLMRails(config)
-
-            if langchain_llm:
-                rails.register_action(lambda: langchain_llm, "get_main_llm")
-                logger.info("Registered LangChain LLM with NeMo Guardrails")
-
-            rails.register_action(search_hotel_knowledge, "search_hotel_knowledge")
-            rails.register_action(check_room_availability, "check_room_availability")
-            rails.register_action(create_reservation, "create_reservation")
-            rails.register_action(confirm_reservation, "confirm_reservation")
-            rails.register_action(cancel_reservation, "cancel_reservation")
-            rails.register_action(get_reservation_details, "get_reservation_details")
-            rails.register_action(check_input_safety, "check_input_safety")
-            rails.register_action(check_output_safety, "check_output_safety")
-            rails.register_action(detect_language, "detect_language")
-            rails.register_action(format_bilingual_response, "format_bilingual_response")
-
-            logger.info("NeMo Guardrails initialized successfully")
-
-        except Exception as e:
-            logger.error(f"Failed to initialize NeMo Guardrails: {e}")
-    else:
-        reason = "NEMO_GUARDRAILS_ENABLED=false" if NEMO_AVAILABLE else "nemoguardrails not installed"
-        logger.info(f"NeMo Guardrails disabled ({reason}) - using LangGraph-only path")
 
     # Initialize persistent checkpointer (PostgreSQL or in-memory)
     try:
@@ -482,21 +431,15 @@ async def health_check():
     Check service health.
 
     Returns status of:
-    - guardrails: NeMo Guardrails initialization
+    - langgraph: LangGraph agent
     - qdrant: Vector database connection
     - openrouter: LLM API connectivity
     - database: PostgreSQL connection
     """
     components = {}
 
-    # Check NeMo Guardrails (optional — disabled by default for Ollama backend)
-    nemo_enabled = os.getenv("NEMO_GUARDRAILS_ENABLED", "true").lower() == "true"
-    if rails:
-        components["guardrails"] = "healthy"
-    elif not nemo_enabled:
-        components["guardrails"] = "disabled (intentional)"
-    else:
-        components["guardrails"] = "not_initialized"
+    # Check LangGraph agent
+    components["langgraph"] = "healthy" if langgraph_adapter else "not_initialized"
 
     # Check Qdrant
     try:
@@ -1008,18 +951,11 @@ async def _process_chat_locked(
     # Step 1: Safety check and routing
     if hybrid_router:
         try:
-            # Check input safety first
-            is_safe = True
-            try:
-                safety_result = await check_input_safety(request.message)
-                is_safe = safety_result.return_value if hasattr(safety_result, 'return_value') else True
-            except Exception:
-                pass  # Default to safe if check fails
-
+            # Route through hybrid router (regex safety + LangGraph dispatch)
             routing = await hybrid_router.route(
                 query=request.message,
                 session_id=session_id,
-                is_safe=is_safe,
+                is_safe=True,
             )
             routing_path = routing.path.value
             routing_reason = routing.reason
@@ -1307,45 +1243,30 @@ async def chat_stream(request: ChatRequest):
 
     async def generate_stream() -> AsyncGenerator[str, None]:
         content = ""
-        session_lock = session_locks.get(session_id)
-        llm_acquired = False
         try:
-            # Acquire per-session lock inside the generator (async lock can
-            # only be awaited in async context — the outer endpoint runs
-            # before the generator starts yielding)
-            async with session_lock:
-                # Acquire LLM semaphore for the streaming duration
+            # Use the same invoke path as /chat — call adapter directly
+            if langgraph_adapter:
                 try:
                     await llm_limiter.acquire()
-                    llm_acquired = True
                 except LLMQueueTimeout:
-                    err = ("Chatbot is busy right now. Please try again in a moment. / "
-                           "ระบบกำลังยุ่ง กรุณาลองใหม่อีกครั้ง")
-                    yield f"data: {json.dumps({'content': err, 'done': False, 'error': 'llm_queue_timeout'})}\n\n"
+                    yield f"data: {json.dumps({'content': 'ระบบกำลังยุ่ง กรุณาลองใหม่', 'done': False})}\n\n"
                     yield f"data: {json.dumps({'content': '', 'done': True, 'session_id': session_id})}\n\n"
                     return
 
-                if langgraph_adapter and langgraph_adapter._graph:
-                    from langchain_core.messages import HumanMessage
+                try:
+                    result = await langgraph_adapter.invoke(
+                        message=message_for_llm,
+                        session_id=session_id,
+                    )
+                finally:
+                    llm_limiter.release()
 
-                    graph = langgraph_adapter._graph
-                    config = {"configurable": {"thread_id": session_id}}
-
-                    # Stream events from LangGraph
-                    async for event in graph.astream_events(
-                        {"messages": [HumanMessage(content=message_for_llm)]},
-                        config=config,
-                        version="v2",
-                    ):
-                        kind = event.get("event", "")
-
-                        # Stream LLM token output
-                        if kind == "on_chat_model_stream":
-                            chunk = event.get("data", {}).get("chunk")
-                            if chunk and hasattr(chunk, "content") and chunk.content:
-                                token = chunk.content
-                                content += token
-                                yield f"data: {json.dumps({'content': token, 'done': False})}\n\n"
+                if result.get("success") and result.get("response"):
+                    content = result["response"]
+                    import re as _re
+                    content = _re.sub(r"<think>.*?</think>", "", content, flags=_re.DOTALL).strip()
+                    if content:
+                        yield f"data: {json.dumps({'content': content, 'done': False})}\n\n"
 
                     # Save conversation history
                     try:
@@ -1370,16 +1291,13 @@ async def chat_stream(request: ChatRequest):
                         except Exception:
                             pass
 
-                else:
-                    # Fallback: non-streaming via /chat logic
-                    yield f"data: {json.dumps({'content': 'Streaming not available. Please use /chat endpoint.', 'done': False})}\n\n"
+            else:
+                yield f"data: {json.dumps({'content': 'Streaming not available.', 'done': False})}\n\n"
 
         except Exception as e:
             logger.error(f"Stream failed: {e}")
             yield f"data: {json.dumps({'content': f'Error: {str(e)}', 'done': False})}\n\n"
         finally:
-            if llm_acquired:
-                llm_limiter.release()
             stream_limiter.release()
 
         yield f"data: {json.dumps({'content': '', 'done': True, 'session_id': session_id})}\n\n"

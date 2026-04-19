@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2024 Hotel AI Operations Assistant
 # SPDX-License-Identifier: Apache-2.0
 """
-OpenRouter LLM Wrapper for NeMo Guardrails
+OpenRouter LLM Wrapper
 
 Provides OpenRouter integration using OpenAI-compatible API.
 Includes required headers for Paid Tier compliance.

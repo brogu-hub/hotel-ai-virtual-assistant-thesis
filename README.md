@@ -18,13 +18,14 @@ limitations under the License.
 <h1><img align="center" src="https://github.com/user-attachments/assets/cbe0d62f-c856-4e0b-b3ee-6184b7c4d96f">NVIDIA AI Blueprint: AI Virtual Assistant for Customer Service</h1>
 
 ## Table of Contents
+
 - [Table of Contents](#table-of-contents)
 - [Overview](#overview)
 - [Software components](#software-components)
 - [Target audience](#target-audience)
 - [Prerequisites](#prerequisites)
 - [Hardware requirements](#hardware-requirements)
-    - [Minimum hardware requirements for self hosting all NIMs](#minimum-hardware-requirements-for-self-hosting-all-nims)
+  - [Minimum hardware requirements for self hosting all NIMs](#minimum-hardware-requirements-for-self-hosting-all-nims)
 - [API definition](#api-definition)
 - [Use case description](#use-case-description)
 - [Key Functionality](#key-functionality)
@@ -47,11 +48,11 @@ limitations under the License.
 - [Customizing the blueprint](#customizing-the-blueprint)
 - [Data flywheel](#data-flywheel)
 - [Helm chart deployment](#helm-chart-deployment)
-    - [Minimum hardware requirements](#minimum-hardware-requirements)
-    - [Prerequisites](#prerequisites-1)
-    - [Initialize environment variables](#initialize-environment-variables)
-    - [Helm deployment](#helm-deployment)
-    - [Interacting with UI service](#interacting-with-ui-service)
+  - [Minimum hardware requirements](#minimum-hardware-requirements)
+  - [Prerequisites](#prerequisites-1)
+  - [Initialize environment variables](#initialize-environment-variables)
+  - [Helm deployment](#helm-deployment)
+  - [Interacting with UI service](#interacting-with-ui-service)
 - [Troubleshooting](#troubleshooting)
   - [Container build issues](#container-build-issues)
     - [Device error](#device-error)
@@ -65,6 +66,7 @@ limitations under the License.
 - [License](#license)
 
 ## Overview
+
 This repository is what powers the [build experience](https://build.nvidia.com/nvidia/ai-virtual-assistant-for-customer-service), showcasing an AI virtual assistant with NVIDIA NIM microservices (https://build.nvidia.com/nim)
 
 This blueprint is a reference solution for a text based virtual assistant. With the rise of generative AI, companies are eager to enhance their customer service operations by integrating knowledge bases that are close to sensitive customer data. Traditional solutions often fall short in delivering context-aware, secure, and real-time responses to complex customer queries. This leads to longer resolution times, limited customer satisfaction, and potential data exposure risks. A centralized knowledge base that integrates seamlessly with internal applications and call center tools is vital to improving customer experience while ensuring data governance.
@@ -73,12 +75,12 @@ The AI virtual assistant for customer service NIM Agent Blueprint, powered by NV
 ## Software components
 
 * NVIDIA NIM microservices
-   * Response Generation (Inference)
-      * [NIM of meta/llama-3.3-70b-instruct](https://build.nvidia.com/meta/llama-3_3-70b-instruct)
-      * [NIM of nvidia/llama-3.2-nv-embedqa-1b-v2](https://build.nvidia.com/nvidia/llama-3_2-nv-embedqa-1b-v2)
-      * [NIM of nvidia/llama-3.2-nv-rerankqa-1b-v2](https://build.nvidia.com/nvidia/llama-3_2-nv-rerankqa-1b-v2)
-   * [Synthetic Data Generation](./notebooks/synthetic_data_generation.ipynb) for reference
-      * [NIM of Nemotron4-340B](nvidia/nemotron-4-340b-instruct)
+  * Response Generation (Inference)
+    * [NIM of meta/llama-3.3-70b-instruct](https://build.nvidia.com/meta/llama-3_3-70b-instruct)
+    * [NIM of nvidia/llama-3.2-nv-embedqa-1b-v2](https://build.nvidia.com/nvidia/llama-3_2-nv-embedqa-1b-v2)
+    * [NIM of nvidia/llama-3.2-nv-rerankqa-1b-v2](https://build.nvidia.com/nvidia/llama-3_2-nv-rerankqa-1b-v2)
+  * [Synthetic Data Generation](./notebooks/synthetic_data_generation.ipynb) for reference
+    * [NIM of Nemotron4-340B](nvidia/nemotron-4-340b-instruct)
 * Orchestrator Agent - LangGraph based
 * Text Retrievers - LangChain
 * Structured Data (CSV) Ingestion - Postgres Database
@@ -88,23 +90,27 @@ Docker Compose scripts are provided which spin up the microservices on a single 
 
 The Blueprint contains sample use-case data pertaining to retail product catalog and customer data with purchase history but Developers can build upon this blueprint, by customizing the RAG application to their specific use case.  A sample customer service agent user interface and API-based analytic server for conversation summary and sentiment are also included.
 
-
 ## Target audience
+
 This blueprint is for:
+
 - **IT engineers**: Engineers wanting a quickstart to using NVIDIA NIMs in an agentic solution for a virtual assistant.
 
 ## Prerequisites
+
 - NVAIE developer licence
 - API keys for LLM model service(s).
   - Details can be found in this later section: [Obtain API keys](#obtain-api-keys)
 
 ## Hardware requirements
+
 Below are the hardware requirements for each component.
 The reference code in the solution (glue code) is referred to as as the "pipeline".
 
 The overall hardware requirements depend on the selected deployment. The NIM and hardware requirements only need to be met if you are self-hosting them. See [Using self-hosted NIMs](#using-self-hosted-nims)
 
 #### Minimum hardware requirements for self hosting all NIMs
+
 8XH100, 8XA100
 
 - **Pipeline operation**: 1x L40 GPU or similar recommended. It is needed for vectorstore milvus.
@@ -139,6 +145,7 @@ Enhance your current chatbot or virtual assistant by integrating advanced AI cap
 By integrating NVIDIA NIM and RAG, the system empowers developers to build customer support solutions that can provide faster and more accurate support while maintaining data privacy.
 
 ## How it works
+
 This blueprint uses a combination of retrieval-augmented generation and large language models to deliver an intelligent, context-aware virtual assistant for customer service. It connects to both structured data (like customer profiles and order histories) and unstructured data (like product manuals, FAQs) so that it can find and present relevant information in real time.
 
 The process works as follows:
@@ -148,9 +155,10 @@ The process works as follows:
 * Contextual Reasoning: A large language model uses these retrieved details to generate a helpful, coherent, and contextually appropriate response.
 * Additional Capabilities: Tools like sentiment analysis gauge the user’s satisfaction and conversation summaries help supervisors quickly review interactions.
 * Continuous Improvement: Feedback from interactions is fed back into the system, refining the model’s accuracy and efficiency over time.
-The end result is a virtual assistant that can understand complex questions, find the right information, and provide personalized, human-like responses.
+  The end result is a virtual assistant that can understand complex questions, find the right information, and provide personalized, human-like responses.
 
 ### Key components
+
 The detailed architecture consists of the following components:
 
 <p align="center">
@@ -178,7 +186,7 @@ To support operational requirements, the blueprint includes reference code for m
 - Storing conversation histories
 - Generating conversation summaries
 - Conducting sentiment analysis on customer interactions
-These features ensure that customer service teams can efficiently monitor and evaluate interactions for quality and performance.
+  These features ensure that customer service teams can efficiently monitor and evaluate interactions for quality and performance.
 
 **Data Flywheel**
 The blueprint includes a robust set of APIs, some of which are explicitly designed for feedback collection (identified by 'feedback' in their URLs). These APIs support the process of gathering data for continuous model improvement, forming a feedback loop or 'data flywheel.' While this process enables refinement of the model's performance over time to improve accuracy and cost-effectiveness, it is important to note that they do not directly perform the model fine-tuning itself.
@@ -187,15 +195,20 @@ The blueprint includes a robust set of APIs, some of which are explicitly design
 In summary, this NVIDIA NIM Agent Blueprint offers a comprehensive solution for building intelligent, generative AI-powered virtual assistants for customer service, leveraging structured and unstructured data to deliver personalized and efficient support. It includes all necessary tools and guidance to deploy, monitor, and continually improve the solution in real-world environments.
 
 ## Getting started
+
 There are two deployment methods
+
 1. Docker compose (for a single node deployment)
 2. Helm chart (to deploy on a kubernetes cluster)
 
 ### Docker compose
+
 #### System requirements
+
 Ubuntu 20.04 or 22.04 based machine, with sudo privileges
 
 #### Install software requirements
+
 - Install Docker Engine and Docker Compose. Refer to the instructions for [Ubuntu](https://docs.docker.com/engine/install/ubuntu/).
 - Ensure the Docker Compose plugin version is 2.29.1 or higher.
 - Run docker compose version to confirm.
@@ -206,9 +219,11 @@ Ubuntu 20.04 or 22.04 based machine, with sudo privileges
 By default the provided configurations use GPU optimized databases such as Milvus.
 
 #### Obtain API keys
+
 To run the pipeline you need to obtain API keys for the following APIs. These will be needed in a later step to [Set up the environment file](#set-up-the-environment-file).
 
 - **Required API Keys**: These APIs are required by the pipeline to execute LLM queries.
+
   - NVIDIA Inference Microservices (NIM)
     - There are two possible methods to generate an API key for NIM:
       - Sign in to the [NVIDIA Build](https://build.nvidia.com/explore/discover?signin=true) portal with your email.
@@ -246,6 +261,7 @@ EOF
 ```
 
 These variables need to be exported to the environment:
+
 ```bash
 export $(cat .env | xargs)
 ```
@@ -259,15 +275,18 @@ echo "${NGC_API_KEY}" | docker login nvcr.io -u '$oauthtoken' --password-stdin
 ```
 
 #### Build the Docker containers
+
 Refer to [Starting the Docker containers](#start-the-docker-containers), where the `docker compose -f deploy/compose/docker-compose.yaml up -d` step will build the containers the first time it is run.
 
 If any customizations are made to the source code, we will need to build the respective container from source using the following command:
+
 ```bash
 cd $REPO_ROOT
 
 # Build the containers
 docker compose -f deploy/compose/docker-compose.yaml build <container name>
 ```
+
 The container name can be determined from the docker-compose file.
 
 #### Start the Docker containers
@@ -276,6 +295,7 @@ There are two supported configurations for starting the Docker containers.
 The default passwords in [docker-compose.yaml](./deploy/compose/docker-compose.yaml) and the source code (e.g. default DB passwords) should be changed before deploying the blueprint.
 
 1. [**NVIDIA-hosted NIMs**](#using-nvidia-hosted-nims): The blueprint is run with all computation being performed by NIMs hosted in NVIDIA GPU Cloud. This is the default configuration and is **recommended** for most users getting started with the blueprint.
+
 ```bash
 cd $REPO_ROOT
 docker compose -f deploy/compose/docker-compose.yaml up -d
@@ -319,7 +339,9 @@ f2ce39cf3027   compose-redis-commander-1   Up 3 hours (healthy)
  docker compose -f deploy/compose/docker-compose.yaml --profile local-nim up -d
 
 ```
+
 On successful deployment, you should see these containers running. It may take approximately 10 minutes to download and deploy the models for the first time.
+
 ```bash
 docker ps --format "table {{.ID}}\t{{.Names}}\t{{.Status}}"
 CONTAINER ID   NAMES                                   STATUS
@@ -338,7 +360,9 @@ caa2e19b030b   pgadmin_container                       Up 3 hours
 5be79d19281e   compose-redis-1                         Up 3 hours
 6a5353baa2d1   compose-redis-commander-1               Up 3 hours (healthy)
 ```
+
 [!TIP]: To change the GPUs used for NIM deployment, set the following environment variables before triggering the docker compose:
+
 ```bash
 LLM_MS_GPU_ID: Update this to specify the LLM GPU IDs (e.g., 0,1,2,3).
 EMBEDDING_MS_GPU_ID: Change this to set the embedding GPU ID.
@@ -351,10 +375,12 @@ VECTORSTORE_GPU_DEVICE_ID : Modify to adjust the Milvus vector database GPU ID.
 
 Download the manuals into data/manuals_pdf folder
 **Run this script to download the manuals listed in the specified txt file**
+
 ```bash
 cd $REPO_ROOT
 ./data/download.sh ./data/list_manuals.txt
 ```
+
 **Install jupyterlab**
 
 ```bash
@@ -362,6 +388,7 @@ pip install jupyterlab
 ```
 
 **Use this command to run Jupyter Lab so that you can execute this IPython notebook**
+
 ```bash
 jupyter lab --allow-root --ip=0.0.0.0 --NotebookApp.token='' --port=8889
 ```
@@ -369,7 +396,8 @@ jupyter lab --allow-root --ip=0.0.0.0 --NotebookApp.token='' --port=8889
 **Execute the ingest_data.ipynb notebook**
 
 Follow the cells in the notebook ingest_data.ipynb to do the following
-- Unstructured Data (PDF) Ingestion to Milvus DB
+
+- Unstructured Data (PDF) Ingestion to Milvus DBme
 - Structured Data (CSV) Ingestion to Postgres DB
 
 #### Front End (UI)
@@ -398,11 +426,14 @@ The notebooks folder [api_usage.ipynb](./notebooks/api_usage.ipynb) illustrates 
 #### Stopping the services
 
 If you have deployed the default configuration (i.e. NVIDIA deployed NIMs), the command below suffices.
+
 ```bash
 cd $REPO_ROOT
 docker compose -f deploy/compose/docker-compose.yaml down
 ```
+
 If you have locally deployed NIMs, you would need an extra flag thus
+
 ```bash
 cd $REPO_ROOT
 docker compose -f deploy/compose/docker-compose.yaml --profile local-nim down
@@ -420,6 +451,7 @@ Here are some notes as you customize the blueprint
 ## Data flywheel
 
 It is anticipated that Generative AI applications typically begin with deploying the default/out of the box LLM models(NIMs) The blueprint enables the ability to collect feedback at various places in the solution. These include
+
 * user feedback for every answer generated
 * user feedback for the overall conversation
 * feedback for the generated summary
@@ -435,19 +467,19 @@ The feedback scores follow this convention
 Sample code for retrieving the feedback data is in the notebook included [here](./notebooks).
 
 ## Helm chart deployment
+
 #### Minimum hardware requirements
+
 The host need to have atleast `8xH100` or `8xA100` GPUs for deploying the chart including the 3 NVIDIA NIMs.
 
 #### Prerequisites
 
 - You have the NGC CLI available on your client machine.
-  You can download the CLI from <https://ngc.nvidia.com/setup/installers/cli>.
-
+  You can download the CLI from [https://ngc.nvidia.com/setup/installers/cli](https://ngc.nvidia.com/setup/installers/cli).
 - You have Kubernetes installed and running Ubuntu 22.04.
   Refer to the [Kubernetes documentation](https://kubernetes.io/docs/setup/) or
   the [NVIDIA Cloud Native Stack repository](https://github.com/NVIDIA/cloud-native-stack/)
   for more information.
-
 - You have a default storage class available in the cluster for PVC provisioning.
   One option is the local path provisioner by Rancher.
   Refer to the [installation](https://github.com/rancher/local-path-provisioner?tab=readme-ov-file#installation)
@@ -458,37 +490,43 @@ The host need to have atleast `8xH100` or `8xA100` GPUs for deploying the chart 
   kubectl get pods -n local-path-storage
   kubectl get storageclass
   ```
-
 - If the local path storage class is not set as default, it can be made default using the command below
+
   ```
   kubectl patch storageclass local-path -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
   ```
-
 - You have installed the NVIDIA GPU Operator following steps [here](https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/getting-started.html)
-
 - You have a `NGC_API_KEY`. Check the [Obtain API keys](#obtain-api-keys) section for steps to obtain this key.
 
 #### Initialize environment variables
+
 Export your NGC_API_KEY
+
 ```bash
 export NGC_API_KEY=<>
 ```
+
 #### Helm deployment
+
 Create a docker registry secret for the above NGC API Key.
+
 ```bash
 kubectl create secret docker-registry ngc-docker-reg-secret --docker-server=nvcr.io --docker-username='$oauthtoken' --docker-password=$NGC_API_KEY
 ```
 
 Create a generic secret for NGC_API_KEY
+
 ```bash
 kubectl create secret generic ngc-secret --from-literal=ngc-api-key=$NGC_API_KEY
 ```
 
 run the deploy.sh script
+
 ```bash
 cd deploy/helm/
 bash deploy.sh
 ```
+
 Upon a successfull deploymemt, all the following pods should be in a ready and running state.
 
 ```bash
@@ -514,14 +552,17 @@ aiva-aiva-ui-ff74b47d7-r27pb                                  1/1     Running   
 ```
 
 #### Interacting with UI service
+
 The UI service exposes a nodePort using which we can access the UI
 
 List the services
+
 ```bash
 kubectl get svc
 ```
 
 The output of the command should list out the following services
+
 ```
 NAME                                                              TYPE           EXTERNAL-IP   PORT(S)              AGE
 agent-services-agent-services-deployment-agent-service            ClusterIP      <none>        8081/TCP             31m
@@ -544,11 +585,12 @@ retriever-structured-structured-deployment-structured-service     ClusterIP     
 ```
 
 Look for the UI service `aiva-aiva-ui`, the port type is listed as NodePort.
-The NodePort is the one that follows the container port`3001:<nodePort>/TCP`
+The NodePort is the one that follows the container port `3001:<nodePort>/TCP`
 
 In this example case, the node port is listed as `32417`, hence the UI can be accessed at http://0.0.0.0:32417/
 
 ## Troubleshooting
+
 ### Container build issues
 
 When building containers for self-hosted NIMs, certain issues may occur. Below are common troubleshooting steps to help resolve them.
@@ -566,6 +608,7 @@ This error typically indicates that the container is attempting to access GPUs t
 #### Deploy.Resources.Reservations.devices error
 
 If you encounter an error resembling the following during the [container build process for self-hosted NIMs](#using-self-hosted-nims) process:
+
 ```
 1 error(s) decoding:
 
@@ -577,12 +620,15 @@ This is likely caused by an [outdated Docker Compose version](https://github.com
 #### Resetting the entire cache
 
 To reset the entire cache, you can run the following command:
+
 ```bash
 docker compose down -v
 ```
+
 This will delete all the volumes associated with the containers, including the cache.
 
 ### Vector databases
+
 We've integrated VDB and embedding creation directly into the pipeline with caching included for expediency. However, in a production environment, it's better to use a separately managed VDB service.
 
 NVIDIA offers optimized models and tools like NIMs ([build.nvidia.com/explore/retrieval](https://build.nvidia.com/explore/retrieval)) and cuVS ([github.com/rapidsai/cuvs](https://github.com/rapidsai/cuvs)).
@@ -596,11 +642,14 @@ If you run out of credits for the NVIDIA API Catalog, you will need to obtain mo
 If you encounter any "password authentication failed" issues with the structured retriever container, consider removing the volumes directory located at deploy/compose/volumes. Please note that in this case, you may need to reprocess the data ingestion.
 
 ## Known issues
+
 - The Blueprint responses can have significant latency when using [NVIDIA API Catalog cloud hosted models.](#option-1-deploy-with-nvidia-hosted-endpoints)
 
 ## Inviting the community to contribute
+
 We're posting these examples on GitHub to support the NVIDIA LLM community and facilitate feedback. We invite contributions! Open a GitHub issue or pull request! See contributing [guidelines here.](./CONTRIBUTING.md)
 
 ## License
+
 This NVIDIA NIM-AGENT BLUEPRINT is licensed under the [Apache License, Version 2.0.](./LICENSE.md)
 Use of the sample data provided as part of this blueprint is governed by [the NVIDIA asset license.](./data/LICENSE)

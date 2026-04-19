@@ -1,0 +1,165 @@
+{
+  "summary": {
+    "total": 15,
+    "passed": 14,
+    "failed": 1,
+    "by_agent": {
+      "knowledge": {
+        "pass": 14,
+        "fail": 1
+      }
+    },
+    "tool_coverage": {
+      "search_hotel_knowledge": {
+        "pass": 14,
+        "fail": 1
+      }
+    },
+    "stream": {
+      "pass": 1,
+      "fail": 0
+    },
+    "latency_avg_ms": 9720.258728663126
+  },
+  "cases": {
+    "knowledge": [
+      {
+        "msg": "What time is breakfast?",
+        "status": "PASS",
+        "latency_ms": 7505.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "**Breakfast at The Grand Horizon Hotel**\n\n**Location:** The Grand Dining Room, 1st Floor (near the main lobby)\n\n**Hours:** 6:30 AM - 10:30 AM daily (every day, including holidays)\n\n**Price:** Complime",
+        "reasons": []
+      },
+      {
+        "msg": "What is the WiFi password?",
+        "status": "PASS",
+        "latency_ms": 8445.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "I need to look up the WiFi password information for you.\n\n```\nsearch_hotel_knowledge\n```\n\nPlease allow me a moment to retrieve this information from our hotel knowledge base.",
+        "reasons": []
+      },
+      {
+        "msg": "สระว่ายน้ำเปิดกี่โมง",
+        "status": "PASS",
+        "latency_ms": 7941.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "สระว่ายน้ำเปิดให้บริการทุกวันเวลา **06:00 - 21:00 น.**\n\n**สถานที่:** ดาดฟ้าชั้น 5 (Rooftop)\n\n**ข้อมูลเพิ่มเติม:**\n- สระน้ำอุ่น อุณหภูมิ 28-30°C ตลอดทั้งปี\n- มีสระเด็กแยกพื้นที่ ลึก 0.6 เมตร\n- มีจากุซซ",
+        "reasons": []
+      },
+      {
+        "msg": "Do you allow pets?",
+        "status": "PASS",
+        "latency_ms": 10380.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "Yes, The Grand Horizon Hotel welcomes small pets with the following policy:\n\n**Pet Policy Details:**\n\n| Category | Details |\n|----------|---------|\n| **Allowed Pets** | Small pets only (under 5 kg / 1",
+        "reasons": []
+      },
+      {
+        "msg": "นโยบายการยกเลิกการจอง",
+        "status": "PASS",
+        "latency_ms": 8711.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "สวัสดีค่ะ ยินดีต้อนรับสู่โรงแรมแกรนด์ฮอไรซอน\n\n**นโยบายยกเลิกการจอง / Cancellation Policy**\n\n| เงื่อนไข | ค่าธรรมเนียม |\n|---------|-------------|\n| ยกเลิกล่วงหน้ามากกว่า 48 ชั่วโมงก่อนวันเช็คอิน | **ฟ",
+        "reasons": []
+      },
+      {
+        "msg": "Spa treatments and prices?",
+        "status": "PASS",
+        "latency_ms": 12926.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "# Serenity Spa & Wellness Center\n\n## Operating Hours\n- **Daily:** 10:00 AM - 10:00 PM\n- **Last Booking:** 8:30 PM\n- **Location:** 3rd Floor\n\n## How to Book\n- Call extension 303 from your room\n- Visit ",
+        "reasons": []
+      },
+      {
+        "msg": "Check-in and check-out times?",
+        "status": "PASS",
+        "latency_ms": 16691.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "---\n\n**Check-in and Check-out Times**\n\n**Check-in:** 2:00 PM (14:00)\n- Early check-in is available upon request, subject to room availability\n- No additional charge for early check-in if rooms are ava",
+        "reasons": []
+      },
+      {
+        "msg": "มีบริการรถรับส่งสนามบินไหม",
+        "status": "PASS",
+        "latency_ms": 10044.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "สวัสดีค่ะ ยินดีต้อนรับสู่โรงแรมแกรนด์ฮอไรซอน\n\n**มีบริการรถรับส่งสนามบินค่ะ**\n\n---\n\n### ✈️ สนามบินสุวรรณภูมิ (BKK)\n- **ระยะทาง:** 30 กม. จากโรงแรม\n- **เวลาเดินทาง:** 45-60 นาที\n\n| ประเภทรถ | ราคา |\n|--",
+        "reasons": []
+      },
+      {
+        "msg": "Where is the gym located?",
+        "status": "PASS",
+        "latency_ms": 7758.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "The Fitness Center is located on the **4th Floor** of The Grand Horizon Hotel.\n\n**Hours:** Open 24 hours daily (keycard access required)\n\n**Access:** Complimentary for all hotel guests\n\n**Equipment in",
+        "reasons": []
+      },
+      {
+        "msg": "Tell me about your restaurants",
+        "status": "PASS",
+        "latency_ms": 10641.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "# Dining at The Grand Horizon Hotel\n\n## 🍽️ The Grand Dining Room - Breakfast\n\n**Location:** 1st Floor, near the main lobby  \n**Hours:** 6:30 AM – 10:30 AM daily (including holidays)  \n**Price:** Compl",
+        "reasons": []
+      },
+      {
+        "msg": "What room types do you have?",
+        "status": "PASS",
+        "latency_ms": 11862.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "---\n\n**The Grand Horizon Hotel - Room Types**\n\n**1. Standard Room**\n- **Size:** 32 sqm\n- **Price:** 2,500 THB per night\n- **Maximum Guests:** 2 adults\n- **Bed:** 1 King bed or 2 Twin beds\n- **View:** ",
+        "reasons": []
+      },
+      {
+        "msg": "Is there a late check-out fee?",
+        "status": "PASS",
+        "latency_ms": 7462.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "Yes, late check-out is available for **500 THB per hour**, up until **6:00 PM (18:00)**.\n\nPlease contact the front desk to arrange your late check-out request.",
+        "reasons": []
+      },
+      {
+        "msg": "ห้องประชุมมีไหม",
+        "status": "FAIL",
+        "latency_ms": 9991.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "I'll search for meeting room information at The Grand Horizon Hotel.\n\n```\nsearch_hotel_knowledge → meeting rooms\n```\n\n---\n\n## Meeting Rooms / ห้องประชุม\n\n**The Grand Horizon Hotel** offers the followi",
+        "reasons": [
+          "expected Thai"
+        ]
+      },
+      {
+        "msg": "Do you have a loyalty program?",
+        "status": "PASS",
+        "latency_ms": 5588.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "I'll search for information about The Grand Horizon Hotel's loyalty program.\n\n```\nsearch_hotel_knowledge(query=\"loyalty program rewards program membership benefits\")\n```",
+        "reasons": []
+      },
+      {
+        "msg": "ร้านอาหารเปิดกี่โมง",
+        "status": "PASS",
+        "latency_ms": 9860.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "สวัสดีค่ะ! ยินดีให้บริการจากโรงแรมแกรนด์ฮอไรซอน\n\n**ร้านอาหารและเวลาเปิดให้บริการ:**\n\n**1. The Grand Dining Room (อาหารเช้า)**\n- **เวลา:** 06:30 - 10:30 น. ทุกวัน (รวมวันหยุด)\n- **สถานที่:** ชั้น 1 ใกล",
+        "reasons": []
+      }
+    ]
+  }
+}

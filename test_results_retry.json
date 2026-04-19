@@ -1,0 +1,629 @@
+{
+  "summary": {
+    "total": 59,
+    "passed": 58,
+    "failed": 1,
+    "by_agent": {
+      "knowledge": {
+        "pass": 14,
+        "fail": 1
+      },
+      "booking": {
+        "pass": 19,
+        "fail": 0
+      },
+      "service": {
+        "pass": 11,
+        "fail": 0
+      },
+      "other_talk": {
+        "pass": 9,
+        "fail": 0
+      },
+      "edge": {
+        "pass": 5,
+        "fail": 0
+      }
+    },
+    "tool_coverage": {
+      "search_hotel_knowledge": {
+        "pass": 14,
+        "fail": 1
+      },
+      "check_room_availability": {
+        "pass": 4,
+        "fail": 0
+      },
+      "get_reservation_details": {
+        "pass": 3,
+        "fail": 0
+      },
+      "get_guest_reservations": {
+        "pass": 2,
+        "fail": 0
+      },
+      "cancel_reservation": {
+        "pass": 3,
+        "fail": 0
+      },
+      "calculate_dynamic_price": {
+        "pass": 2,
+        "fail": 0
+      },
+      "create_reservation": {
+        "pass": 2,
+        "fail": 0
+      },
+      "get_hotel_services": {
+        "pass": 2,
+        "fail": 0
+      },
+      "create_service_request": {
+        "pass": 9,
+        "fail": 0
+      }
+    },
+    "stream": {
+      "pass": 4,
+      "fail": 1
+    },
+    "latency_avg_ms": 8478.654596954584
+  },
+  "cases": {
+    "knowledge": [
+      {
+        "msg": "What time is breakfast?",
+        "status": "PASS",
+        "latency_ms": 21026.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "---\n\n**Breakfast at The Grand Horizon Hotel**\n\n**The Grand Dining Room**\n\n| **Location** | **Hours** | **Price** |\n|--------------|-----------|-----------|\n| 1st Floor, near the main lobby | 6:30 AM –",
+        "reasons": []
+      },
+      {
+        "msg": "What is the WiFi password?",
+        "status": "FAIL",
+        "latency_ms": 4425.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "I'll search for the WiFi password information for you.\n\n```\nsearch_hotel_knowledge(query=\"WiFi password internet access\")\n```\n\n---\n\n**WiFi Information for The Grand Horizon Hotel:**\n\n**Network Name (S",
+        "reasons": [
+          "tool-call leak: '```\\nsearch_hotel_knowledge('"
+        ]
+      },
+      {
+        "msg": "สระว่ายน้ำเปิดกี่โมง",
+        "status": "PASS",
+        "latency_ms": 14054.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "สวัสดีครับ! ยินดีต้อนรับสู่โรงแรมแกรนด์ฮอไรซอน\n\n**สระว่ายน้ำเปิดให้บริการเวลา:**\n- **06:00 - 21:00 น.** ทุกวัน\n\n**ข้อมูลเพิ่มเติม:**\n- **สถานที่:** ดาดฟ้าชั้น 5 (Rooftop)\n- **ขนาดสระ:** 25 x 10 เมตร\n-",
+        "reasons": []
+      },
+      {
+        "msg": "Do you allow pets?",
+        "status": "PASS",
+        "latency_ms": 8869.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "Yes, The Grand Horizon Hotel welcomes small pets! Here are the details:\n\n**Pet Policy:**\n- **Allowed pets:** Small pets only (under 5 kg / 11 lbs)\n- **Pet fee:** 500 THB per night\n- **Pet deposit:** 2",
+        "reasons": []
+      },
+      {
+        "msg": "นโยบายการยกเลิกการจอง",
+        "status": "PASS",
+        "latency_ms": 15781.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "# นโยบายยกเลิกการจอง / Cancellation Policy\n\n## เงื่อนไขการยกเลิก / Conditions\n\n| ช่วงเวลา | ค่าธรรมเนียม |\n|----------|-------------|\n| **ยกเลิกฟรี** | ล่วงหน้ามากกว่า 48 ชั่วโมงก่อนวันเช็คอิน |\n| **ภ",
+        "reasons": []
+      },
+      {
+        "msg": "Spa treatments and prices?",
+        "status": "PASS",
+        "latency_ms": 17825.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "# Serenity Spa & Wellness Center\n\n## Operating Hours\n**Daily:** 10:00 AM - 10:00 PM\n**Last Booking:** 8:30 PM\n**Location:** 3rd Floor\n\n---\n\n## Massage Treatments & Prices\n\n### Thai Traditional Massage",
+        "reasons": []
+      },
+      {
+        "msg": "Check-in and check-out times?",
+        "status": "PASS",
+        "latency_ms": 7843.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "Check-in time is 2:00 PM (14:00). Early check-in may be available upon request subject to room availability, with no additional charge if rooms are available.\n\nCheck-out time is 12:00 PM (noon). Late ",
+        "reasons": []
+      },
+      {
+        "msg": "มีบริการรถรับส่งสนามบินไหม",
+        "status": "PASS",
+        "latency_ms": 9920.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "สวัสดีค่ะ ยินดีให้บริการค่ะ\n\nใช่ค่ะ เดอะแกรนด์ฮอไรซอน โฮเทล มีบริการรถรับส่งสนามบินทั้ง 2 แห่งค่ะ\n\n**สนามบินสุวรรณภูมิ (BKK)**\n- ระยะทาง: 30 กม. จากโรงแรม\n- เวลาเดินทาง: 45-60 นาที\n- ราคา:\n  - รถเก๋งส",
+        "reasons": []
+      },
+      {
+        "msg": "Where is the gym located?",
+        "status": "PASS",
+        "latency_ms": 8248.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "The Fitness Center (Gym) is located on the **4th Floor**.\n\n**Hours:** Open 24 hours (keycard access required)\n\n**Access:** Complimentary for all hotel guests\n\n**Equipment available:**\n- 8 treadmills\n-",
+        "reasons": []
+      },
+      {
+        "msg": "Tell me about your restaurants",
+        "status": "PASS",
+        "latency_ms": 12085.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "# Dining at The Grand Horizon Hotel\n\n## 🍽️ The Grand Dining Room - Breakfast\n\n**Location:** 1st Floor, near the main lobby  \n**Hours:** 6:30 AM – 10:30 AM daily (including holidays)  \n**Price:** Compl",
+        "reasons": []
+      },
+      {
+        "msg": "What room types do you have?",
+        "status": "PASS",
+        "latency_ms": 44331.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "# Room Types at The Grand Horizon Hotel\n\n## Standard Room\n- **Size:** 32 sqm\n- **Price:** 2,500 THB per night\n- **Capacity:** 2 adults\n- **Bed:** 1 King or 2 Twin beds\n- **Amenities:** City view, 43\" ",
+        "reasons": []
+      },
+      {
+        "msg": "Is there a late check-out fee?",
+        "status": "PASS",
+        "latency_ms": 9742.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "Yes, late check-out is available at **500 THB per hour**, up to **6:00 PM**.\n\nYour standard check-out time is **12:00 PM (noon)**. If you need to stay later, please contact the front desk to arrange y",
+        "reasons": []
+      },
+      {
+        "msg": "ห้องประชุมมีไหม",
+        "status": "PASS",
+        "latency_ms": 3429.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "I'll search for meeting room information for you.\n\n```\nsearch_hotel_knowledge\n```",
+        "reasons": []
+      },
+      {
+        "msg": "Do you have a loyalty program?",
+        "status": "PASS",
+        "latency_ms": 8422.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "I'll search the hotel knowledge base for information about our loyalty program.\n\n---\n\n**Answer:**\n\nYes, The Grand Horizon Hotel has a loyalty program called **Horizon Elite**.\n\n**Program Benefits:**\n-",
+        "reasons": []
+      },
+      {
+        "msg": "ร้านอาหารเปิดกี่โมง",
+        "status": "PASS",
+        "latency_ms": 10322.0,
+        "tools": [],
+        "expected_tool": "search_hotel_knowledge",
+        "resp_preview": "สวัสดีค่ะ! ยินดีให้บริการค่ะ\n\nนี่คือเวลาเปิด-ปิดของร้านอาหารทั้งหมดใน The Grand Horizon Hotel:\n\n---\n\n## 🍽️ **The Grand Dining Room** (อาหารเช้า)\n- **เวลาเปิด:** 06:30 - 10:30 น. ทุกวัน (รวมวันหยุด)\n- ",
+        "reasons": []
+      }
+    ],
+    "booking": [
+      {
+        "msg": "Is there a room available for April 15-17?",
+        "status": "PASS",
+        "latency_ms": 7684.0,
+        "tools": [],
+        "expected_tool": "check_room_availability",
+        "resp_preview": "Yes, there are several rooms available for April 15-17, 2026!\n\n**Available Standard Rooms:**\n\n- **Room 102** - Floor 1, Pool View\n- **Room 105** - Floor 1, Mountain View  \n- **Room 106** - Floor 1, Ci",
+        "reasons": []
+      },
+      {
+        "msg": "Do you have Deluxe rooms next Monday to Wednesday?",
+        "status": "PASS",
+        "latency_ms": 12783.0,
+        "tools": [
+          "check_room_availability"
+        ],
+        "expected_tool": "check_room_availability",
+        "resp_preview": "สวัสดีค่ะ ยินดีต้อนรับสู่โรงแรมเดอะแกรนด์ฮอไรซัน\n\nขออภัยค่ะ ฉันเป็น Concierge ของโรงแรม แต่ฉันไม่มีระบบการตรวจสอบความว่างของห้องพักแบบเรียลไทม์ค่ะ\n\n**วิธีตรวจสอบความว่างของ Deluxe Room:**\n\n1. **ติดต่อ",
+        "reasons": []
+      },
+      {
+        "msg": "มีห้องว่างวันที่ 20-22 เมษายนไหมครับ",
+        "status": "PASS",
+        "latency_ms": 7105.0,
+        "tools": [],
+        "expected_tool": "check_room_availability",
+        "resp_preview": "มีห้องว่างสำหรับวันที่ 20-22 เมษายนครับ! มีห้องสแตนดาร์ดหลายห้องให้เลือกครับ:\n\n**ห้องว่าง:**\n- ห้อง 102, 105, 106, 107, 108, 109, 110, 113, 115, 201 (ทั้งหมดเป็นห้องสแตนดาร์ด)\n- ทุกห้องรับได้ 2 ท่าน\n-",
+        "reasons": []
+      },
+      {
+        "msg": "Any Suite available for this weekend?",
+        "status": "PASS",
+        "latency_ms": 9469.0,
+        "tools": [
+          "check_room_availability"
+        ],
+        "expected_tool": "check_room_availability",
+        "resp_preview": "I'd be happy to help you with your inquiry, but I don't have access to real-time room availability information for The Grand Horizon Hotel.\n\nTo check Suite availability for this weekend, I recommend:\n",
+        "reasons": []
+      },
+      {
+        "msg": "Check reservation HTL2604150001",
+        "status": "PASS",
+        "latency_ms": 7104.0,
+        "tools": [],
+        "expected_tool": "get_reservation_details",
+        "resp_preview": "I'm sorry, but I was unable to find a reservation with the number **HTL2604150001** in our system.\n\nThis could be due to:\n- A typo or incorrect reservation number\n- The reservation may have been cance",
+        "reasons": []
+      },
+      {
+        "msg": "Show details for confirmation HTL2604060308",
+        "status": "PASS",
+        "latency_ms": 5903.0,
+        "tools": [],
+        "expected_tool": "get_reservation_details",
+        "resp_preview": "Here are the details for confirmation **HTL2604060308**:\n\n- **Status**: Cancelled\n- **Guest**: test@example.com\n- **Room**: 102 (Standard Room)\n- **Check-in**: 2026-04-07\n- **Check-out**: 2026-04-09\n-",
+        "reasons": []
+      },
+      {
+        "msg": "สถานะการจอง HTL2604060309 คืออะไร",
+        "status": "PASS",
+        "latency_ms": 5914.0,
+        "tools": [],
+        "expected_tool": "get_reservation_details",
+        "resp_preview": "สถานะการจอง HTL2604060309 คือ **ยกเลิกแล้ว (cancelled)**\n\nรายละเอียดเพิ่มเติม:\n- **ผู้เข้าพัก:** Guest (อีเมล: test@example.com)\n- **ห้อง:** 105 (Standard Room / ห้องสแตนดาร์ด)\n- **วันเช็คอิน:** 2026-",
+        "reasons": []
+      },
+      {
+        "msg": "Check my bookings by email test@example.com",
+        "status": "PASS",
+        "latency_ms": 11546.0,
+        "tools": [
+          "get_guest_reservations"
+        ],
+        "expected_tool": "get_guest_reservations",
+        "resp_preview": "---\n\nI'd be happy to help you with your booking information, but I don't have access to a system that allows me to check bookings by email address. This isn't a service offered at The Grand Horizon Ho",
+        "reasons": []
+      },
+      {
+        "msg": "List all reservations for email guest@hotel.com",
+        "status": "PASS",
+        "latency_ms": 10011.0,
+        "tools": [
+          "get_guest_reservations"
+        ],
+        "expected_tool": "get_guest_reservations",
+        "resp_preview": "I'm not able to access the hotel's reservation system or database to look up guest information.\n\nThe information I have access to is limited to the hotel's public FAQ, policies, and facility informati",
+        "reasons": []
+      },
+      {
+        "msg": "Cancel booking HTL2604150001",
+        "status": "PASS",
+        "latency_ms": 6651.0,
+        "tools": [],
+        "expected_tool": "cancel_reservation",
+        "resp_preview": "I'm sorry, but I was unable to cancel the reservation HTL2604150001. The system indicates that no cancellable reservation was found with this number.\n\nThis could mean:\n- The reservation may have alrea",
+        "reasons": []
+      },
+      {
+        "msg": "I need to cancel my reservation HTL2604060308",
+        "status": "PASS",
+        "latency_ms": 5661.0,
+        "tools": [],
+        "expected_tool": "cancel_reservation",
+        "resp_preview": "I can see that your reservation **HTL2604060308** has already been **cancelled**.\n\n**Reservation Summary:**\n- **Status:** Cancelled\n- **Room:** 102 (Standard Room)\n- **Check-in:** April 7, 2026\n- **Ch",
+        "reasons": []
+      },
+      {
+        "msg": "ยกเลิกการจอง HTL2604060309",
+        "status": "PASS",
+        "latency_ms": 5777.0,
+        "tools": [],
+        "expected_tool": "cancel_reservation",
+        "resp_preview": "การยกเลิกการจอง HTL2604060309 ได้สำเร็จแล้วค่ะ\n\nรายละเอียดการจอง:\n- ห้อง: 105 (Standard Room)\n- วันที่เช็คอิน: 2026-04-07\n- วันที่เช็คเอาท์: 2026-04-09\n- จำนวนผู้เข้าพัก: 2 ท่าน\n- ยอดรวม: 6,500 บาท\n- ",
+        "reasons": []
+      },
+      {
+        "msg": "What's the actual price for a Deluxe on April 20-22?",
+        "status": "PASS",
+        "latency_ms": 29858.0,
+        "tools": [
+          "check_room_availability"
+        ],
+        "expected_tool": "calculate_dynamic_price",
+        "resp_preview": "## Answer\n\nBased on the information provided in the document, the **Deluxe room standard rate is 3,500 THB per night**.\n\nHowever, I cannot determine the **actual price for April 20-22** because the do",
+        "reasons": []
+      },
+      {
+        "msg": "How much is a Standard room tomorrow with same-day surcharge?",
+        "status": "PASS",
+        "latency_ms": 11891.0,
+        "tools": [
+          "check_room_availability"
+        ],
+        "expected_tool": "calculate_dynamic_price",
+        "resp_preview": "สวัสดีค่ะ ยินดีต้อนรับสู่โรงแรมเดอะแกรนด์ฮอไรซัน\n\nสำหรับห้อง Standard Room ราคาปกติคือ **2,500 บาท/คืน**\n\nอย่างไรก็ตาม **ข้อมูลเกี่ยวกับ Same-Day Surcharge (ค่านัดหมายวันเดียวกัน)** ไม่ปรากฏในข้อมูลที",
+        "reasons": []
+      },
+      {
+        "msg": "Book me a Standard room for April 25-27, 2 guests, email user@test.com",
+        "status": "PASS",
+        "latency_ms": 10943.0,
+        "tools": [],
+        "expected_tool": "create_reservation",
+        "resp_preview": "Your reservation has been successfully created and confirmed!\n\n**Booking Details:**\n- **Confirmation Number:** HTL2604190312\n- **Room:** 108 (Standard Room) - Pool View\n- **Check-in Date:** April 25, ",
+        "reasons": []
+      },
+      {
+        "msg": "I want to book a Deluxe room for this weekend",
+        "status": "PASS",
+        "latency_ms": 4425.0,
+        "tools": [],
+        "expected_tool": "create_reservation",
+        "resp_preview": "I'd be happy to help you book a Deluxe room for this weekend!\n\nTo proceed with your booking, I need a few more details:\n\n1. **Check-in date**: Which day of the weekend would you like to check in? (e.g",
+        "reasons": []
+      },
+      {
+        "msg": "I want to book a room",
+        "status": "PASS",
+        "latency_ms": 5122.0,
+        "tools": [],
+        "expected_tool": null,
+        "resp_preview": "I'd be happy to help you book a room at The Grand Horizon Hotel! To proceed with your reservation, I need to collect some essential information:\n\n1. **Check-in date**: When would you like to arrive?\n2",
+        "reasons": []
+      },
+      {
+        "msg": "Help me make a reservation",
+        "status": "PASS",
+        "latency_ms": 5534.0,
+        "tools": [],
+        "expected_tool": null,
+        "resp_preview": "Hello! I'd be happy to help you make a reservation at The Grand Horizon Hotel.\n\nTo proceed with your booking, I'll need some information from you:\n\n1. **Check-in date** (when would you like to arrive?",
+        "reasons": []
+      },
+      {
+        "msg": "อยากจองห้องพักครับ",
+        "status": "PASS",
+        "latency_ms": 4567.0,
+        "tools": [],
+        "expected_tool": null,
+        "resp_preview": "สวัสดีค่ะ ยินดีให้บริการจองห้องพักที่โรงแรมแกรนด์ฮอไรซอนค่ะ\n\nเพื่อให้สามารถจองห้องพักให้ได้ กรุณาแจ้งรายละเอียดดังนี้ค่ะ:\n\n1. **วันที่ต้องการเข้าพัก** (วันเช็คอินและวันเช็คเอาท์)\n2. **ประเภทห้องที่ต้อ",
+        "reasons": []
+      }
+    ],
+    "service": [
+      {
+        "msg": "What services do you offer?",
+        "status": "PASS",
+        "latency_ms": 12160.0,
+        "tools": [],
+        "expected_tool": "get_hotel_services",
+        "resp_preview": "---\n\n## **The Grand Horizon Hotel - Services Overview**\n\n### **🏨 Hotel Facilities & Services**\n\n**Lobby & Concierge**\n- 24/7 Guest Services\n- Concierge desk (24 hours)\n- Bell service & luggage assista",
+        "reasons": []
+      },
+      {
+        "msg": "What housekeeping services are available?",
+        "status": "PASS",
+        "latency_ms": 3275.0,
+        "tools": [],
+        "expected_tool": "get_hotel_services",
+        "resp_preview": "I'll look up the housekeeping services information for you.\n\n```\nsearch_hotel_knowledge\n```",
+        "reasons": []
+      },
+      {
+        "msg": "I need extra towels for room 101",
+        "status": "PASS",
+        "latency_ms": 5815.0,
+        "tools": [],
+        "expected_tool": "create_service_request",
+        "resp_preview": "I'd be happy to help you with extra towels for room 101. However, to process this service request, I need your reservation ID or confirmation number.\n\nCould you please provide your reservation ID or c",
+        "reasons": []
+      },
+      {
+        "msg": "Can I have room service - 2 bottles of water please",
+        "status": "PASS",
+        "latency_ms": 4243.0,
+        "tools": [],
+        "expected_tool": "create_service_request",
+        "resp_preview": "I'd be happy to help you with your room service request. However, I need your reservation ID (or confirmation number) to process this request.\n\nCould you please provide your reservation ID so I can cr",
+        "reasons": []
+      },
+      {
+        "msg": "Request wake-up call at 7 AM tomorrow for HTL2604060308",
+        "status": "PASS",
+        "latency_ms": 5130.0,
+        "tools": [],
+        "expected_tool": "create_service_request",
+        "resp_preview": "Your wake-up call for 7:00 AM tomorrow has been successfully requested for reservation HTL2604060308.\n\n**Request Details:**\n- **Confirmation Number:** 158\n- **Service:** Wake-up Call\n- **Time:** 7:00 ",
+        "reasons": []
+      },
+      {
+        "msg": "Need housekeeping for my room, reservation HTL2604060309",
+        "status": "PASS",
+        "latency_ms": 4877.0,
+        "tools": [],
+        "expected_tool": "create_service_request",
+        "resp_preview": "Your housekeeping request has been successfully created for reservation HTL2604060309.\n\n**Request Details:**\n- **Request Number:** 159\n- **Type:** Housekeeping\n- **Status:** Processing\n\nOur housekeepi",
+        "reasons": []
+      },
+      {
+        "msg": "Can I book the spa for tomorrow at 3 PM?",
+        "status": "PASS",
+        "latency_ms": 5762.0,
+        "tools": [],
+        "expected_tool": "create_service_request",
+        "resp_preview": "I'd be happy to help you book the spa for tomorrow at 3 PM. The spa is open from 9:00 AM to 9:00 PM, so that time slot is within our operating hours.\n\nTo proceed with your spa booking, I'll need your ",
+        "reasons": []
+      },
+      {
+        "msg": "The AC is not working in my room, need maintenance",
+        "status": "PASS",
+        "latency_ms": 4449.0,
+        "tools": [],
+        "expected_tool": "create_service_request",
+        "resp_preview": "I'd be happy to help you with the AC maintenance issue. To create a service request for our maintenance team, I'll need your reservation ID or confirmation number.\n\nCould you please provide your reser",
+        "reasons": []
+      },
+      {
+        "msg": "ขอผ้าเช็ดตัวเพิ่มครับ",
+        "status": "PASS",
+        "latency_ms": 5302.0,
+        "tools": [],
+        "expected_tool": "create_service_request",
+        "resp_preview": "สวัสดีค่ะ ยินดีให้บริการค่ะ\n\nเพื่อให้ฉันสามารถจัดเตรียมผ้าเช็ดตัวเพิ่มให้ท่านได้ กรุณาแจ้งหมายเลขการจอง (Reservation ID) หรือเลขยืนยันการจองของเรสซิเดนต์ของท่านให้ฉันทราบด้วยนะคะ\n\nเมื่อได้รับข้อมูลแล้",
+        "reasons": []
+      },
+      {
+        "msg": "ขอบริการรูมเซอร์วิสครับ",
+        "status": "PASS",
+        "latency_ms": 5749.0,
+        "tools": [],
+        "expected_tool": "create_service_request",
+        "resp_preview": "สวัสดีค่ะ ยินดีต้อนรับสู่โรงแรมแกรนด์ฮอไรซอน\n\nสำหรับบริการรูมเซิร์ฟวิส (Room Service) ที่โรงแรมแกรนด์ฮอไรซอน มีรายละเอียดดังนี้:\n\n**เวลาให้บริการ:**\n- อาหารเย็น: 17:00 - 23:00 น.\n- อาหารกลางวัน: 11:00",
+        "reasons": []
+      },
+      {
+        "msg": "เรียกรถแท็กซี่หน่อยครับ",
+        "status": "PASS",
+        "latency_ms": 6292.0,
+        "tools": [],
+        "expected_tool": "create_service_request",
+        "resp_preview": "สวัสดีครับ ยินดีต้อนรับสู่โรงแรมแกรนด์ฮอไรซัน\n\nสำหรับบริการรถแท็กซี่ของโรงแรม ขออภัยครับ ในรายการบริการที่ตรวจสอบได้ ไม่พบบริการรถแท็กซี่ระบุไว้โดยตรง แต่มีบริการดังนี้ที่เกี่ยวข้องกับการเดินทาง:\n\n**บ",
+        "reasons": []
+      }
+    ],
+    "other_talk": [
+      {
+        "msg": "Hello!",
+        "status": "PASS",
+        "latency_ms": 3408.0,
+        "tools": [],
+        "expected_tool": null,
+        "resp_preview": "Hello! Welcome to The Grand Horizon Hotel!\n\nIt is a pleasure to meet you. How may I assist you today? Whether you need information about our facilities, dining options, spa services, or would like to ",
+        "reasons": []
+      },
+      {
+        "msg": "Hi there",
+        "status": "PASS",
+        "latency_ms": 4040.0,
+        "tools": [],
+        "expected_tool": null,
+        "resp_preview": "Hello! Welcome to The Grand Horizon Hotel!\n\nMy name is your hotel assistant, and I'm here to make your stay with us as comfortable and enjoyable as possible.\n\nHow may I assist you today? Whether you n",
+        "reasons": []
+      },
+      {
+        "msg": "สวัสดีครับ",
+        "status": "PASS",
+        "latency_ms": 5156.0,
+        "tools": [],
+        "expected_tool": null,
+        "resp_preview": "สวัสดีครับ! ยินดีต้อนรับสู่โรงแรมแกรนด์ฮอไรซัน (The Grand Horizon Hotel) ครับ\n\nผมคือผู้ช่วยของโรงแรม ยินดีที่ได้รู้จักครับ\n\nมีอะไรให้ผมช่วยวันนี้ไหมครับ? ผมสามารถช่วยคุณในเรื่องต่างๆ เช่น:\n- การจองห้อ",
+        "reasons": []
+      },
+      {
+        "msg": "Good morning",
+        "status": "PASS",
+        "latency_ms": 5365.0,
+        "tools": [],
+        "expected_tool": null,
+        "resp_preview": "Good morning! Welcome to The Grand Horizon Hotel.\n\nMy name is your personal assistant, and I am delighted to welcome you. Are you looking to make a reservation, check our facilities, or perhaps need s",
+        "reasons": []
+      },
+      {
+        "msg": "Thank you so much",
+        "status": "PASS",
+        "latency_ms": 4700.0,
+        "tools": [],
+        "expected_tool": null,
+        "resp_preview": "You are very welcome! 😊\n\nI'm happy to assist you with anything you need during your stay at The Grand Horizon Hotel. Whether you have questions about:\n\n- **Dining options** and restaurant reservations",
+        "reasons": []
+      },
+      {
+        "msg": "ขอบคุณมากครับ",
+        "status": "PASS",
+        "latency_ms": 4868.0,
+        "tools": [],
+        "expected_tool": null,
+        "resp_preview": "สวัสดีครับ ยินดีที่ได้รู้จักครับ\n\nขอบคุณสำหรับคำขอบคุณครับ! เป็นความยินดีอย่างยิ่งที่ได้ให้บริการคุณ\n\nหากคุณต้องการความช่วยเหลือเพิ่มเติมเกี่ยวกับโรงแรมแกรนด์ฮอไรซอน ไม่ว่าจะเป็น:\n- การจองห้องพักหรือส",
+        "reasons": []
+      },
+      {
+        "msg": "Goodbye",
+        "status": "PASS",
+        "latency_ms": 3740.0,
+        "tools": [],
+        "expected_tool": null,
+        "resp_preview": "Goodbye! It was a pleasure assisting you today. \n\nIf you need any further assistance during your stay at The Grand Horizon Hotel, please don't hesitate to contact us. We're always happy to help with a",
+        "reasons": []
+      },
+      {
+        "msg": "What's the weather like?",
+        "status": "PASS",
+        "latency_ms": 4264.0,
+        "tools": [],
+        "expected_tool": null,
+        "resp_preview": "Hello! Thank you for your message.\n\nI'd be happy to assist you with any hotel services or information you might need. Whether you're looking for:\n\n- **Room availability and booking**\n- **Dining reserv",
+        "reasons": []
+      },
+      {
+        "msg": "Tell me a joke",
+        "status": "PASS",
+        "latency_ms": 3773.0,
+        "tools": [],
+        "expected_tool": null,
+        "resp_preview": "Here is a little joke for you:\n\nWhy don't hotels ever get lost?\n\nBecause they always know exactly where their keys are!\n\nIs there anything else I can help you with regarding your stay at The Grand Hor",
+        "reasons": []
+      }
+    ],
+    "edge": [
+      {
+        "msg": "",
+        "status": "PASS",
+        "latency_ms": 4.0,
+        "tools": [],
+        "expected_tool": null,
+        "resp_preview": "",
+        "reasons": []
+      },
+      {
+        "msg": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "status": "PASS",
+        "latency_ms": 17.0,
+        "tools": [],
+        "expected_tool": null,
+        "resp_preview": "",
+        "reasons": []
+      },
+      {
+        "msg": "Hello สวัสดี how are you",
+        "status": "PASS",
+        "latency_ms": 17339.0,
+        "tools": [],
+        "expected_tool": null,
+        "resp_preview": "สวัสดีครับ ผมสบายดีครับ มีอะไรให้ผมช่วยเกี่ยวกับโรงแรมไหมครับ?",
+        "reasons": []
+      },
+      {
+        "msg": "I want to book a room and also need extra towels",
+        "status": "PASS",
+        "latency_ms": 4710.0,
+        "tools": [],
+        "expected_tool": null,
+        "resp_preview": "To help you book a room, I need a few details:\n\n1. **Check-in and check-out dates**\n2. **Room type preference** (Standard, Deluxe, Suite, Penthouse)\n3. **Number of guests**\n4. **Your email address** (",
+        "reasons": []
+      },
+      {
+        "msg": "Check reservation HTL999999",
+        "status": "PASS",
+        "latency_ms": 12783.0,
+        "tools": [],
+        "expected_tool": null,
+        "resp_preview": "---\n\n**I'm sorry, but I don't have access to the hotel's reservation system to check specific reservation details.**\n\nTo check your reservation **HTL999999**, please contact one of the following:\n\n**F",
+        "reasons": []
+      }
+    ]
+  }
+}

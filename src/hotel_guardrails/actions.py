@@ -1,20 +1,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2024 Hotel AI Operations Assistant
 # SPDX-License-Identifier: Apache-2.0
 """
-NeMo Guardrails Custom Actions
-
-Wraps existing hotel_tools.py and RAG chain for NeMo integration.
-All actions are async and return ActionResult objects.
-
-Usage:
-    # These actions are registered with NeMo Guardrails in server.py
-    # and invoked via Colang flows in rails.co
+Hotel AI Actions — RAG search, booking tools, safety checks.
 """
 import logging
 from typing import Optional
-
-from nemoguardrails.actions import action
-from nemoguardrails.actions.actions import ActionResult
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +31,8 @@ def get_retriever():
 # =============================================================================
 
 
-@action(name="search_hotel_knowledge")
-async def search_hotel_knowledge(query: str) -> ActionResult:
+
+async def search_hotel_knowledge(query: str) -> dict:
     """
     Search hotel knowledge base using RAG.
 
@@ -52,7 +42,7 @@ async def search_hotel_knowledge(query: str) -> ActionResult:
         query: Search query in Thai or English
 
     Returns:
-        ActionResult with formatted knowledge content
+        dict with formatted knowledge content
     """
     try:
         retriever = get_retriever()
@@ -60,7 +50,7 @@ async def search_hotel_knowledge(query: str) -> ActionResult:
 
         if not results:
             logger.info(f"No results found for query: {query[:50]}...")
-            return ActionResult(
+            return dict(
                 return_value="ขออภัยค่ะ ไม่พบข้อมูลที่ต้องการ / Sorry, I couldn't find that information."
             )
 
@@ -68,11 +58,11 @@ async def search_hotel_knowledge(query: str) -> ActionResult:
         content = "\n\n".join([r["content"] for r in results])
         logger.info(f"RAG returned {len(results)} results for: {query[:50]}...")
 
-        return ActionResult(return_value=content)
+        return dict(return_value=content)
 
     except Exception as e:
         logger.error(f"RAG search failed: {e}")
-        return ActionResult(
+        return dict(
             return_value="ขออภัยค่ะ เกิดข้อผิดพลาดในการค้นหา / Sorry, an error occurred during search."
         )
 
@@ -123,12 +113,12 @@ async def search_hotel_knowledge_with_sources(query: str) -> tuple:
 # =============================================================================
 
 
-@action(name="check_room_availability")
+
 async def check_room_availability(
     check_in: str,
     check_out: str,
     room_type: Optional[str] = None,
-) -> ActionResult:
+) -> dict:
     """
     Check available rooms for specified dates.
 
@@ -138,7 +128,7 @@ async def check_room_availability(
         room_type: Optional room type filter
 
     Returns:
-        ActionResult with availability information
+        dict with availability information
     """
     try:
         from src.agent.hotel_tools import check_room_availability as _check_availability
@@ -150,23 +140,22 @@ async def check_room_availability(
         })
 
         logger.info(f"Availability check: {check_in} to {check_out}, type={room_type}")
-        return ActionResult(return_value=result)
+        return dict(return_value=result)
 
     except Exception as e:
         logger.error(f"Availability check failed: {e}")
-        return ActionResult(
+        return dict(
             return_value=f"ขออภัยค่ะ ไม่สามารถตรวจสอบห้องว่างได้ / Error checking availability: {e}"
         )
 
 
-@action(name="create_reservation")
 async def create_reservation(
     guest_id: str,
     room_id: str,
     check_in: str,
     check_out: str,
     special_requests: Optional[str] = None,
-) -> ActionResult:
+) -> dict:
     """
     Create a new room reservation.
 
@@ -178,7 +167,7 @@ async def create_reservation(
         special_requests: Optional special requests
 
     Returns:
-        ActionResult with reservation confirmation
+        dict with reservation confirmation
     """
     try:
         from src.agent.hotel_tools import create_reservation as _create_reservation
@@ -192,17 +181,16 @@ async def create_reservation(
         })
 
         logger.info(f"Reservation created: guest={guest_id}, room={room_id}")
-        return ActionResult(return_value=result)
+        return dict(return_value=result)
 
     except Exception as e:
         logger.error(f"Reservation creation failed: {e}")
-        return ActionResult(
+        return dict(
             return_value=f"ขออภัยค่ะ ไม่สามารถจองห้องได้ / Error creating reservation: {e}"
         )
 
 
-@action(name="confirm_reservation")
-async def confirm_reservation(reservation_id: str) -> ActionResult:
+async def confirm_reservation(reservation_id: str) -> dict:
     """
     Confirm a pending reservation.
 
@@ -210,7 +198,7 @@ async def confirm_reservation(reservation_id: str) -> ActionResult:
         reservation_id: Reservation to confirm
 
     Returns:
-        ActionResult with confirmation status
+        dict with confirmation status
     """
     try:
         from src.agent.hotel_tools import confirm_reservation as _confirm_reservation
@@ -218,20 +206,19 @@ async def confirm_reservation(reservation_id: str) -> ActionResult:
         result = _confirm_reservation.invoke({"reservation_id": reservation_id})
 
         logger.info(f"Reservation confirmed: {reservation_id}")
-        return ActionResult(return_value=result)
+        return dict(return_value=result)
 
     except Exception as e:
         logger.error(f"Reservation confirmation failed: {e}")
-        return ActionResult(
+        return dict(
             return_value=f"ขออภัยค่ะ ไม่สามารถยืนยันการจองได้ / Error confirming reservation: {e}"
         )
 
 
-@action(name="cancel_reservation")
 async def cancel_reservation(
     reservation_id: str,
     reason: Optional[str] = None,
-) -> ActionResult:
+) -> dict:
     """
     Cancel an existing reservation.
 
@@ -240,7 +227,7 @@ async def cancel_reservation(
         reason: Optional cancellation reason
 
     Returns:
-        ActionResult with cancellation confirmation
+        dict with cancellation confirmation
     """
     try:
         from src.agent.hotel_tools import cancel_reservation as _cancel_reservation
@@ -251,17 +238,16 @@ async def cancel_reservation(
         })
 
         logger.info(f"Reservation cancelled: {reservation_id}")
-        return ActionResult(return_value=result)
+        return dict(return_value=result)
 
     except Exception as e:
         logger.error(f"Reservation cancellation failed: {e}")
-        return ActionResult(
+        return dict(
             return_value=f"ขออภัยค่ะ ไม่สามารถยกเลิกการจองได้ / Error cancelling reservation: {e}"
         )
 
 
-@action(name="get_reservation_details")
-async def get_reservation_details(reservation_id: str) -> ActionResult:
+async def get_reservation_details(reservation_id: str) -> dict:
     """
     Get details of a specific reservation.
 
@@ -269,7 +255,7 @@ async def get_reservation_details(reservation_id: str) -> ActionResult:
         reservation_id: Reservation to retrieve
 
     Returns:
-        ActionResult with reservation details
+        dict with reservation details
     """
     try:
         from src.agent.hotel_tools import get_reservation_details as _get_details
@@ -277,11 +263,11 @@ async def get_reservation_details(reservation_id: str) -> ActionResult:
         result = _get_details.invoke({"reservation_id": reservation_id})
 
         logger.info(f"Retrieved reservation details: {reservation_id}")
-        return ActionResult(return_value=result)
+        return dict(return_value=result)
 
     except Exception as e:
         logger.error(f"Failed to get reservation details: {e}")
-        return ActionResult(
+        return dict(
             return_value=f"ขออภัยค่ะ ไม่พบข้อมูลการจอง / Error getting reservation: {e}"
         )
 
@@ -291,8 +277,7 @@ async def get_reservation_details(reservation_id: str) -> ActionResult:
 # =============================================================================
 
 
-@action(name="check_input_safety")
-async def check_input_safety(user_message: Optional[str] = None) -> ActionResult:
+async def check_input_safety(user_message: Optional[str] = None) -> dict:
     """
     Check user input for inappropriate or harmful content.
 
@@ -300,11 +285,11 @@ async def check_input_safety(user_message: Optional[str] = None) -> ActionResult
         user_message: The user's message to check
 
     Returns:
-        ActionResult with boolean (True = safe, False = blocked)
+        dict with boolean (True = safe, False = blocked)
     """
     # Handle None or empty message
     if not user_message:
-        return ActionResult(return_value=True)
+        return dict(return_value=True)
 
     # Blocked patterns for security
     blocked_patterns = [
@@ -326,13 +311,12 @@ async def check_input_safety(user_message: Optional[str] = None) -> ActionResult
     for pattern in blocked_patterns:
         if pattern in message_lower:
             logger.warning(f"Blocked input containing: {pattern}")
-            return ActionResult(return_value=False)
+            return dict(return_value=False)
 
-    return ActionResult(return_value=True)
+    return dict(return_value=True)
 
 
-@action(name="check_output_safety")
-async def check_output_safety(bot_message: Optional[str] = None) -> ActionResult:
+async def check_output_safety(bot_message: Optional[str] = None) -> dict:
     """
     Check bot output for sensitive data leaks.
 
@@ -340,11 +324,11 @@ async def check_output_safety(bot_message: Optional[str] = None) -> ActionResult
         bot_message: The bot's message to check
 
     Returns:
-        ActionResult with boolean (True = safe, False = blocked)
+        dict with boolean (True = safe, False = blocked)
     """
     # Handle None or empty message
     if not bot_message:
-        return ActionResult(return_value=True)
+        return dict(return_value=True)
 
     # Sensitive patterns that should not appear in output
     sensitive_patterns = [
@@ -364,9 +348,9 @@ async def check_output_safety(bot_message: Optional[str] = None) -> ActionResult
     for pattern in sensitive_patterns:
         if pattern in message_lower:
             logger.warning(f"Blocked output containing: {pattern}")
-            return ActionResult(return_value=False)
+            return dict(return_value=False)
 
-    return ActionResult(return_value=True)
+    return dict(return_value=True)
 
 
 # =============================================================================
@@ -374,8 +358,7 @@ async def check_output_safety(bot_message: Optional[str] = None) -> ActionResult
 # =============================================================================
 
 
-@action(name="detect_language")
-async def detect_language(text: str) -> ActionResult:
+async def detect_language(text: str) -> dict:
     """
     Detect if text is Thai or English.
 
@@ -383,22 +366,21 @@ async def detect_language(text: str) -> ActionResult:
         text: Text to analyze
 
     Returns:
-        ActionResult with language code ('th' or 'en')
+        dict with language code ('th' or 'en')
     """
     # Simple Thai character detection
     thai_chars = set("กขฃคฅฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรฤลฦวศษสหฬอฮ")
     text_chars = set(text)
 
     if thai_chars & text_chars:
-        return ActionResult(return_value="th")
-    return ActionResult(return_value="en")
+        return dict(return_value="th")
+    return dict(return_value="en")
 
 
-@action(name="format_bilingual_response")
 async def format_bilingual_response(
     thai_text: str,
     english_text: str,
-) -> ActionResult:
+) -> dict:
     """
     Format a bilingual response.
 
@@ -407,7 +389,7 @@ async def format_bilingual_response(
         english_text: English version of the response
 
     Returns:
-        ActionResult with formatted bilingual response
+        dict with formatted bilingual response
     """
     formatted = f"{thai_text} / {english_text}"
-    return ActionResult(return_value=formatted)
+    return dict(return_value=formatted)

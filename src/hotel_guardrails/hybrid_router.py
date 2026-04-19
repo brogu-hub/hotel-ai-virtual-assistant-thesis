@@ -5,7 +5,7 @@ Safety Router - Routes ALL requests to LangGraph with safety filtering.
 
 SIMPLIFIED ARCHITECTURE:
 - LangGraph Agent handles ALL query processing (simple and complex)
-- NeMo Guardrails provides ONLY safety checks (blocked patterns)
+- Regex-based safety filter blocks harmful patterns
 - Complexity classification is kept for logging/metrics only
 
 Benefits:
@@ -42,8 +42,6 @@ class RoutingPath(Enum):
 
     LANGGRAPH_AGENT = "langgraph"  # Primary path - ALL queries
     BLOCKED = "blocked"  # Safety blocked
-    # Keep for backwards compatibility (deprecated, routes to LangGraph)
-    NEMO_GUARDRAILS = "nemo"
 
 
 class ComplexityLevel(Enum):

@@ -36,6 +36,7 @@ Architecture:
 """
 
 import os
+import re as _re
 import yaml
 import logging
 from typing import Annotated, TypedDict, Dict, List, Literal, Optional, Any, Callable
@@ -163,7 +164,10 @@ def get_llm(temperature: float = 0.3, max_tokens: int = 2048, streaming: bool = 
     tokens = max_tokens
 
     if runtime_config.backend == LLMBackend.OLLAMA:
-        # Qwen3.5 on Ollama has thinking built-in (outputs <think> tags automatically)
+        # Qwen3.5 on Ollama splits output into reasoning/content fields.
+        # With think=True, streaming chunks have content="" (tokens go to
+        # delta.reasoning which langchain doesn't expose). Disable thinking
+        # so all tokens go to content for proper SSE streaming.
         logger.info(f"Using Ollama LLM: {runtime_config.ollama_model} (thinking={runtime_config.thinking})")
         return ChatOpenAI(
             model=runtime_config.ollama_model,
@@ -443,7 +447,7 @@ def route_primary_assistant(state: HotelState) -> Literal[
         elif tool_name == ToHotelKnowledge.__name__:
             return "enter_knowledge"
         elif tool_name == HandleOtherTalk.__name__:
-            return "other_talk"
+            return "enter_other"
 
     return END
 
@@ -486,16 +490,21 @@ You are the primary router. Route every guest message to exactly ONE specialist:
    Examples: "Is there a room available?", "I want to cancel my booking", "Check me in", "ยกเลิกการจอง"
 2. **ToHotelService** — room service, extra amenities, housekeeping, maintenance, transportation, wake-up
    Examples: "I need extra towels", "Can I get room service?", "จองสปา", "ขอหมอนเพิ่ม"
-3. **ToHotelKnowledge** — hotel info, facilities, dining, WiFi, policies, hours, directions
-   Examples: "What time is breakfast?", "Where is the gym?", "รหัส WiFi", "pet policy"
-4. **HandleOtherTalk** — greetings, thanks, goodbye, off-topic, unclear messages
-   Examples: "Hello", "Thank you", "สวัสดี", "ขอบคุณ"
+3. **ToHotelKnowledge** — hotel info, facilities, dining, WiFi, policies, hours, directions, amenities
+   Examples: "What time is breakfast?", "Where is the gym?", "รหัส WiFi", "pet policy",
+   "ห้องประชุมมีไหม", "สระว่ายน้ำเปิดกี่โมง", "ร้านอาหารเปิดกี่โมง", "มี X ไหม",
+   "สปามีบริการอะไร", "นโยบายยกเลิก", "Do you have meeting rooms?"
+4. **HandleOtherTalk** — ONLY pure greetings/thanks/goodbye with NO question attached
+   Examples: "Hello", "Thank you", "สวัสดี", "ขอบคุณ", "Goodbye", "Hi"
 
 IMPORTANT routing rules:
 - "cancel my booking" / "ยกเลิกการจอง" → ToHotelBooking (NOT HandleOtherTalk)
 - "what services do you have?" → ToHotelKnowledge (general info, NOT ToHotelService)
 - "I need a spa booking" → ToHotelService (specific service request)
+- Any question about hotel facilities (rooms, spa, dining, pool, etc.) → ToHotelKnowledge
+- Any Thai question ending with "มีไหม" / "กี่โมง" / "ที่ไหน" / "อย่างไร" → ToHotelKnowledge
 - When in doubt between Knowledge and Service, prefer ToHotelKnowledge
+- HandleOtherTalk ONLY for greetings without questions (Hello, Hi, Thanks, Bye)
 
 Always route. Never answer directly without routing first.
 """
@@ -548,6 +557,7 @@ Always route. Never answer directly without routing first.
     builder.add_node("enter_booking", create_entry_node("Booking Assistant"))
     builder.add_node("enter_service", create_entry_node("Service Assistant"))
     builder.add_node("enter_knowledge", create_entry_node("Knowledge Assistant"))
+    builder.add_node("enter_other", create_entry_node("General Assistant"))
 
     # Sub-agent nodes
     builder.add_node("hotel_booking", handle_booking)
@@ -570,7 +580,7 @@ Always route. Never answer directly without routing first.
             "enter_booking": "enter_booking",
             "enter_service": "enter_service",
             "enter_knowledge": "enter_knowledge",
-            "other_talk": "other_talk",
+            "enter_other": "enter_other",
             END: END,
         }
     )
@@ -579,6 +589,7 @@ Always route. Never answer directly without routing first.
     builder.add_edge("enter_booking", "hotel_booking")
     builder.add_edge("enter_service", "hotel_service")
     builder.add_edge("enter_knowledge", "hotel_knowledge")
+    builder.add_edge("enter_other", "other_talk")
 
     # Sub-agent routing
     builder.add_conditional_edges("hotel_booking", route_booking)
@@ -690,6 +701,39 @@ def get_hotel_graph(checkpointer=None):
 
 
 # =============================================================================
+# Response Quality Checks
+# =============================================================================
+
+# Patterns indicating the LLM leaked tool-call syntax into the response body
+# (9B model sometimes writes the call as text instead of executing it).
+_TOOL_LEAK_PATTERNS = [
+    _re.compile(r"```[\s\S]*?\b(?:search_hotel_knowledge|check_room_availability|"
+                r"create_reservation|confirm_reservation|cancel_reservation|"
+                r"get_reservation_details|get_guest_reservations|"
+                r"calculate_dynamic_price|create_service_request|"
+                r"get_hotel_services|check_in_guest|check_out_guest|"
+                r"update_reservation|check_upsell_opportunity|"
+                r"generate_payment_link)\s*\(", _re.IGNORECASE),
+    _re.compile(r"\b(?:search_hotel_knowledge|check_room_availability|"
+                r"create_reservation|cancel_reservation|get_reservation_details|"
+                r"get_guest_reservations|calculate_dynamic_price|"
+                r"create_service_request|get_hotel_services)\s*\("),
+    _re.compile(r'\{\s*"name"\s*:\s*"(?:ToHotel|Handle)', _re.IGNORECASE),
+    _re.compile(r"\bToHotel(?:Booking|Service|Knowledge)\s*\("),
+]
+
+
+def has_tool_leak(text: str) -> bool:
+    """Return True if text contains tool-call syntax that should have been a real tool invocation."""
+    if not text:
+        return False
+    for pat in _TOOL_LEAK_PATTERNS:
+        if pat.search(text):
+            return True
+    return False
+
+
+# =============================================================================
 # Async Invocation
 # =============================================================================
 
@@ -700,79 +744,132 @@ async def invoke_hotel_agent(
     language: str = "auto",
     conversation_history: Optional[List[Dict[str, str]]] = None,  # unused — MemorySaver handles history
     llm_settings: Optional[Dict] = None,
+    max_retries: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Invoke the hotel LangGraph agent.
+
+    Retries if the response is empty or contains leaked tool-call syntax.
+    The retry count comes from the active model's preset:
+      - Local 9B (Ollama): 2 retries (more forgiving for flaky local model)
+      - Cloud (OpenRouter): 1 retry (avoid doubling API costs)
 
     Args:
         message: User message
         session_id: Session ID for conversation tracking
         user_id: User/guest identifier
         language: Response language preference
-        conversation_history: Previous messages
+        conversation_history: Previous messages (unused — MemorySaver handles history)
         llm_settings: LLM configuration overrides
+        max_retries: Override retry count (default: from active model preset)
 
     Returns:
-        Dict with response, success status, and metadata
+        Dict with response, success status, and metadata.
+        Includes `retries` count and `had_leak` flag for observability.
     """
     graph = get_hotel_graph()
 
-    # Only send the NEW message — MemorySaver checkpointer already has conversation history
-    # This prevents duplicate messages and preserves multi-turn context
-    initial_state = {
-        "messages": [HumanMessage(content=message)],
-        "session_id": session_id,
-        "user_id": user_id,
-        "language": language,
-        "current_intent": "",
-        "tool_calls_made": [],
-    }
+    # Per-model retry budget (2 for local 9B, 1 for cloud models)
+    if max_retries is None:
+        try:
+            from src.hotel_guardrails.config import get_runtime_llm_config
+            max_retries = get_runtime_llm_config().max_retries
+        except Exception:
+            max_retries = 2
 
-    # Config with session thread
-    config = RunnableConfig(
-        configurable={
-            "thread_id": session_id,
-            "llm_settings": llm_settings or {},
-        }
-    )
+    response_text = ""
+    tool_calls = []
+    intent = ""
+    retries_used = 0
+    had_leak = False
+    last_error = None
 
-    try:
-        # Invoke the graph
-        result = await graph.ainvoke(initial_state, config)
-
-        # Extract final response
-        final_messages = result.get("messages", [])
-        response_text = ""
-        tool_calls = []
-
-        for msg in reversed(final_messages):
-            if isinstance(msg, AIMessage):
-                if msg.content:
-                    response_text = msg.content
-                if msg.tool_calls:
-                    tool_calls = [
-                        {"name": tc["name"], "args": tc.get("args", {})}
-                        for tc in msg.tool_calls
-                    ]
-                break
-
-        return {
-            "success": True,
-            "response": response_text,
-            "path": "langgraph",
-            "intent": result.get("current_intent", ""),
-            "tool_calls": tool_calls,
+    for attempt in range(max_retries + 1):
+        # Only send the NEW message — MemorySaver checkpointer has history
+        initial_state = {
+            "messages": [HumanMessage(content=message)],
             "session_id": session_id,
+            "user_id": user_id,
+            "language": language,
+            "current_intent": "",
+            "tool_calls_made": [],
         }
+        config = RunnableConfig(
+            configurable={
+                "thread_id": session_id,
+                "llm_settings": llm_settings or {},
+            }
+        )
 
-    except Exception as e:
-        import traceback
-        error_msg = str(e) if str(e) else type(e).__name__
-        logger.error(f"Hotel LangGraph agent error: {error_msg}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        return {
-            "success": False,
-            "response": None,
-            "path": "langgraph",
-            "error": f"{type(e).__name__}: {error_msg}" if error_msg else type(e).__name__,
-        }
+        try:
+            result = await graph.ainvoke(initial_state, config)
+
+            # Extract the assistant's final response
+            final_messages = result.get("messages", [])
+            candidate_text = ""
+            candidate_tools = []
+            for msg in reversed(final_messages):
+                if isinstance(msg, AIMessage):
+                    if msg.content:
+                        candidate_text = msg.content
+                    if msg.tool_calls:
+                        candidate_tools = [
+                            {"name": tc["name"], "args": tc.get("args", {})}
+                            for tc in msg.tool_calls
+                        ]
+                    break
+
+            # Quality checks: non-empty + no tool-call leak
+            leaked = has_tool_leak(candidate_text)
+            if candidate_text and not leaked:
+                response_text = candidate_text
+                tool_calls = candidate_tools
+                intent = result.get("current_intent", "")
+                retries_used = attempt
+                break  # Success
+
+            # Failed quality check — log and retry if we have attempts left
+            had_leak = had_leak or leaked
+            if attempt < max_retries:
+                reason = "tool-call leak" if leaked else "empty response"
+                logger.warning(
+                    f"Agent response failed quality check ({reason}) — "
+                    f"retry {attempt + 1}/{max_retries} for session={session_id}"
+                )
+            else:
+                # Out of retries — keep whatever we got
+                response_text = candidate_text
+                tool_calls = candidate_tools
+                intent = result.get("current_intent", "")
+                retries_used = attempt
+                logger.warning(
+                    f"Agent response still failed quality check after {max_retries} retries "
+                    f"for session={session_id} (leaked={leaked})"
+                )
+
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries:
+                logger.warning(f"Agent error ({type(e).__name__}) — retry {attempt + 1}/{max_retries}")
+            else:
+                import traceback
+                logger.error(f"Hotel LangGraph agent error: {e}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                return {
+                    "success": False,
+                    "response": None,
+                    "path": "langgraph",
+                    "error": f"{type(e).__name__}: {str(e) or type(e).__name__}",
+                    "retries": attempt,
+                }
+
+    return {
+        "success": True,
+        "response": response_text,
+        "path": "langgraph",
+        "intent": intent,
+        "tool_calls": tool_calls,
+        "session_id": session_id,
+        "retries": retries_used,
+        "had_leak": had_leak,
+    }

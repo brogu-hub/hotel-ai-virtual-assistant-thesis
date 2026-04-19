@@ -149,10 +149,10 @@ AVAILABLE_MODELS = [
         "provider": "Ollama",
         "backend": "ollama",
         "description": "Local 9B model with tool calling, native thinking tags",
-        # Qwen3.5 on Ollama outputs <think> tags automatically — explicit
-        # thinking=True only adds overhead via extra prompting.
-        # max_tokens=2048 is sufficient for hotel responses (typical < 500 tokens).
-        "presets": {"temperature": 0.3, "max_tokens": 2048, "thinking": False},
+        # Qwen3.5 on Ollama outputs <think> tags natively — explicit thinking
+        # only adds overhead. max_tokens=2048 is sufficient for hotel responses.
+        # max_retries=2 compensates for 9B flakiness (tool-call leaks in Thai).
+        "presets": {"temperature": 0.3, "max_tokens": 2048, "thinking": False, "max_retries": 2},
     },
     {
         "id": "qwen3.5:9b",
@@ -160,16 +160,16 @@ AVAILABLE_MODELS = [
         "provider": "Ollama",
         "backend": "ollama",
         "description": "Local Qwen3.5 base model, native thinking tags",
-        "presets": {"temperature": 0.3, "max_tokens": 2048, "thinking": False},
+        "presets": {"temperature": 0.3, "max_tokens": 2048, "thinking": False, "max_retries": 2},
     },
-    # OpenRouter (cloud)
+    # OpenRouter (cloud) — max_retries=0 or 1 to avoid doubling API costs
     {
         "id": "qwen/qwen3-max-thinking",
         "name": "Qwen3 Max Thinking",
         "provider": "Qwen",
         "backend": "openrouter",
         "description": "Primary cloud model - extended reasoning, 262K context",
-        "presets": {"temperature": 0.1, "max_tokens": 4096, "thinking": True},
+        "presets": {"temperature": 0.1, "max_tokens": 4096, "thinking": True, "max_retries": 1},
     },
     {
         "id": "qwen/qwen3-max",
@@ -177,7 +177,7 @@ AVAILABLE_MODELS = [
         "provider": "Qwen",
         "backend": "openrouter",
         "description": "Qwen3 Max without thinking mode",
-        "presets": {"temperature": 0.3, "max_tokens": 4096, "thinking": False},
+        "presets": {"temperature": 0.3, "max_tokens": 4096, "thinking": False, "max_retries": 1},
     },
     {
         "id": "qwen/qwen3.5-397b-a17b",
@@ -185,7 +185,7 @@ AVAILABLE_MODELS = [
         "provider": "Qwen",
         "backend": "openrouter",
         "description": "Latest Qwen3.5, MoE 397B (17B active)",
-        "presets": {"temperature": 0.3, "max_tokens": 4096, "thinking": True},
+        "presets": {"temperature": 0.3, "max_tokens": 4096, "thinking": True, "max_retries": 1},
     },
     {
         "id": "qwen/qwen3.5-flash-02-23",
@@ -193,7 +193,7 @@ AVAILABLE_MODELS = [
         "provider": "Qwen",
         "backend": "openrouter",
         "description": "Fast and cheap, 1M context",
-        "presets": {"temperature": 0.3, "max_tokens": 2048, "thinking": False},
+        "presets": {"temperature": 0.3, "max_tokens": 2048, "thinking": False, "max_retries": 1},
     },
     {
         "id": "minimax/minimax-m2.7",
@@ -201,7 +201,7 @@ AVAILABLE_MODELS = [
         "provider": "MiniMax",
         "backend": "openrouter",
         "description": "Budget option - strong agentic, 205K context, $0.30/$1.20 per 1M",
-        "presets": {"temperature": 0.3, "max_tokens": 4096, "thinking": True},
+        "presets": {"temperature": 0.3, "max_tokens": 4096, "thinking": True, "max_retries": 1},
     },
 ]
 
@@ -225,6 +225,7 @@ def get_model_presets(model_id: str) -> dict:
     Presets include:
     - temperature, max_tokens: generation params
     - thinking: enable extended reasoning (default True if available)
+    - max_retries: retries on empty/leaked responses (higher for flaky local 9B)
     """
     # Check known models first
     for m in AVAILABLE_MODELS:
@@ -236,18 +237,18 @@ def get_model_presets(model_id: str) -> dict:
 
     # Thinking/reasoning models → low temp, high tokens
     if "thinking" in model_lower:
-        return {"temperature": 0.1, "max_tokens": 4096, "thinking": True}
+        return {"temperature": 0.1, "max_tokens": 4096, "thinking": True, "max_retries": 1}
 
     # Large/max models → lower temp, more tokens, thinking on
     if any(k in model_lower for k in ["max", "397b", "235b", "opus", "large", "pro"]):
-        return {"temperature": 0.2, "max_tokens": 4096, "thinking": True}
+        return {"temperature": 0.2, "max_tokens": 4096, "thinking": True, "max_retries": 1}
 
     # Flash/mini/small → higher temp, fewer tokens, thinking off (speed)
     if any(k in model_lower for k in ["flash", "mini", "small", "haiku", "nano"]):
-        return {"temperature": 0.4, "max_tokens": 2048, "thinking": False}
+        return {"temperature": 0.4, "max_tokens": 2048, "thinking": False, "max_retries": 1}
 
-    # Default: balanced, thinking on
-    return {"temperature": 0.3, "max_tokens": 4096, "thinking": True}
+    # Default: balanced, thinking on, 1 retry for cloud
+    return {"temperature": 0.3, "max_tokens": 4096, "thinking": True, "max_retries": 1}
 
 
 def resolve_thinking_model(model_id: str, thinking_enabled: bool) -> str:
@@ -362,8 +363,10 @@ class RuntimeLLMConfig:
         self.openrouter_model = os.getenv("OPENROUTER_MODEL", "qwen/qwen3.5-397b-a17b")
         self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "")
 
-        # Thinking mode (enabled by default — Qwen3.5 on Ollama has it built-in)
-        self.thinking = os.getenv("LLM_THINKING", "true").lower() == "true"
+        # Thinking mode — disabled by default for Ollama (native <think> tags,
+        # explicit thinking adds overhead and breaks streaming).
+        # Cloud model presets enable it when switching via PUT /settings/llm.
+        self.thinking = os.getenv("LLM_THINKING", "false").lower() == "true"
 
         # Rate limiter (prevents 429s from OpenRouter)
         rate_limit = int(os.getenv("OPENROUTER_RATE_LIMIT", "20"))  # requests per minute
@@ -374,8 +377,16 @@ class RuntimeLLMConfig:
         self.max_tokens = int(os.getenv("HOTEL_LLM_MAX_TOKENS", "4096"))
         self.streaming = True
 
+        # Retry budget for empty/leaked responses.
+        # Tuned per-model via preset (2 for local 9B, 1 for cloud).
+        active_presets = get_model_presets(self.active_model)
+        self.max_retries = int(os.getenv(
+            "LLM_MAX_RETRIES",
+            str(active_presets.get("max_retries", 2 if self.backend == LLMBackend.OLLAMA else 1)),
+        ))
+
         logger.info(f"RuntimeLLMConfig initialized: backend={self.backend.value}, "
-                     f"model={self.active_model}")
+                     f"model={self.active_model}, max_retries={self.max_retries}")
 
     @classmethod
     def get_instance(cls) -> "RuntimeLLMConfig":
@@ -454,6 +465,11 @@ class RuntimeLLMConfig:
                             self.thinking = presets["thinking"]
                             if old_thinking != self.thinking:
                                 changes["thinking"] = {"old": old_thinking, "new": self.thinking, "source": "preset"}
+                        if "max_retries" in presets:
+                            old_retries = self.max_retries
+                            self.max_retries = int(presets["max_retries"])
+                            if old_retries != self.max_retries:
+                                changes["max_retries"] = {"old": old_retries, "new": self.max_retries, "source": "preset"}
 
             # Explicit overrides always win over presets
             if temperature is not None and temperature != self.temperature:

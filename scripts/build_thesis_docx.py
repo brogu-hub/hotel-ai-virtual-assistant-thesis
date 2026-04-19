@@ -242,14 +242,14 @@ def setup_styles(doc: Document):
     """Configure document styles for Thai/English thesis."""
     style = doc.styles['Normal']
     font = style.font
-    font.name = 'TH SarabunPSK'
+    font.name = 'Cordia New'
     font.size = Pt(16)
-    style.element.rPr.rFonts.set(qn('w:eastAsia'), 'TH SarabunPSK')
+    style.element.rPr.rFonts.set(qn('w:eastAsia'), 'Cordia New')
 
     # Heading styles
     for i in range(1, 5):
         heading_style = doc.styles[f'Heading {i}']
-        heading_style.font.name = 'TH SarabunPSK'
+        heading_style.font.name = 'Cordia New'
         heading_style.font.bold = True
         if i == 1:
             heading_style.font.size = Pt(20)
@@ -272,7 +272,7 @@ def add_cover_page(doc: Document):
                      "Using Multi-Agent Artificial Intelligence")
     run.font.size = Pt(20)
     run.bold = True
-    run.font.name = 'TH SarabunPSK'
+    run.font.name = 'Cordia New'
 
     doc.add_paragraph("")
     doc.add_paragraph("")
@@ -281,7 +281,7 @@ def add_cover_page(doc: Document):
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = p.add_run(f"{AUTHOR_PLACEHOLDER}")
     run.font.size = Pt(16)
-    run.font.name = 'TH SarabunPSK'
+    run.font.name = 'Cordia New'
 
     doc.add_paragraph("")
 
@@ -294,7 +294,7 @@ def add_cover_page(doc: Document):
         f"ปีการศึกษา {YEAR_PLACEHOLDER}"
     )
     run.font.size = Pt(16)
-    run.font.name = 'TH SarabunPSK'
+    run.font.name = 'Cordia New'
 
     doc.add_page_break()
 
@@ -304,13 +304,13 @@ def add_abstract_page(doc: Document, thai_abstract: str):
     # Thai abstract
     doc.add_heading('บทคัดย่อ', level=1)
     p = doc.add_paragraph(thai_abstract)
-    p.style.font.name = 'TH SarabunPSK'
+    p.style.font.name = 'Cordia New'
     doc.add_page_break()
 
     # English abstract
     doc.add_heading('Abstract', level=1)
     p = doc.add_paragraph(ABSTRACT_EN)
-    p.style.font.name = 'TH SarabunPSK'
+    p.style.font.name = 'Cordia New'
     doc.add_page_break()
 
 

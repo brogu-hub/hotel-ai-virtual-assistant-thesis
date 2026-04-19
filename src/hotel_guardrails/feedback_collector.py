@@ -24,7 +24,7 @@ Usage:
         session_id="session-456",
         query="What time is breakfast?",
         response="Breakfast is served 6:30 AM - 10:30 AM",
-        routing_path="nemo",
+        routing_path="langgraph",
         complexity="simple",
         latency_ms=150.0
     )
@@ -67,7 +67,7 @@ class FeedbackRecord(BaseModel):
     )
     query: str = Field(..., description="User query")
     response: str = Field(..., description="AI response")
-    routing_path: str = Field(..., description="nemo or langgraph")
+    routing_path: str = Field(..., description="Routing path (langgraph)")
     complexity: str = Field(..., description="simple, moderate, or complex")
     latency_ms: float = Field(..., description="Response latency in milliseconds")
     feedback_type: FeedbackType = Field(
@@ -203,7 +203,7 @@ class FeedbackCollector:
             session_id: Session identifier
             query: User query
             response: AI response
-            routing_path: Which path handled the request (nemo/langgraph)
+            routing_path: Which path handled the request (langgraph)
             complexity: Query complexity level
             latency_ms: Response latency
         """
@@ -342,7 +342,7 @@ class FeedbackCollector:
         Get performance statistics for a routing path.
 
         Args:
-            routing_path: "nemo" or "langgraph"
+            routing_path: "langgraph"
             limit: Maximum records to analyze
 
         Returns:
