@@ -79,6 +79,7 @@ The actively-developed hotel assistant service for The Grand Horizon Hotel. Expo
 ## Dependencies
 
 ### External packages
+
 - `fastapi`, `uvicorn` — HTTP server
 - `langchain-openai`, `langgraph` — agent orchestration
 - `psycopg2`, `psycopg-pool` — PostgreSQL sync and async pool
@@ -87,6 +88,7 @@ The actively-developed hotel assistant service for The Grand Horizon Hotel. Expo
 - `yaml` — prompt file loading
 
 ### Internal modules
+
 - `src/agent/hotel_tools.py` — booking + service tool functions imported directly into `hotel_langgraph.py`
 - `src/retrievers/hotel_knowledge/` — RAG chain (Qdrant + reranker) called from `actions.py`
 
