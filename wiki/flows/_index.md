@@ -4,7 +4,7 @@ title: "Flows Index"
 updated: 2026-04-19
 ---
 
-# Flows
+## Flows
 
 Request paths, data flows, and control flows. One page per named flow.
 
