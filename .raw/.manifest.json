@@ -35,5 +35,28 @@
         "wiki/gaps/_index.md"
       ]
     }
+  ],
+  "entries": [
+    {
+      "source": "docs/WORKFLOW.md",
+      "title": "Hotel AI Virtual Assistant — Workflow Documentation",
+      "date_in_source": null,
+      "ingested": "2026-04-19",
+      "pages_created": [
+        "wiki/flows/guest_chat.md",
+        "wiki/flows/reservation_lifecycle.md",
+        "wiki/flows/auth_and_access_control.md",
+        "wiki/flows/admin_monitoring.md",
+        "wiki/flows/chat_scaling.md",
+        "wiki/flows/local_run.md",
+        "wiki/entities/Ollama.md",
+        "wiki/decisions/reranker_disabled.md",
+        "wiki/decisions/dual_identity_model.md"
+      ],
+      "pages_updated": [
+        "wiki/flows/_index.md",
+        "wiki/entities/_index.md"
+      ]
+    }
   ]
 }
