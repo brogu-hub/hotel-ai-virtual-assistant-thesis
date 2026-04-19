@@ -49,7 +49,7 @@ The same server binary serves whichever sub-service is mounted at startup. Docke
 
 ## Data flow
 
-```
+```text
 Caller (hotel_guardrails / agent)
   └─ POST /search {query, top_k, user_id?, conv_history?}
        └─ server.py dispatch
