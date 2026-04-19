@@ -34,9 +34,7 @@
         "wiki/concepts/_index.md",
         "wiki/gaps/_index.md"
       ]
-    }
-  ],
-  "entries": [
+    },
     {
       "source": "docs/WORKFLOW.md",
       "title": "Hotel AI Virtual Assistant — Workflow Documentation",
