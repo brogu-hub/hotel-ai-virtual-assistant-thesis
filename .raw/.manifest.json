@@ -1,6 +1,103 @@
 {
   "entries": [
     {
+      "source": "CLAUDE.md",
+      "hash": "d972ac8654dc416b88c2023d7f36f6ff",
+      "title": "Project CLAUDE.md",
+      "ingested": "2026-04-19",
+      "pages_created": [
+        "wiki/modules/hotel_guardrails.md",
+        "wiki/modules/agent.md",
+        "wiki/modules/retrievers.md",
+        "wiki/modules/analytics.md",
+        "wiki/modules/api_gateway.md",
+        "wiki/modules/ingest_service.md",
+        "wiki/modules/common.md",
+        "wiki/modules/frontend.md",
+        "wiki/entities/NVIDIA.md",
+        "wiki/entities/OpenRouter.md",
+        "wiki/entities/The Grand Horizon Hotel.md",
+        "wiki/entities/Railway.md",
+        "wiki/entities/FastAPI.md",
+        "wiki/entities/LangGraph.md",
+        "wiki/entities/NeMo Guardrails.md",
+        "wiki/entities/Milvus.md",
+        "wiki/entities/Qdrant.md",
+        "wiki/entities/PostgreSQL.md",
+        "wiki/entities/Redis.md",
+        "wiki/entities/Llama 3.3 70B.md",
+        "wiki/entities/Vanna.AI.md",
+        "wiki/concepts/RAG.md",
+        "wiki/concepts/Hybrid Routing.md",
+        "wiki/concepts/LangGraph State Machine.md"
+      ],
+      "note": "Agent paused before filing gap pages it had identified."
+    },
+    {
+      "source": "README.md",
+      "hash": "5963c89d327eee3341177e35a17c194f",
+      "title": "Hotel AI README (fork of NVIDIA AI Blueprint)",
+      "ingested": "2026-04-19",
+      "pages_created": [],
+      "pages_updated": [
+        "wiki/modules/hotel_guardrails.md",
+        "wiki/modules/agent.md",
+        "wiki/entities/NVIDIA.md"
+      ],
+      "note": "Co-ingested with CLAUDE.md; page attributions split."
+    },
+    {
+      "source": "LLM_CHATBOT_CRITIRION.md",
+      "hash": "3e45e67ca827edf4285a223c1e928ad3",
+      "title": "LLM Chatbot Evaluation Criteria",
+      "ingested": "2026-04-19",
+      "pages_created": [
+        "wiki/papers/bcg_2026_traveler_ai.md",
+        "wiki/papers/eu_ai_act_2026.md",
+        "wiki/papers/mdpi_tourism_ai_research.md",
+        "wiki/papers/str_revfine_upselling.md",
+        "wiki/concepts/agentic_upselling.md",
+        "wiki/concepts/autogen_conversation_driven_orchestration.md",
+        "wiki/concepts/crewai_role_based_orchestration.md",
+        "wiki/concepts/human_in_the_loop.md",
+        "wiki/concepts/hybrid_rag_with_reranking.md",
+        "wiki/concepts/langgraph_state_machine_architecture.md",
+        "wiki/concepts/model_context_protocol.md",
+        "wiki/concepts/persistent_memory_chatbot.md",
+        "wiki/concepts/pii_redaction_and_compliance.md",
+        "wiki/entities/AutoGen.md",
+        "wiki/entities/CrewAI.md",
+        "wiki/entities/Mem0.md",
+        "wiki/entities/Microsoft Presidio.md",
+        "wiki/entities/Amadeus API.md",
+        "wiki/thesis/evaluation_methodology.md",
+        "wiki/gaps/mcp_integration_missing.md"
+      ],
+      "note": "Agent paused mid-concept-pass; concept coverage may be incomplete."
+    },
+    {
+      "source": "src/hotel_guardrails/",
+      "hash": "tree-walk-2026-04-19",
+      "title": "hotel_guardrails service (code ingest)",
+      "ingested": "2026-04-19",
+      "pages_created": [
+        "wiki/components/hybrid_router.md",
+        "wiki/components/langgraph_adapter.md",
+        "wiki/components/hotel_langgraph.md",
+        "wiki/components/primary_assistant.md",
+        "wiki/components/booking_subagent.md",
+        "wiki/components/service_subagent.md",
+        "wiki/components/knowledge_subagent.md",
+        "wiki/components/other_talk_subagent.md",
+        "wiki/components/openrouter_llm_wrapper.md",
+        "wiki/components/feedback_collector.md"
+      ],
+      "pages_updated": [
+        "wiki/modules/hotel_guardrails.md"
+      ],
+      "note": "Agent paused before writing hotel-specific concept pages; [[Hybrid Routing]] and [[LangGraph State Machine]] cover most conceptual ground. Flow page not created — [[guest_chat]] (from WORKFLOW ingest) covers the pipeline."
+    },
+    {
       "source": "docs/MODEL_EVAL_REPORT.md",
       "title": "Hotel AI Chatbot — Model Evaluation Report",
       "date_in_source": "2026-04-06",
