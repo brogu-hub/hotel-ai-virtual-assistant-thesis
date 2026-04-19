@@ -33,7 +33,7 @@ The fork added `hotel_tools.py` and `hotel_prompt.yaml` as hotel-domain overlays
 ## Public API / Endpoints
 
 | Method | Path | Description |
-|---|---|---|
+| --- | --- | --- |
 | GET | `/health` | Liveness probe |
 | GET | `/metrics` | Prometheus metrics |
 | GET | `/create_session` | Allocate session UUID (Redis + PostgreSQL) |
