@@ -33,7 +33,7 @@ The same server binary serves whichever sub-service is mounted at startup. Docke
 ## Sub-services
 
 | Sub-service | Page | Port | Storage | Purpose |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `unstructured_data/` | [[unstructured_retriever]] | 8086 | [[Milvus]] / [[Qdrant]] | Document embedding + similarity search |
 | `structured_data/` | [[structured_retriever]] | 8087 | [[PostgreSQL]] + [[Milvus]] | NL-to-SQL via [[Vanna.AI]] |
 | `hotel_knowledge/` | [[hotel_knowledge_retriever]] | — | [[Qdrant]] | Hotel-specific bilingual RAG |
