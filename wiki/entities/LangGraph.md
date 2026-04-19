@@ -29,7 +29,10 @@ LangGraph is the **core orchestration engine** for both agent systems:
 ## Related
 
 - [[LangGraph State Machine]]
+- [[langgraph_state_machine_architecture]] — concept page with checkpointers, time-travel, Break state details
 - [[hotel_guardrails]]
 - [[agent]]
 - [[Hybrid Routing]]
 - [[ADR 4 Sub-agent Split]]
+- [[human_in_the_loop]]
+- [[persistent_memory_chatbot]]
