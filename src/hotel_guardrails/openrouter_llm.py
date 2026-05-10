@@ -65,7 +65,7 @@ def get_openrouter_llm(
     if not api_key:
         raise ValueError("OPENROUTER_API_KEY environment variable required")
 
-    referer = os.getenv("OPENROUTER_REFERER", "https://siam-serenity-hotel.com")
+    referer = os.getenv("OPENROUTER_REFERER", "https://grand-horizon-hotel.com")
     title = os.getenv("OPENROUTER_TITLE", "Grand Horizon Concierge")
     use_model = model if model != DEFAULT_MODEL else runtime_config.openrouter_model
 

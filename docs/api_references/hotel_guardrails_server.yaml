@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Siam Serenity Hotel Concierge API
+  title: The Grand Horizon Hotel Concierge API
   description: "\n    Hotel Operations AI powered by LangGraph Agent\n\n    ## Architecture\n\
     \    - **LangGraph Agent**: Primary handler for ALL queries\n    - **Safety Router**:\
     \ Filters blocked/unsafe content\n    - **RAG**: Hotel knowledge retrieval for\

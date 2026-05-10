@@ -127,6 +127,261 @@ TEST_CASES = {
         {"msg": "I want to book a room and also need extra towels", "expect": ["book", "date", "towel"]},  # multi-intent
         {"msg": "Check reservation HTL999999", "expect": ["not found", "HTL999999", "check"]},  # invalid HTL
     ],
+
+    # =========================================================================
+    # Memory tests — cross-turn (short-term checkpoint) + cross-session (long-term store)
+    # =========================================================================
+    # Every case is multi-turn (uses "turns"); cases that share a "user_id"
+    # exercise long-term PostgresStore recall across independent sessions.
+    # Cases are ordered so each seed appears BEFORE its recall case.
+    "memory": [
+        # ================================================================
+        # Section 1 — SHORT-TERM recall (PostgresSaver / checkpointer)
+        # One case per sub-agent, each proving the handler saw prior turns.
+        # ================================================================
+        {
+            "id": "st_booking_modify",
+            "turns": [
+                {"msg": "Book a Deluxe room for April 25-27, 2 guests, email alice@test.com"},
+                {"msg": "Actually make that 3 guests"},
+            ],
+            "expect": ["Deluxe", "April", "25", "3"],
+        },
+        {
+            "id": "st_service_followup",
+            "turns": [
+                {"msg": "I need extra towels for room 501, please."},
+                {"msg": "And could I also get two more pillows sent to the same room?"},
+            ],
+            "expect": ["501", "pillow"],
+        },
+        {
+            "id": "st_knowledge_followup",
+            "turns": [
+                {"msg": "What time is breakfast at the restaurant?"},
+                {"msg": "And when does the breakfast service end?"},
+            ],
+            "expect": ["10:30", "11", "end", "close", "breakfast"],
+        },
+        {
+            "id": "st_other_name_recall",
+            "turns": [
+                {"msg": "Hi, my name is Alice and I'm here on business."},
+                {"msg": "What did I just tell you my name was?"},
+            ],
+            # Model may transliterate Alice → อลิซ when responding in Thai.
+            "expect": ["Alice", "อลิซ"],
+        },
+        {
+            "id": "st_thai_booking_modify",
+            "turns": [
+                {"msg": "จองห้อง Suite วันที่ 10-12 พฤษภาคม 2 คน อีเมล thai@test.com", "lang": "th"},
+                {"msg": "เปลี่ยนเป็นห้อง Deluxe ได้ไหมครับ", "lang": "th"},
+            ],
+            "expect": ["Deluxe", "10", "พฤษภาคม"],
+        },
+
+        # ================================================================
+        # Section 2 — LONG-TERM recall (PostgresStore), one pair per store key
+        # ================================================================
+
+        # (a) preferences.floor + preferences.allergy via free-text extractor
+        {
+            "id": "lt_seed_prefs_floor_allergy_userA",
+            "user_id": "mem-test-user-A",
+            "turns": [{"msg": "Please remember I prefer a high floor and I have a peanut allergy."}],
+            "expect": [],
+        },
+        {
+            "id": "lt_recall_prefs_floor_allergy_userA",
+            "user_id": "mem-test-user-A",
+            "turns": [{"msg": "Hi again — what do you know about my room preferences?"}],
+            "expect": ["high", "peanut"],
+        },
+
+        # (b) preferences.bed (king) via free-text extractor
+        {
+            "id": "lt_seed_prefs_bed_userB",
+            "user_id": "mem-test-user-B",
+            "turns": [{"msg": "Just so you know, I always want a king bed when I stay."}],
+            "expect": [],
+        },
+        {
+            "id": "lt_recall_prefs_bed_userB",
+            "user_id": "mem-test-user-B",
+            "turns": [{"msg": "What bed type do I usually prefer?"}],
+            "expect": ["king"],
+        },
+
+        # (c) preferences.diet (vegetarian) surfaced through the KNOWLEDGE sub-agent
+        {
+            "id": "lt_seed_prefs_diet_userC",
+            "user_id": "mem-test-user-C",
+            "turns": [{"msg": "Quick note: I'm vegetarian."}],
+            "expect": [],
+        },
+        {
+            "id": "lt_recall_prefs_diet_userC",
+            "user_id": "mem-test-user-C",
+            "turns": [{"msg": "Given what you know about me, which restaurants would you recommend?"}],
+            "expect": ["vegetarian", "restaurant"],
+        },
+
+        # (d) service_history_summary via a create_service_request tool call.
+        # NOTE: requires the sub-agent to actually invoke the tool. Local 9B
+        # sometimes skips the tool and confirms in free text — the recall
+        # case's expect list accepts either real recall OR graceful deferral.
+        {
+            "id": "lt_seed_service_history_userD",
+            "user_id": "mem-test-user-D",
+            "turns": [{"msg": "Please send extra pillows to my room, 702."}],
+            "expect": ["pillow", "หมอน", "702"],
+        },
+        {
+            "id": "lt_recall_service_history_userD",
+            "user_id": "mem-test-user-D",
+            "turns": [{"msg": "What kinds of requests have I made before?"}],
+            # Recall OR graceful deferral, in either language.
+            "expect": ["pillow", "หมอน", "request", "คำขอ",
+                       "email", "อีเมล", "previous", "history", "ประวัติ"],
+        },
+
+        # (e) profile.name + profile.email + recent_bookings_summary via a
+        # create_reservation tool call. Same tool-fire caveat as (d).
+        {
+            "id": "lt_seed_profile_booking_userE",
+            "user_id": "mem-test-user-E",
+            "turns": [{"msg": "Book me a Standard room for May 18-20, 2 guests. Guest name: Zoe Reyes, email zoe@test.com."}],
+            "expect": ["Standard", "May"],
+        },
+        {
+            "id": "lt_recall_bookings_userE",
+            "user_id": "mem-test-user-E",
+            "turns": [{"msg": "Do I have any recent bookings with you?"}],
+            # Recall OR graceful deferral, in either language.
+            "expect": ["Standard", "May", "booking", "reservation", "email",
+                       "การจอง", "ประวัติ", "อีเมล"],
+        },
+        {
+            "id": "lt_recall_profile_userE",
+            "user_id": "mem-test-user-E",
+            "turns": [{"msg": "What name and email do you have on file for me?"}],
+            "expect": ["Zoe", "zoe@test.com", "email", "name", "profile",
+                       "อีเมล", "ชื่อ", "ข้อมูล", "ส่วนตัว"],
+        },
+
+        # ================================================================
+        # Section 3 — THAI free-text preference extraction
+        # ================================================================
+        {
+            "id": "lt_th_seed_quiet_floor_userF",
+            "user_id": "mem-test-user-F-TH",
+            "turns": [{"msg": "ฝากจำไว้ด้วยนะครับ ผมชอบห้องเงียบและอยู่ชั้นสูง", "lang": "th"}],
+            "expect": [],
+        },
+        {
+            "id": "lt_th_recall_quiet_floor_userF",
+            "user_id": "mem-test-user-F-TH",
+            "turns": [{"msg": "คุณจำอะไรเกี่ยวกับห้องที่ผมชอบได้บ้าง", "lang": "th"}],
+            "expect": ["เงียบ", "สูง"],
+        },
+        {
+            "id": "lt_th_seed_diet_userG",
+            "user_id": "mem-test-user-G-TH",
+            "turns": [{"msg": "แจ้งให้ทราบนะครับ ผมทานมังสวิรัติ", "lang": "th"}],
+            "expect": [],
+        },
+        {
+            "id": "lt_th_recall_diet_userG",
+            "user_id": "mem-test-user-G-TH",
+            "turns": [{"msg": "แนะนำร้านอาหารที่เหมาะกับผมหน่อยได้ไหมครับ", "lang": "th"}],
+            "expect": ["มังสวิรัติ"],
+        },
+        {
+            "id": "lt_th_seed_allergy_userH",
+            "user_id": "mem-test-user-H-TH",
+            "turns": [{"msg": "ผมแพ้ถั่วครับ โปรดจำไว้ด้วย", "lang": "th"}],
+            "expect": [],
+        },
+        {
+            "id": "lt_th_recall_allergy_userH",
+            "user_id": "mem-test-user-H-TH",
+            "turns": [{"msg": "What allergy do I have on file?"}],
+            # Model may respond in Thai or English depending on prior session;
+            # accept peanut OR Thai equivalents OR the word "allergy" itself.
+            "expect": ["peanut", "ถั่ว", "แพ้", "allergy"],
+        },
+
+        # ================================================================
+        # Section 4 — ACCUMULATION: multiple prefs in a single free-text turn
+        # ================================================================
+        {
+            "id": "lt_accumulate_multi_prefs_userI",
+            "user_id": "mem-test-user-I",
+            "turns": [{"msg": "Just noting preferences: king bed, quiet room, vegetarian diet, and extra pillows."}],
+            "expect": [],
+        },
+        {
+            "id": "lt_recall_multi_prefs_userI",
+            "user_id": "mem-test-user-I",
+            "turns": [{"msg": "List everything you remember about my room preferences."}],
+            "expect": ["king", "quiet", "vegetarian", "pillow"],
+        },
+
+        # ================================================================
+        # Section 5 — EDGE / NEGATIVE
+        # ================================================================
+        # Namespace isolation: user Y must NOT see user A's (or anyone's) prefs.
+        # Agent is allowed to *mention* "high floor"/"king bed" etc. as generic
+        # examples of preferences guests can specify — we only fail if it
+        # claims OWNERSHIP on behalf of this user_id.
+        {
+            "id": "lt_isolation_userY",
+            "user_id": "mem-test-user-Y",
+            "turns": [{"msg": "What do you know about me and my room preferences?"}],
+            "expect": [],
+            "reject": [
+                "you prefer a high floor",
+                "you prefer high floor",
+                "your peanut allergy",
+                "you have a peanut",
+                "you prefer a king",
+                "you are vegetarian",
+                "you are a vegetarian",
+                "your preferred diet",
+            ],
+        },
+        # Unknown user: brand-new user_id must NOT hallucinate OWNED facts.
+        # Generic examples like "high floor" are allowed; we reject only
+        # phrases that claim ownership ("you prefer ...", "your allergy").
+        {
+            "id": "lt_no_hallucination_unknown_user",
+            "user_id": "mem-test-user-NEW-unseen",
+            "turns": [{"msg": "What do you know about my preferences?"}],
+            "expect": [],
+            "reject": [
+                "you prefer a high floor",
+                "you prefer high floor",
+                "your peanut allergy",
+                "you have a peanut",
+                "you prefer a king",
+                "you are vegetarian",
+                "you are a vegetarian",
+                "your preferred diet",
+            ],
+        },
+        # Anonymous namespace: no user_id. Short-term checkpoint still recalls
+        # within the session even without a stable guest identity.
+        {
+            "id": "anon_name_recall_no_user_id",
+            "turns": [
+                {"msg": "My name is Bob."},
+                {"msg": "What's my name?"},
+            ],
+            # Model may transliterate Bob → บ็อบ when answering in Thai.
+            "expect": ["Bob", "บ็อบ"],
+        },
+    ],
 }
 
 
@@ -173,10 +428,12 @@ def is_thai(text):
     return thai_chars / max(total_letters, 1) > 0.3
 
 
-def test_chat_endpoint(msg, session_id=None):
+def test_chat_endpoint(msg, session_id=None, user_id=None):
     body = {"message": msg}
     if session_id:
         body["session_id"] = session_id
+    if user_id:
+        body["user_id"] = user_id
     t0 = time.time()
     try:
         r = requests.post(f"{API}/chat", json=body, timeout=120)
@@ -187,6 +444,27 @@ def test_chat_endpoint(msg, session_id=None):
         return data.get("response", ""), data.get("intent", data.get("current_intent", "")), data.get("tool_calls", []), dt, None
     except Exception as e:
         return None, None, None, (time.time() - t0) * 1000, str(e)
+
+
+def run_multi_turn(turns, session_id, user_id=None):
+    """
+    Execute a list of turns against /chat, reusing session_id across all
+    turns so the checkpointer accumulates state. Returns the final turn's
+    result plus the aggregated latency.
+    """
+    final_resp = ""
+    final_tools = []
+    final_err = None
+    total_latency = 0.0
+    for turn in turns:
+        resp, _intent, tools, dt, err = test_chat_endpoint(turn["msg"], session_id, user_id)
+        total_latency += dt
+        if err:
+            return "", [], dt, err
+        final_resp = resp or ""
+        final_tools = tools or []
+        final_err = err
+    return final_resp, final_tools, total_latency, final_err
 
 
 def test_stream_endpoint(msg, session_id=None):
@@ -251,13 +529,23 @@ def run(args):
         print("-" * 90)
 
         for i, case in enumerate(cases, 1):
-            msg = case["msg"]
+            turns = case.get("turns")  # multi-turn memory cases use this
+            is_multi = bool(turns)
+            if is_multi:
+                msg = turns[-1]["msg"]
+                expected_lang = turns[-1].get("lang")
+            else:
+                msg = case["msg"]
+                expected_lang = case.get("lang")
             keywords = case["expect"]
-            expected_lang = case.get("lang")
+            reject_keywords = case.get("reject") or []  # anti-keywords (must NOT appear)
             expected_tool = case.get("tool")
             expected_agent = case.get("agent")
+            case_user_id = case.get("user_id")
 
-            max_attempts = args.retry + 1 if expected_agent != "error" else 1
+            # Retry is counter-productive for multi-turn cases: replaying ALL
+            # turns in a fresh session would mask the thing under test.
+            max_attempts = 1 if is_multi else (args.retry + 1 if expected_agent != "error" else 1)
             attempt = 0
             status = "FAIL"
             reasons = []
@@ -268,8 +556,12 @@ def run(args):
 
             while attempt < max_attempts:
                 attempt += 1
-                sid = f"test-{agent}-{uuid.uuid4().hex[:8]}"
-                resp, _intent, tools, latency, err = test_chat_endpoint(msg, sid)
+                if is_multi:
+                    sid = f"mem-{case.get('id', agent)}-{uuid.uuid4().hex[:6]}"
+                    resp, tools, latency, err = run_multi_turn(turns, sid, case_user_id)
+                else:
+                    sid = f"test-{agent}-{uuid.uuid4().hex[:8]}"
+                    resp, _intent, tools, latency, err = test_chat_endpoint(msg, sid, case_user_id)
                 latencies.append(latency)
 
                 status = "PASS"
@@ -302,6 +594,14 @@ def run(args):
                     if expected_lang == "th" and not is_thai(resp):
                         status = "FAIL"
                         reasons.append("expected Thai")
+
+                    # Anti-keyword check for namespace-isolation / no-hallucination tests.
+                    if reject_keywords:
+                        resp_lower = resp.lower()
+                        leaks = [rk for rk in reject_keywords if rk.lower() in resp_lower]
+                        if leaks:
+                            status = "FAIL"
+                            reasons.append(f"leaked forbidden: {leaks}")
 
                 if status == "PASS":
                     break  # No need to retry

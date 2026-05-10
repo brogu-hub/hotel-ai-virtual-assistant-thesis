@@ -58,8 +58,8 @@ A: Yes, a credit card authorization or cash deposit of 2,000 THB per night is re
 ## General Information / ข้อมูลทั่วไป
 
 **Q: What is the hotel address? / ที่อยู่โรงแรม?**
-A: The Grand Paradise Hotel, 123 Sukhumvit Road, Khlong Toei, Bangkok 10110, Thailand.
-โรงแรม เดอะ แกรนด์ พาราไดส์ 123 ถนนสุขุมวิท แขวงคลองเตย กรุงเทพฯ 10110
+A: The Grand Horizon Hotel, 123 Sukhumvit Road, Khlong Toei, Bangkok 10110, Thailand.
+โรงแรม เดอะ แกรนด์ ฮอไรซัน 123 ถนนสุขุมวิท แขวงคลองเตย กรุงเทพฯ 10110
 
 **Q: What is the hotel phone number? / เบอร์โทรศัพท์โรงแรม?**
 A: Main line: +66 2 123 4567. Front Desk: Extension 0. Room Service: Extension 1.

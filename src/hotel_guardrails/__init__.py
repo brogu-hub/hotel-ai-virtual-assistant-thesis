@@ -26,7 +26,7 @@ API Endpoints:
 Configuration:
     Environment variables:
     - OPENROUTER_API_KEY: OpenRouter API key (required)
-    - OPENROUTER_REFERER: HTTP-Referer header (default: https://siam-serenity-hotel.com)
+    - OPENROUTER_REFERER: HTTP-Referer header (default: https://grand-horizon-hotel.com)
     - OPENROUTER_TITLE: X-Title header (default: Grand Horizon Concierge)
 
 Example:

@@ -64,7 +64,7 @@ class EvalConfig:
     # OpenRouter headers for Paid Tier compliance
     http_referer: str = field(
         default_factory=lambda: os.getenv(
-            "OPENROUTER_REFERER", "https://siam-serenity-hotel.com"
+            "OPENROUTER_REFERER", "https://grand-horizon-hotel.com"
         )
     )
     x_title: str = field(

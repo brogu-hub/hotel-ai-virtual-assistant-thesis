@@ -190,13 +190,21 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize LangChain LLM: {e}")
         langchain_llm = None
 
-    # Initialize persistent checkpointer (PostgreSQL or in-memory)
+    # Initialize persistent checkpointer (PostgreSQL or in-memory) — short-term memory
     try:
         from src.hotel_guardrails.hotel_langgraph import init_checkpointer, close_checkpointer
         checkpointer = await init_checkpointer()
     except Exception as e:
         logger.error(f"Failed to initialize checkpointer: {e}")
         checkpointer = None
+
+    # Initialize persistent store (PostgreSQL or in-memory) — long-term guest memory
+    try:
+        from src.hotel_guardrails.hotel_langgraph import init_store
+        store = await init_store()
+    except Exception as e:
+        logger.error(f"Failed to initialize store: {e}")
+        store = None
 
     # Ensure users table and seed default admin if no admin exists yet
     try:
@@ -242,13 +250,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to ensure users table / seed admin: {e}")
 
-    # Initialize hybrid routing components (passes checkpointer to LangGraph)
+    # Initialize hybrid routing components (passes checkpointer + store to LangGraph)
     try:
         feedback_collector = FeedbackCollector()
         hybrid_router = HybridRouter(
             feedback_store=feedback_collector.get_average_score
         )
-        langgraph_adapter = LangGraphAdapter(checkpointer=checkpointer)
+        langgraph_adapter = LangGraphAdapter(checkpointer=checkpointer, store=store)
         from src.hotel_guardrails.escalation import EscalationMonitor
         escalation_monitor = EscalationMonitor()
         logger.info("Hybrid routing + escalation monitor initialized")
@@ -281,7 +289,42 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to export OpenAPI spec: {e}")
 
+    # Schedule nightly anon-namespace memory sweeper (30-day TTL for
+    # ("anon", session_id) entries; ("guest", user_id) kept indefinitely).
+    import asyncio as _asyncio
+
+    async def _anon_memory_sweeper():
+        from src.hotel_guardrails.hotel_langgraph import prune_anon_memory
+        while True:
+            try:
+                await prune_anon_memory(max_age_days=30)
+            except Exception as e:
+                logger.warning(f"anon memory sweeper tick failed: {e}")
+            await _asyncio.sleep(24 * 60 * 60)
+
+    try:
+        anon_sweeper_task = _asyncio.create_task(_anon_memory_sweeper())
+        logger.info("Anonymous-memory sweeper scheduled (30-day TTL, 24h interval)")
+    except Exception as e:
+        anon_sweeper_task = None
+        logger.warning(f"Failed to schedule anon memory sweeper: {e}")
+
     yield
+
+    # Cleanup: stop anon sweeper task
+    if anon_sweeper_task is not None:
+        anon_sweeper_task.cancel()
+        try:
+            await anon_sweeper_task
+        except (_asyncio.CancelledError, Exception):
+            pass
+
+    # Cleanup: close store pool
+    try:
+        from src.hotel_guardrails.hotel_langgraph import close_store
+        await close_store()
+    except Exception:
+        pass
 
     # Cleanup: close checkpointer pool
     try:
@@ -873,6 +916,21 @@ async def auth_list_users(
 # =============================================================================
 
 
+# Admin-override message in each supported language. Selected by detected
+# input language so a Chinese guest doesn't receive a Thai/English response
+# (which would register as a language leak under the trilingual policy).
+_ADMIN_OVERRIDE_MESSAGES = {
+    "th": "เจ้าหน้าที่โรงแรมกำลังช่วยเหลือท่านอยู่ กรุณารอสักครู่ค่ะ",
+    "en": "A hotel staff member is assisting you. Please wait.",
+    "cn": "酒店工作人员正在为您服务，请稍候。",
+}
+
+
+def _admin_override_message(lang: str) -> str:
+    """Return the admin-override message in the requested language, defaulting to EN."""
+    return _ADMIN_OVERRIDE_MESSAGES.get(lang, _ADMIN_OVERRIDE_MESSAGES["en"])
+
+
 @app.post("/chat", response_model=ChatResponse, tags=["Chat"])
 async def chat(request: ChatRequest):
     """
@@ -985,11 +1043,14 @@ async def _process_chat_locked(
             await db.save_conversation_message(session_id, "user", request.message)
         except Exception:
             pass
+        # Match the user's language (EN/TH/CN) so a Chinese guest doesn't
+        # receive a Thai response — would register as a language leak.
+        from src.hotel_guardrails.hotel_langgraph import detect_input_language
+        admin_msg = _admin_override_message(detect_input_language(request.message))
         return ChatResponse(
-            response="เจ้าหน้าที่โรงแรมกำลังช่วยเหลือท่านอยู่ กรุณารอสักครู่ค่ะ / "
-                     "A hotel staff member is assisting you. Please wait.",
+            response=admin_msg,
             session_id=session_id,
-            request_id=request_id,
+            request_id=current_request_id,
             routing_path="admin_override",
             complexity="admin",
         )
@@ -1027,6 +1088,7 @@ async def _process_chat_locked(
                 result = await langgraph_adapter.invoke(
                     message=message_for_llm,
                     session_id=session_id,
+                    user_id=request.user_id or "guest",
                 )
             finally:
                 llm_limiter.release()
@@ -1060,15 +1122,21 @@ async def _process_chat_locked(
             except Exception as rag_error:
                 logger.warning(f"RAG search failed: {rag_error}")
 
-            system_prompt = """You are the Concierge at The Grand Horizon Hotel (โรงแรมเดอะแกรนด์ฮอไรซัน).
+            system_prompt = """You are the Concierge at The Grand Horizon Hotel (โรงแรมเดอะแกรนด์ฮอไรซัน / The Grand Horizon 大酒店).
 Your responsibilities:
 1. Answer questions about the hotel using the provided context
-2. Respond in the same language the guest uses (Thai or English)
-3. Be polite, professional, and helpful
+2. Detect the guest's language from their LATEST message and respond in the SAME language for the entire reply:
+   - English message  → respond ENTIRELY in English (Latin script)
+   - Thai message     → respond ENTIRELY in Thai (Thai script)
+   - Chinese message  → respond ENTIRELY in Mandarin Chinese (Hanzi)
+   - Any other language → respond in English by default
+3. NEVER mix scripts in one reply. Do not drop a Chinese word into a Thai/English reply, or vice versa. Translate properly. (One exception: a guest's own proper name may be echoed in its original script.)
+4. Be polite, professional, and helpful.
 
 Greeting examples:
-- Thai: "สวัสดีค่ะ/ครับ ยินดีต้อนรับสู่โรงแรมสยามเซอเรนิตี้"
 - English: "Welcome to The Grand Horizon Hotel. How may I assist you?"
+- Thai:    "สวัสดีค่ะ/ครับ ยินดีต้อนรับสู่โรงแรมเดอะแกรนด์ฮอไรซัน"
+- Chinese: "您好，欢迎光临 The Grand Horizon Hotel。请问有什么可以为您效劳的吗？"
 """
             if rag_context:
                 system_prompt += f"\n\nHotel Information Context:\n{rag_context}"
@@ -1230,11 +1298,11 @@ async def chat_stream(request: ChatRequest):
 
     # Admin-controlled check
     if session_id in admin_controlled_sessions:
+        from src.hotel_guardrails.hotel_langgraph import detect_input_language
+        admin_msg = _admin_override_message(detect_input_language(request.message))
         async def admin_stream():
             try:
-                msg = ("เจ้าหน้าที่โรงแรมกำลังช่วยเหลือท่านอยู่ กรุณารอสักครู่ค่ะ / "
-                       "A hotel staff member is assisting you. Please wait.")
-                yield f"data: {json.dumps({'content': msg, 'done': False})}\n\n"
+                yield f"data: {json.dumps({'content': admin_msg, 'done': False})}\n\n"
                 yield f"data: {json.dumps({'content': '', 'done': True, 'session_id': session_id})}\n\n"
             finally:
                 stream_limiter.release()
@@ -1257,6 +1325,7 @@ async def chat_stream(request: ChatRequest):
                     result = await langgraph_adapter.invoke(
                         message=message_for_llm,
                         session_id=session_id,
+                        user_id=request.user_id or "guest",
                     )
                 finally:
                     llm_limiter.release()

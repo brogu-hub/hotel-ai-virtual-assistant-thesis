@@ -18,11 +18,13 @@ langchain-openai>=0.2.0
 pyyaml>=6.0
 python-dotenv>=1.0.0
 
-# Database - PostgreSQL (for LangGraph checkpointing)
+# Database - PostgreSQL (for LangGraph checkpointing + long-term store)
 psycopg2-binary==2.9.9
 psycopg-binary==3.2.3
 psycopg-pool==3.2.2
-langgraph-checkpoint-postgres==2.0.0
+# 2.0.13+ ships langgraph.store.postgres (AsyncPostgresStore) alongside the
+# existing checkpoint saver. Required for long-term guest memory.
+langgraph-checkpoint-postgres>=2.0.13,<3.0.0
 
 # Vector Database - Qdrant
 qdrant-client>=1.7.0

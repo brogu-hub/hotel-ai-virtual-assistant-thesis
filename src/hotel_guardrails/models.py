@@ -56,10 +56,18 @@ class ChatRequest(BaseModel):
         description="Session ID for conversation context. If not provided, a new session is created.",
         examples=["550e8400-e29b-41d4-a716-446655440000"],
     )
+    user_id: Optional[str] = Field(
+        None,
+        description="Stable guest identifier for cross-session long-term memory. "
+                    "If omitted, memory is stored under an anonymous per-session namespace "
+                    "and becomes eligible for 30-day TTL cleanup.",
+        examples=["guest-42", "alice@example.com"],
+        max_length=128,
+    )
     language: Optional[str] = Field(
         "auto",
-        description="Preferred response language: 'th' (Thai), 'en' (English), or 'auto' (detect from input)",
-        pattern="^(th|en|auto)$",
+        description="Preferred response language: 'th' (Thai), 'en' (English), 'cn' (Mandarin Chinese), or 'auto' (detect from input)",
+        pattern="^(th|en|cn|auto)$",
     )
     llm_settings: Optional[LLMOverrides] = Field(
         None,

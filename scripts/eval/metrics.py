@@ -43,7 +43,7 @@ class OpenRouterJudge(DeepEvalBaseLLM):
         api_key: Optional[str] = None,
         base_url: str = "https://openrouter.ai/api/v1",
         temperature: float = 0.0,
-        http_referer: str = "https://siam-serenity-hotel.com",
+        http_referer: str = "https://grand-horizon-hotel.com",
         x_title: str = "Hotel RAG Evaluation",
     ):
         """
