@@ -304,6 +304,172 @@ if had_leak and attempt == max_retries:
 
 ผลลัพธ์ 98.3% accuracy เป็นระดับที่ยอมรับได้สำหรับ production deployment โดยยังคงประโยชน์ของการใช้ local model (ต้นทุน $0 และ data privacy) และให้ cloud fallback เป็นตัวเลือก manual สำหรับ edge cases ที่ซับซ้อน
 
+#### 5.14.7 Chinese Token Leak และ Trilingual EN/TH/CN Policy
+
+หลังจาก 5.14.2–5.14.6 ผลทดสอบเริ่มต้น 0/38 เคสมี Chinese leak อย่างไรก็ตามการเพิ่ม **stress test ที่กดดันโมเดลมากขึ้น** เผยให้เห็นข้อจำกัดเพิ่มเติมประการที่ 5: เนื่องจาก Qwen3.5 ฝึกด้วยคลังข้อมูลภาษาจีนเป็นหลัก local 9B model จะ "หลุด" ตัวอักษรจีน (CJK ideographs) เข้ามาในคำตอบภาษาไทยหรืออังกฤษบางครั้งภายใต้ cognitive load สูง — เช่น turn ที่ต้องสรุป conversation หลายขั้น หรือคำขอที่ต้องเปลี่ยนภาษากลางบทสนทนา ตัวอย่างที่พบในการทดสอบจริง:
+
+> "...• ✅ การตรวจสอบราคาและ**可用性** **ขออภัยที่สับสน** — คำตอบที่ฉันให้ไปเมื่อกี้..."
+
+โมเดลกำลังสร้างคำตอบภาษาไทย พบคำว่า "availability" และส่งออกเป็นจีน 可用性 (3 ตัวอักษร) แทนที่จะแปลเป็นภาษาไทย แม้ regex `has_tool_leak()` จาก 5.14.2 จะไม่จับเนื่องจากไม่ใช่ tool-call syntax post-processor เดิมจึงไม่สามารถป้องกันได้
+
+**การพิจารณาทาง business: Chinese เป็นภาษาที่ต้องรองรับ ไม่ใช่ภาษาที่ต้องบล็อก**
+
+นักท่องเที่ยวจากจีนแผ่นดินใหญ่เป็นกลุ่มลูกค้าหลักของโรงแรม 5 ดาวในประเทศไทย (ประมาณ 17% ของแขกต่างชาติทั้งหมดในปี 2025) ดังนั้นการกำจัด CJK ออกจากคำตอบทั้งหมดจะเป็นการตัดสินใจที่ผิด policy ที่ถูกต้องคือ: **respond in the same language as the user's latest message** ขยายขอบเขตจาก 2 ภาษา (ไทย/อังกฤษ) เป็น 3 ภาษา (ไทย/อังกฤษ/จีน) อย่างเป็นทางการ
+
+**ชั้นที่ 1: Trilingual Policy ใน System Prompt**
+
+ปรับ `main_prompt` ใน `src/agent/hotel_prompt.yaml` ให้ประกาศการรองรับ 3 ภาษาอย่างชัดเจน พร้อม Chinese tone block:
+
+```yaml
+# src/agent/hotel_prompt.yaml — main_prompt
+You are a professional trilingual (Thai/English/Chinese) hotel assistant
+for The Grand Horizon Hotel...
+
+**CRITICAL LANGUAGE RULE**: Detect the guest's language from their LATEST
+message only and reply in the SAME language for the ENTIRE response.
+- English message → respond ENTIRELY in English (Latin script)
+- Thai message    → respond ENTIRELY in Thai (Thai script)
+- Chinese message → respond ENTIRELY in Mandarin Chinese (Hanzi)
+- Any other language → respond in English by default
+- NEVER mix scripts in one response. Do NOT drop a Chinese word into a
+  Thai/English reply, or a Thai word into an English/Chinese reply, even
+  for terms like "availability" — translate them properly.
+- One exception: a guest's own proper name (e.g. "王小明") may be echoed
+  in its original script — names are not translated.
+
+**CHINESE TONE**: Address the guest as 您 (formal "you"). Default to
+Simplified Chinese unless the guest writes in Traditional.
+```
+
+นอกจากนี้ admin-override message (เมื่อ `escalation_monitor` ดักจับ session ส่งให้ staff ดูแลแทน bot) ก็ปรับให้ตอบในภาษาที่ guest พูด:
+
+```python
+# src/hotel_guardrails/server.py
+_ADMIN_OVERRIDE_MESSAGES = {
+    "th": "เจ้าหน้าที่โรงแรมกำลังช่วยเหลือท่านอยู่ กรุณารอสักครู่ค่ะ",
+    "en": "A hotel staff member is assisting you. Please wait.",
+    "cn": "酒店工作人员正在为您服务，请稍候。",
+}
+```
+
+**ชั้นที่ 2: Language-Leak Detector (`has_language_leak`)**
+
+โครงสร้างเดียวกับ `has_tool_leak()` ใน 5.14.2 — detect → retry → strip — แต่ logic ภายในต่างกัน เนื่องจากต้องแยกระหว่าง CJK ที่หลุด (leak) กับ CJK ที่ guest ใส่มาเอง (เช่น ชื่อตัวเอง) ซึ่ง echo กลับมาได้:
+
+```python
+# src/hotel_guardrails/hotel_langgraph.py
+_CJK_RE  = _re.compile(r"[㐀-䶿一-鿿豈-﫿぀-ヿ]")
+_THAI_RE = _re.compile(r"[฀-๿]")
+
+def detect_input_language(text: str) -> str:
+    """Classify a user message as 'en', 'th', or 'cn' by dominant script."""
+    cn = len(_CJK_RE.findall(text))
+    th = len(_THAI_RE.findall(text))
+    en = sum(1 for c in text if c.isascii() and c.isalpha())
+    total = cn + th + en
+    if total == 0:
+        return "en"
+    if cn >= max(th, en) and cn / total >= 0.20:
+        return "cn"
+    if th >= max(cn, en) and th / total >= 0.20:
+        return "th"
+    return "en"
+
+def has_language_leak(input_text: str, response_text: str) -> bool:
+    """True if response script doesn't match expected reply language."""
+    expected = detect_input_language(input_text)
+    user_cjk = {c for c in input_text if _CJK_RE.match(c)}
+
+    if expected in ("en", "th"):
+        # Any CJK char NOT provided by the user is a leak
+        return any(_CJK_RE.match(c) and c not in user_cjk for c in response_text)
+
+    # expected == "cn": Thai chars or insufficient CJK = leak
+    cjk_total  = len(_CJK_RE.findall(response_text))
+    thai_total = len(_THAI_RE.findall(response_text))
+    body_len   = cjk_total + thai_total + sum(1 for c in response_text
+                                              if c.isascii() and c.isalpha())
+    if thai_total >= 5:
+        return True
+    if body_len >= 60 and cjk_total < 10:
+        return True  # model failed to reply in Chinese
+    return False
+```
+
+จุดสำคัญของการออกแบบ:
+
+* **User-provided CJK whitelist** : เก็บอักษรจีนที่ guest พิมพ์มาเอง (เช่น "王小明 (Wang Xiaoming)") เพื่อให้ echo กลับในคำตอบภาษาอังกฤษได้โดยไม่นับเป็น leak — นี่คือพฤติกรรมที่ถูกต้อง (ไม่ควรแปลชื่อคน)
+* **Asymmetric thresholds** : EN/TH expected ห้าม CJK 1 ตัวขึ้นไป (strict); CN expected อนุญาต Latin (brand names) แต่ห้าม Thai (ตามคนละ script)
+* **Quantity check สำหรับ CN reply** : ถ้า body ยาวพอ (≥ 60 ตัวอักษร) แต่ CJK น้อยกว่า 10 แสดงว่าโมเดลไม่ยอมตอบเป็นจีน — นับเป็น leak ในทิศทางตรงข้าม
+
+**ชั้นที่ 3: Wire เข้า Retry Loop**
+
+ใช้ retry mechanism จาก 5.14.3 โดยเพิ่ม language leak เป็น quality check เพิ่มเติม:
+
+```python
+# src/hotel_guardrails/hotel_langgraph.py — invoke_hotel_agent
+leaked      = has_tool_leak(candidate_text)
+lang_leaked = has_language_leak(message, candidate_text)
+
+if candidate_text and not leaked and not lang_leaked:
+    return success(candidate_text, retries=attempt)
+
+if attempt < max_retries:
+    reason = ("tool-call leak" if leaked else
+              f"language leak (expected {detect_input_language(message)})"
+              if lang_leaked else "empty response")
+    logger.warning(f"Retry {attempt+1}/{max_retries} — {reason}")
+```
+
+retry budget ใช้ค่าเดิมจาก 5.14.4 (2 ครั้งสำหรับ 9B local 1 ครั้งสำหรับ cloud) ไม่ต้องเพิ่ม cost
+
+**ชั้นที่ 4: `strip_language_leak()` Last-Resort Fallback**
+
+หาก retry ทั้งหมดยังคงมี leak จะทำ aggressive strip โดยลบเฉพาะ run ของ off-script characters ขนาด 2 ตัวขึ้นไป ที่ guest ไม่ได้ใส่มาเอง — single-character leaks ปล่อยไว้เพื่อหลีกเลี่ยงการตัดประโยคขาด ส่วน proper names ที่อยู่ใน user input จะรอดเสมอ
+
+```python
+def strip_language_leak(input_text: str, response_text: str) -> str:
+    expected = detect_input_language(input_text)
+    user_cjk_runs = {m.group(0) for m in _CJK_RUN_RE.finditer(input_text)}
+
+    if expected in ("en", "th"):
+        # Drop CJK runs of 2+ chars not in user's input
+        return _CJK_RUN_RE.sub(
+            lambda m: m.group(0) if m.group(0) in user_cjk_runs else "",
+            response_text,
+        )
+    elif expected == "cn":
+        # Drop Thai runs in a Chinese reply; Latin (brand names) preserved
+        return _THAI_RUN_RE.sub("", response_text)
+    return response_text
+```
+
+**ผลการทดสอบ — `scripts/test_chinese_leak.py` (18 scenarios, 70 turns, multi-turn)**
+
+ทดสอบกับ live local Qwen3.5 Opus 9B ผ่าน Ollama ครอบคลุม 8 trigger categories: (1) cross-language code switching ระหว่าง turns, (2) hard reasoning ภายใต้ multi-constraint booking, (3) out-of-domain math/literature, (4) RAG cold spots, (5) long Thai conversation 6 turns, (6) cross-session memory recall ที่เปลี่ยนภาษา, (7) technical service request, (8) direct Chinese-language provocations ("respond in Chinese") พร้อม positive scenarios เพิ่มเติม: pure Chinese conversation 5 turns, CN→TH→EN three-language switch, CN cross-session memory recall
+
+| Run | Scenarios | Turns | Leaked | Leak rate |
+| --- | ---: | ---: | ---: | ---: |
+| Pre-fix (8 base + 3 baits) | 11 | 38 | 3 | **7.9%** |
+| Post-fix (13 incl. positive CN) | 13 | 46 | **0** | **0.0%** |
+| Extended edge cases (incl. trilingual admin-override) | 5 | 24 | **0** | **0.0%** |
+| **รวม post-fix** | **18** | **70** | **0** | **0.0%** |
+
+scenario `G_technical_service` turn 3 ที่เคย leak `可用性` (3 CJK chars) post-fix ส่งคำตอบเป็นภาษาไทยล้วน 545 chars (0 CJK 362 Thai chars) scenario ใหม่ `L_full_chinese_conversation` 5 turns ตอบเป็นภาษาจีนล้วน 1011 CJK chars 0 Thai
+
+**Bug fix ที่พบระหว่างการทดสอบ**
+
+ระหว่าง stress test เผยให้เห็น `NameError: 'request_id' is not defined` ใน admin-override branch ที่ `server.py:1035` (จะ fire เมื่อ `escalation_monitor` flag session แล้ว turn ถัดไปเข้า admin-override path) แก้ไขโดยเปลี่ยน `request_id` → `current_request_id` ตาม signature ของ `_process_chat_locked()` — เป็นตัวอย่างที่แสดงว่า defensive testing สามารถค้นพบ bug ที่ไม่เกี่ยวข้องกับสิ่งที่ทดสอบโดยตรง
+
+**ข้อจำกัดที่ยังเหลือ**
+
+* Chain-of-thought adversarial prompts ("Think step by step", "Show your reasoning out loud") ทำให้ local 9B run-away generation จนเกิน request timeout 120 วินาที (3/4 turns ใน scenario Q ของชุดทดสอบ) — ปัญหานี้แยกออกจาก language leak ไม่ใช่ leak แต่เป็น performance issue แก้ได้ด้วย max_tokens cap หรือเพิ่ม upstream timeout
+* Single-character CJK leaks ไม่ถูก strip (เพื่อหลีกเลี่ยงการตัดประโยคขาด) — ถ้ารอด retry ทั้ง 2 ครั้งจะถึงผู้ใช้
+* `_extract_prefs_from_text()` ของ memory layer ปัจจุบันรองรับเฉพาะ EN+TH keyword tables — Chinese preference extraction (เช่น 我对花生过敏 = peanut allergy) เป็น follow-up ที่จะทำต่อไป
+* การทดสอบรอบนี้ใช้เฉพาะ local 9B; cloud Qwen3 Max คาดว่าจะผ่านอย่างน้อยเท่ากับ local (จากผลการทดสอบ functional 100% ก่อนหน้านี้) แต่ยังไม่ได้ rerun อย่างเป็นทางการ
+
+ผลลัพธ์รวม: ระบบ quality control เพิ่มเป็น 4 ชั้น (จากเดิม 3 ชั้น) ครอบคลุม tool-call leak, language leak, empty response และ Thai particle consistency พร้อมรองรับลูกค้าจีนแผ่นดินใหญ่อย่างเป็นทางการ — เป็นการแสดงว่าสถาปัตยกรรม detector + retry + strip ที่ออกแบบไว้สำหรับ tool-call leak สามารถขยายไปครอบคลุม leak ประเภทอื่นได้โดยไม่ต้อง refactor
+
 ---
 
 ## Suggested Figure Placeholders
@@ -312,6 +478,7 @@ You can also add these figure references (generate PNGs later or make ASCII):
 
 * `[Figure 5.25: Server-side retry flow — LangGraph invoke → quality check (empty? leak?) → retry (up to max_retries) → return]`
 * `[Figure 5.26: Thai particle decision tree — detect user particle → match in response → validate consistency]`
+* `[Figure 5.27: Trilingual EN/TH/CN policy — detect_input_language() → expected reply script → has_language_leak() with user-provided CJK whitelist → retry → strip_language_leak() fallback. Mirrors the tool-call leak architecture (Figure 5.25) extended to language drift.]`
 
 ---
 
@@ -319,5 +486,5 @@ You can also add these figure references (generate PNGs later or make ASCII):
 
 If you want a one-paragraph teaser at the very start of 5.14 before 5.14.1:
 
-> ระหว่างการทดสอบ 59 test cases กับ 4 sub-agents พบว่า local Qwen3.5 Opus 9B model มีข้อจำกัด 4 ประการที่กระทบคุณภาพคำตอบ ได้แก่ (1) tool-call leak เขียน syntax เป็น text แทนการเรียก tool (2) empty response (3) Thai particle mismatch ระหว่าง ครับ/ค่ะ/คะ และ (4) particle mixing ในคำตอบเดียวกัน ปัญหาเหล่านี้ไม่เกิดกับ cloud model แต่เกิดเป็นครั้งคราวกับ 9B ภายใต้บริบทภาษาไทยซับซ้อน จึงได้พัฒนาระบบ quality control 3 ชั้น ได้แก่ regex-based leak detection, server-side retry พร้อม per-model retry budget และ strict prompt rules สำหรับ Thai particle ผลการทดสอบขั้นสุดท้ายได้ความแม่นยำ 98.3%
+> ระหว่างการทดสอบ 59 test cases กับ 4 sub-agents พบว่า local Qwen3.5 Opus 9B model มีข้อจำกัด 4 ประการที่กระทบคุณภาพคำตอบ ได้แก่ (1) tool-call leak เขียน syntax เป็น text แทนการเรียก tool (2) empty response (3) Thai particle mismatch ระหว่าง ครับ/ค่ะ/คะ และ (4) particle mixing ในคำตอบเดียวกัน การ stress test เพิ่มเติมเผยข้อจำกัดที่ 5 (5) Chinese ideograph leak — Qwen3.5 ที่ฝึกด้วยข้อมูลภาษาจีนเป็นหลักหลุดอักษรจีนเข้ามาในคำตอบไทย/อังกฤษภายใต้ cognitive load สูง ปัญหาเหล่านี้ไม่เกิดกับ cloud model แต่เกิดเป็นครั้งคราวกับ 9B ภายใต้บริบทซับซ้อน จึงได้พัฒนาระบบ quality control 4 ชั้น ได้แก่ regex-based tool-call leak detection, server-side retry พร้อม per-model retry budget, strict prompt rules สำหรับ Thai particle และ trilingual EN/TH/CN policy พร้อม language-leak detector + strip post-processor พร้อม user-provided CJK whitelist (สำหรับ proper-name echoes) ผลการทดสอบ functional ได้ 98.3% accuracy ส่วน Chinese-leak stress test ได้ 0/70 turns leaked (จาก 7.9% pre-fix) ครอบคลุมทั้ง pure-Chinese conversation และ CN→TH→EN three-language switch
 >
