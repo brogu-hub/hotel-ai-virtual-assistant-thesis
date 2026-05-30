@@ -25,7 +25,17 @@ except ImportError:
     sys.exit(1)
 
 # Configuration
-OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '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')
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
+if not OPENROUTER_API_KEY:
+    print(
+        "Error: OPENROUTER_API_KEY environment variable is not set.\n"
+        "Set it with one of:\n"
+        "  export OPENROUTER_API_KEY=sk-or-v1-...      (bash/zsh)\n"
+        "  $env:OPENROUTER_API_KEY = 'sk-or-v1-...'     (PowerShell)\n"
+        "Or add it to .env in the project root (which is gitignored).",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 MODEL_NAME = os.getenv('APP_LLM_MODELNAME', 'qwen/qwen3-max')
 OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
 
