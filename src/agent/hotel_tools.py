@@ -364,6 +364,29 @@ def create_reservation(
                 result = cur.fetchone()
                 conn.commit()
 
+                # Audit the booking creation (best-effort).
+                try:
+                    from src.hotel_guardrails.audit import sync_audit, AuditActions
+                    sync_audit(
+                        action=AuditActions.CHAT_BOOKING_CREATED,
+                        resource_type="reservation",
+                        resource_id=str(result["confirmation_number"]),
+                        details={
+                            "guest_email": guest_email,
+                            "room_number": room_number,
+                            "room_type": room["name"],
+                            "check_in_date": check_in_date,
+                            "check_out_date": check_out_date,
+                            "nights": nights,
+                            "num_guests": num_guests,
+                            "total_amount": float(total_amount),
+                            "pricing_label": pricing_label,
+                        },
+                        success=True,
+                    )
+                except Exception:
+                    pass  # audit must never break the business flow
+
                 return f"""
 การจองสำเร็จ! / Booking Created!
 ==========================================
@@ -407,6 +430,24 @@ def confirm_reservation(reservation_id: str) -> str:
 
                 result = cur.fetchone()
                 conn.commit()
+
+                # Audit the confirmation (best-effort, status transition pending → confirmed).
+                try:
+                    from src.hotel_guardrails.audit import sync_audit, AuditActions
+                    sync_audit(
+                        action=AuditActions.CHAT_BOOKING_UPDATED,
+                        resource_type="reservation",
+                        resource_id=str(result["confirmation_number"]) if result else reservation_id,
+                        details={
+                            "transition": "pending->confirmed",
+                            "found": bool(result),
+                            "check_in_date": str(result["check_in_date"]) if result else None,
+                            "check_out_date": str(result["check_out_date"]) if result else None,
+                        },
+                        success=bool(result),
+                    )
+                except Exception:
+                    pass  # audit must never break the business flow
 
                 if not result:
                     return f"ไม่พบการจองที่รอยืนยัน หมายเลข {reservation_id} / No pending reservation found for {reservation_id}"
@@ -466,6 +507,24 @@ def create_service_request(
 
                 result = cur.fetchone()
                 conn.commit()
+
+                # Audit the service request (best-effort).
+                try:
+                    from src.hotel_guardrails.audit import sync_audit, AuditActions
+                    sync_audit(
+                        action=AuditActions.CHAT_SERVICE_REQUEST,
+                        resource_type="service_request",
+                        resource_id=str(result["request_id"]),
+                        details={
+                            "reservation_id": str(res["reservation_id"]),
+                            "guest_id": str(res["guest_id"]),
+                            "request_type": request_type,
+                            "description": description[:200],  # cap to keep audit_log compact
+                        },
+                        success=True,
+                    )
+                except Exception:
+                    pass  # audit must never break the business flow
 
                 return f"""
 บันทึกคำขอบริการแล้ว / Service Request Created!
@@ -569,6 +628,28 @@ def update_reservation(
 
                 result = cur.fetchone()
                 conn.commit()
+
+                # Audit the update (best-effort).
+                try:
+                    from src.hotel_guardrails.audit import sync_audit, AuditActions
+                    sync_audit(
+                        action=AuditActions.CHAT_BOOKING_UPDATED,
+                        resource_type="reservation",
+                        resource_id=str(result["confirmation_number"]) if result else reservation_id,
+                        details={
+                            "transition": "update_fields",
+                            "new_check_in_date": str(new_check_in),
+                            "new_check_out_date": str(new_check_out),
+                            "new_nights": nights,
+                            "new_room_id": new_room_id,
+                            "new_total_amount": float(new_total),
+                            "num_guests_changed": num_guests is not None,
+                            "special_requests_changed": special_requests is not None,
+                        },
+                        success=bool(result),
+                    )
+                except Exception:
+                    pass  # audit must never break the business flow
 
                 return f"""
 แก้ไขการจองสำเร็จ! / Reservation Updated!
@@ -1085,7 +1166,30 @@ def generate_payment_link(reservation_id: str) -> str:
                     RETURNING payment_id
                 """, (token, res['reservation_id'], amount, expires_minutes))
 
+                payment_result = cur.fetchone()
                 conn.commit()
+
+                # Audit the payment-link creation (best-effort).
+                # Don't log the token (it's a secret bearer credential) — only
+                # log payment_id, reservation, and amount for spend monitoring.
+                try:
+                    from src.hotel_guardrails.audit import sync_audit, AuditActions
+                    sync_audit(
+                        action=AuditActions.CHAT_PAYMENT_LINK,
+                        resource_type="payment_link",
+                        resource_id=str(payment_result["payment_id"]) if payment_result else None,
+                        details={
+                            "reservation_id": str(res["reservation_id"]),
+                            "confirmation_number": str(res["confirmation_number"]),
+                            "amount_thb": amount,
+                            "expires_minutes": expires_minutes,
+                            # token deliberately omitted — never logged
+                        },
+                        success=bool(payment_result),
+                    )
+                except Exception:
+                    pass  # audit must never break the business flow
+
                 url = f"https://pay.grandhorizon.hotel/checkout/{token}"
 
                 return f"""

@@ -1,0 +1,68 @@
+---
+title: "ภาพที่ 1.1 แผนภาพบริบทของระบบ (System Context Diagram) — The Grand Horizon Hotel AI Assistant"
+---
+flowchart TB
+    %% --- External actors (top) ---
+    GUEST(["👤 Guest / แขก<br/>Web browser<br/>EN · TH · CN"]):::actor
+    STAFF(["👨‍💼 Hotel Staff / พนักงานโรงแรม<br/>Front desk · Concierge · Admin"]):::actor
+
+    %% --- The system boundary (everything inside is "our" system) ---
+    subgraph SYS["🏨 Hotel AI Virtual Assistant — System Boundary"]
+        direction TB
+
+        %% Frontend layer
+        subgraph UI["Frontend"]
+            direction LR
+            WEB["🌐 Hotel Website<br/>Chatbot widget<br/>(localhost:3001)"]:::ui
+            DASH["📊 Admin Dashboard<br/>(Settings · Sessions ·<br/>Audit · Escalations)"]:::ui
+        end
+
+        %% API layer
+        API["⚙️ FastAPI Server<br/>hotel_guardrails<br/>POST /chat · /chat/stream<br/>+ admin endpoints"]:::api
+
+        %% Reasoning layer
+        AGENT["🤖 LangGraph Agent<br/>Primary router<br/>+ 4 sub-agents:<br/>booking · service ·<br/>knowledge · other_talk"]:::agent
+    end
+
+    %% --- External data + LLM services ---
+    LLM_LOCAL[("🖥️ Ollama (Local)<br/>Qwen3.5-Opus-9B<br/>Q4_K_M GGUF<br/>dev backend")]:::external
+    LLM_CLOUD[("☁️ OpenRouter API<br/>Qwen3-max<br/>prod backend")]:::external
+
+    PG[("🐘 PostgreSQL<br/>hotel DB<br/>App tables<br/>+ Plane-1 checkpoints<br/>+ Plane-2 store<br/>+ audit_log")]:::store
+    QDRANT[("🔍 Qdrant Vector Store<br/>hotel_knowledge collection<br/>4096-d Cosine<br/>10 indexed docs")]:::store
+
+    KB[/"📚 Hotel Knowledge Base<br/>data/hotel/*.md<br/>(Dining · Spa · Policies ·<br/>Rooms · FAQ · Transport)"/]:::data
+
+    %% --- Connections ---
+    GUEST -->|"HTTPS<br/>chat messages<br/>EN/TH/CN"| WEB
+    STAFF -->|"HTTPS + JWT<br/>admin auth"| DASH
+    WEB -->|"POST /chat<br/>{message, session_id,<br/>user_id, language}"| API
+    DASH -->|"GET/PATCH<br/>admin endpoints"| API
+
+    API -->|"safety check<br/>+ PII redact"| AGENT
+
+    AGENT -->|"runtime-switchable<br/>chat.completions"| LLM_LOCAL
+    AGENT -->|"runtime-switchable<br/>chat.completions"| LLM_CLOUD
+
+    AGENT -->|"RAG retrieval<br/>top-K cosine"| QDRANT
+    AGENT -->|"reservations · service_requests ·<br/>checkpoints · store · audit_log"| PG
+
+    KB -->|"ingest at build time<br/>per-doc embedding<br/>qwen3-embedding-8b"| QDRANT
+
+    API -->|"all admin writes<br/>logged"| PG
+
+    %% --- Reverse arrows (responses) ---
+    AGENT -.->|"AI response<br/>EN/TH/CN<br/>tool-call results"| API
+    API -.->|"JSON response<br/>+ SSE stream"| WEB
+    API -.->|"dashboard data"| DASH
+
+    %% --- Styling ---
+    classDef actor    fill:#fff3e0,stroke:#e65100,stroke-width:2.5px,color:#000
+    classDef ui       fill:#e3f2fd,stroke:#0277bd,stroke-width:1.5px,color:#000
+    classDef api      fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#000
+    classDef agent    fill:#fff9c4,stroke:#f9a825,stroke-width:2.5px,color:#000
+    classDef external fill:#fce4ec,stroke:#ad1457,stroke-width:1.5px,color:#000
+    classDef store    fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px,color:#000
+    classDef data     fill:#dcedc8,stroke:#33691e,stroke-width:1.5px,color:#000
+    classDef sysbox   fill:#fafafa,stroke:#424242,stroke-width:2px,stroke-dasharray:5 3
+    class SYS sysbox
