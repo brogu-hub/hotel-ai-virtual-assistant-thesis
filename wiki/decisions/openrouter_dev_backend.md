@@ -45,7 +45,7 @@ Use OpenRouter as the primary LLM gateway for `hotel_guardrails`, defaulting to 
 ## Consequences
 
 - Positive: Development runs immediately on any machine with an OpenRouter API key. Railway deployment works without GPU hardware. Runtime model switching enables live A/B comparisons (Qwen3-max vs Qwen3.5-Opus-9B vs MiniMax-M2.7). Evaluation data shows Qwen3-max reaches 100% on the hotel test suite.
-- Negative / trade-offs: The production NVIDIA NIM path is untested in the thesis environment — functional equivalence is assumed but not empirically validated end-to-end. OpenRouter adds a network hop and a third-party availability dependency. `openrouter_llm.py` still contains `siam-serenity-hotel.com` as the HTTP referer header — a minor brand inconsistency from an earlier name of the hotel.
+- Negative / trade-offs: The production NVIDIA NIM path is untested in the thesis environment — functional equivalence is assumed but not empirically validated end-to-end. OpenRouter adds a network hop and a third-party availability dependency.
 - Revisit if: NVIDIA NIM access becomes available for a real production trial; or OpenRouter pricing changes make it uneconomical at scale.
 
 ## Related

@@ -152,6 +152,58 @@
         "wiki/flows/_index.md",
         "wiki/entities/_index.md"
       ]
+    },
+    {
+      "source": "src/hotel_guardrails/ + docs/plans/postgres_store_and_saver_memory.md + docs/api_references/hotel_guardrails_server.yaml + data/hotel/",
+      "title": "Hotel AI Chatbot — Full code-walk for thesis support chapter",
+      "ingested": "2026-04-20",
+      "git_commit": "2cd8362",
+      "ingest_type": "batch (4 parallel agents A/B/C/D, partial rate-limit, main-thread synthesis)",
+      "pages_created": [
+        "wiki/thesis/memory_system_design.md",
+        "wiki/thesis/hotel_ai_chatbot_chapter.md",
+        "wiki/concepts/dual_plane_memory.md",
+        "wiki/concepts/rule_based_memory_write_back.md",
+        "wiki/concepts/bilingual_memory_extraction.md",
+        "wiki/concepts/tool_call_codeblock_leak.md",
+        "wiki/concepts/anon_namespace_ttl.md",
+        "wiki/flows/cross_session_memory.md",
+        "wiki/experiments/memory-test-suite-2026-04-20.md",
+        "wiki/components/server.md",
+        "wiki/components/pydantic_models.md",
+        "wiki/components/auth.md",
+        "wiki/components/audit.md",
+        "wiki/components/pii_redactor.md",
+        "wiki/components/escalation.md",
+        "wiki/components/actions.md",
+        "wiki/components/database.md",
+        "wiki/decisions/fork_nvidia_blueprint.md",
+        "wiki/decisions/hybrid_langgraph_nemo.md",
+        "wiki/decisions/four_subagent_split.md",
+        "wiki/decisions/openrouter_dev_backend.md",
+        "wiki/decisions/qdrant_dev_milvus_prod.md",
+        "wiki/decisions/railway_deployment.md",
+        "wiki/decisions/python_312_runtime.md"
+      ],
+      "pages_updated": [
+        "wiki/components/hotel_langgraph.md",
+        "wiki/index.md",
+        "wiki/log.md",
+        "wiki/hot.md"
+      ],
+      "pages_pending": [],
+      "pages_gap_filled_2026_04_20_06_35": [
+        "wiki/components/chat_scaling.md",
+        "wiki/components/config.md",
+        "wiki/components/packaging.md",
+        "wiki/components/guest_memory_store.md",
+        "wiki/components/memory_preamble_injector.md",
+        "wiki/components/tool_call_post_processor.md",
+        "wiki/components/anon_memory_sweeper.md",
+        "wiki/references/hotel_guardrails_api.md",
+        "wiki/references/hotel_knowledge_base.md"
+      ],
+      "note": "4 parallel agents rate-limited mid-run (reset 4am Asia/Bangkok); main thread filled the memory-system gap (hotel_langgraph update, 2 concept pages, 1 flow page, 1 experiment page) and wrote the thesis chapter synthesis at 06:15. Then a 06:35 gap-fill pass filed the remaining 9 pages (2 new references/, 3 component + 4 memory-subcomponent pages), closing all pending wikilinks from [[thesis/hotel_ai_chatbot_chapter]]. Contradictions flagged: hotel naming drift across CLAUDE.md / OpenAPI spec / data/hotel/room_types.md (Grand Horizon / Siam Serenity / Grand Paradise). Key insight: the dual-plane memory system is the thesis novel contribution — [[thesis/memory_system_design]] has Chapter 2 §2.3.4 drop-in text."
     }
   ]
 }

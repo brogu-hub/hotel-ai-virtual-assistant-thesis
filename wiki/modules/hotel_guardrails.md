@@ -107,7 +107,6 @@ The actively-developed hotel assistant service for The Grand Horizon Hotel. Expo
 - **Runtime model switching** via `PATCH /settings/llm` changes `RuntimeLLMConfig` singleton in-process with no restart required.
 - **PII scrubbing** happens inside `/chat` before the message reaches LangGraph.
 - **Audit trail** is PostgreSQL-backed; token blocklist is in-memory (not Redis), so logout tokens are re-valid after server restart.
-- **`openrouter_llm.py` ref note:** The file still contains the old referer `siam-serenity-hotel.com` rather than `grand-horizon-hotel.com` — minor brand inconsistency.
 
 ## Related
 

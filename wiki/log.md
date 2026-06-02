@@ -1,7 +1,7 @@
 ---
 type: meta
 title: "Operations Log"
-updated: 2026-04-19
+updated: 2026-04-20
 ---
 
 # Operations Log
@@ -9,6 +9,72 @@ updated: 2026-04-19
 Append-only. **New entries at the TOP.** Every ingest, scaffold, lint, autoresearch, or significant save gets a line.
 
 Format: `- YYYY-MM-DD HH:MM — [op] short description [[page1]] [[page2]]`
+
+---
+
+## 2026-04-20
+
+### 2026-04-20 18:10 — [test+fix] Extended Chinese-leak edge cases + trilingual admin-override
+
+After the basic 13-scenario suite passed, ran a 5-scenario edge-case sweep covering: (N) per-sub-agent CN coverage, (O) romanised Chinese names without CJK input, (P) 10-turn sustained Chinese, (Q) chain-of-thought adversarial prompts, (R) CN cross-session memory recall.
+
+- Findings: N/O/R clean (4/3/3). P initially 6/10 leaked because the auto-escalation hardcoded admin-override message was bilingual TH+EN only — when escalated, Chinese guests received Thai. Q showed 3/4 timeouts on "step by step" prompts (separate runaway-CoT issue, not a language leak).
+- **Trilingual admin-override fix**: added `_admin_override_message(lang)` + `_ADMIN_OVERRIDE_MESSAGES` dict in `server.py`. Both `/chat` and `/chat/stream` admin-override branches now select EN/TH/CN by `detect_input_language(request.message)`. Chinese variant: `酒店工作人员正在为您服务，请稍候。`
+- **Re-run P after fix**: 0/10 leaked. Combined post-fix tally: **0/70 turns leaked across 18 scenarios**.
+- Side-issue filed: explicit chain-of-thought prompts can blow the 120s request timeout on the local 9B. Needs a max_tokens cap or upstream timeout bump — separate gap, not a language-leak issue.
+- Wiki: [[experiments/chinese-leak-test-2026-04-20]] extended with Run 3 + Side-issue sections.
+
+### 2026-04-20 17:30 — [feat+fix] Three-language policy (EN/TH/CN) + Chinese-leak guards
+
+User raised concern about Chinese ideographs leaking into Thai/English replies on hard questions. Tested, confirmed, fixed, validated.
+
+- **Empirical validation** — built [scripts/test_chinese_leak.py](../scripts/test_chinese_leak.py): 13 multi-turn scenarios, 46 turns total against live local Qwen3.5-Opus-9B. Run 1 (pre-fix): 3/38 leaked (7.9%) — including a 3-CJK-chars leak in a 760-char Thai response (`การตรวจสอบราคาและ可用性`). Run 2 (post-fix): **0/46 leaked**, including 5 turns of pure Chinese conversation and a CN→TH→EN three-language switch.
+- **Fix in code** — added `detect_input_language` / `has_language_leak` / `strip_language_leak` in `src/hotel_guardrails/hotel_langgraph.py`, mirroring the existing `has_tool_leak` / `strip_tool_call_codeblocks` pattern. Wired into the retry loop in `invoke_hotel_agent` so language drift triggers a retry just like tool-call drift.
+- **Policy** — `src/agent/hotel_prompt.yaml` `main_prompt` declares trilingual EN/TH/CN with a Chinese tone block (use 您, default Simplified). `server.py:~1107` LangChain fallback prompt mirrors it. `models.py` `ChatRequest.language` regex bumped to accept `cn`. Greeting + farewell templates added in Chinese.
+- **User-provided CJK whitelist** — characters in the user's own input are exempt from leak detection so name echoes (王小明) survive without false-positive stripping.
+- **Bonus fix surfaced by the test** — `server.py:1035` `request_id=request_id` (NameError, undefined) → `request_id=current_request_id`. Triggered when a previous response auto-escalated the session and the next turn hit the admin-override branch.
+- **Wiki** — [[concepts/language_leak_and_three_language_policy]] (architecture + thesis framing), [[experiments/chinese-leak-test-2026-04-20]] (validation evidence), [[index]] entries.
+
+### 2026-04-20 06:50 — [fix] Hotel naming drift unified → "The Grand Horizon Hotel"
+
+User designated "The Grand Horizon Hotel" (EN) / "โรงแรม เดอะ แกรนด์ ฮอไรซัน" (TH) as the canonical name. Previously the codebase carried three conflicting names across source, data, scripts, and OpenAPI specs. All resolved.
+
+- **Source code**: `src/hotel_guardrails/server.py:1114` Thai greeting (สยามเซอเรนิตี้ → เดอะแกรนด์ฮอไรซัน); `openrouter_llm.py:68` referer default; `__init__.py:29` docstring.
+- **Scripts**: `scripts/eval/config.py:67`, `scripts/eval/metrics.py:46` (referer URLs → `grand-horizon-hotel.com`); `scripts/generate_hotel_knowledge.py:61-62` (EN+TH address).
+- **Knowledge base**: `data/hotel/room_types.md:6`, `data/hotel/hotel_faq.md:35` (Thai "พาราไดส์" → "ฮอไรซัน").
+- **OpenAPI spec**: `docs/api_references/hotel_guardrails_server.yaml:3` and `.json` title ("Siam Serenity Hotel Concierge API" → "The Grand Horizon Hotel Concierge API").
+- **Wiki cleanup**: removed drift callouts / notes from [[references/hotel_knowledge_base]], [[references/hotel_guardrails_api]], [[components/server]], [[components/openrouter_llm_wrapper]], [[modules/hotel_guardrails]], [[decisions/openrouter_dev_backend]].
+- No code behaviour changed — all edits were string replacements. No new dependencies, no schema changes. Memory tests and other functional suites remain unaffected.
+
+### 2026-04-20 06:35 — [gap-fill] Remaining code-walk pages filled on main thread
+
+Filled all 9 pending pages flagged after the rate-limited agent batch.
+
+- **References folder created**: [[references/hotel_knowledge_base]] (10-file KB catalog, flags "Siam Serenity" vs "Grand Horizon" vs "Grand Paradise" naming drift), [[references/hotel_guardrails_api]] (20 endpoints across 6 tag groups from OpenAPI 3.1).
+- **Component gap-fill**: [[components/chat_scaling]] (6 classes — LLMConcurrencyLimiter, SessionLockManager, ChatRateLimiter, StreamConnectionLimiter, KnowledgeCache, LLMQueueTimeout), [[components/config]] (4 Settings classes + RuntimeLLMConfig + model presets), [[components/packaging]] (Dockerfile, railway.toml, Procfile, requirements.txt — notes the langgraph-checkpoint-postgres ≥2.0.13 bump).
+- **Memory subcomponents**: [[components/guest_memory_store]] (init/close/load/upsert lifecycle), [[components/memory_preamble_injector]] (5 injection points), [[components/tool_call_post_processor]] (3-pass regex strategy), [[components/anon_memory_sweeper]] (scheduled task + DELETE query).
+- **Contradictions flagged**: hotel naming drift across CLAUDE.md ("Grand Horizon"), OpenAPI spec ("Siam Serenity"), and `room_types.md` ("Grand Paradise"). Logged in [[references/hotel_knowledge_base]].
+- All pending wikilinks from [[thesis/hotel_ai_chatbot_chapter]] now resolve.
+
+### 2026-04-20 06:15 — [synthesis] Thesis support chapter assembled on main thread
+
+After the four parallel ingest agents rate-limited mid-run, the main thread filled the remaining gaps and wrote the chapter synthesis.
+
+- **Source**: latest commit `2cd8362` (+952 lines, dual-plane memory) plus full `src/hotel_guardrails/` code-walk.
+- **Primary deliverable**: [[thesis/hotel_ai_chatbot_chapter]] — §4 System Design & Implementation, ~5,400 words, Mermaid architecture + sequence diagrams, cross-refs to every component/concept/flow/experiment/decision page.
+- **Memory system pages created** (main thread): [[tool_call_codeblock_leak]], [[anon_namespace_ttl]] (concepts) · [[cross_session_memory]] (flow) · [[memory-test-suite-2026-04-20]] (experiment).
+- **Updated**: [[components/hotel_langgraph]] with a full "Memory: Dual-Plane Architecture" section documenting `init_store`/`close_store`, `load_guest_memory`, `_render_memory_preamble`, `_extract_prefs_from_text`, `_extract_facts_from_tool_calls`, `strip_tool_call_codeblocks`, `prune_anon_memory`, and env controls.
+- **Key insight**: memory system is the thesis novel contribution — deserves its own Chapter 2 §2.3.4 (drafted in [[thesis/memory_system_design]]) and §4.6 (in the chapter). 27/27 memory cases pass on local Qwen3.5-Opus-9B.
+
+### 2026-04-20 02:08 — [ingest] Hotel AI code-walk — 4 parallel agents (A: memory, B: server/API, C: cross-cutting, D: data/tools)
+
+Agents dispatched in parallel, all rate-limited mid-run (reset 4am Asia/Bangkok). Still landed 12 substantive pages before stopping:
+
+- **Agent A (memory system)**: [[thesis/memory_system_design]], [[dual_plane_memory]], [[rule_based_memory_write_back]], [[bilingual_memory_extraction]]. Did NOT finish: tool_call_codeblock_leak, anon_namespace_ttl, cross_session_memory flow, memory-test-suite experiment, hotel_langgraph update — completed on main thread (next entry).
+- **Agent B (server & API)**: [[components/server]], [[components/pydantic_models]]. Did NOT finish: references/hotel_guardrails_api.
+- **Agent C (cross-cutting)**: [[components/auth]], [[components/audit]], [[components/pii_redactor]], [[components/escalation]]. Did NOT finish: chat_scaling, config components.
+- **Agent D (data/tools/packaging)**: [[components/actions]], [[components/database]]. Did NOT finish: references/hotel_knowledge_base, components/packaging.
+- **Back-filled decisions** (some agents created these): [[fork_nvidia_blueprint]], [[hybrid_langgraph_nemo]], [[four_subagent_split]], [[openrouter_dev_backend]], [[qdrant_dev_milvus_prod]], [[railway_deployment]], [[python_312_runtime]].
 
 ---
 

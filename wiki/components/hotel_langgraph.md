@@ -3,9 +3,9 @@ type: component
 path: "src/hotel_guardrails/hotel_langgraph.py"
 status: active
 parent_module: hotel_guardrails
-tags: [component, langgraph, statemachine, routing, agents]
+tags: [component, langgraph, statemachine, routing, agents, memory]
 created: 2026-04-19
-updated: 2026-04-19
+updated: 2026-04-20
 ---
 
 # hotel_langgraph — LangGraph State Machine
@@ -89,16 +89,72 @@ Loaded at runtime from `src/agent/hotel_prompt.yaml` (tries three paths for Rail
 
 ## Key Functions
 
-- `build_hotel_graph(checkpointer)` — compiles and returns the `StateGraph`
-- `get_hotel_graph(checkpointer)` — singleton accessor
-- `invoke_hotel_agent(message, session_id, ...)` — async entry point with retry loop
+- `build_hotel_graph(checkpointer, store=None)` — compiles and returns the `StateGraph`, now accepts a `store` for long-term memory
+- `get_hotel_graph(checkpointer, store=None)` — singleton accessor, store-aware
+- `invoke_hotel_agent(message, session_id, user_id='guest', ...)` — async entry point with retry loop
 - `has_tool_leak(text)` — quality guard regex check
-- `init_checkpointer()` / `close_checkpointer()` — lifecycle management
+- `strip_tool_call_codeblocks(text)` — post-processor that removes three observed local-9B tool-call leak shapes (fenced code blocks, `<call_TOOL(...)>`, dangling truncations). See [[tool_call_codeblock_leak]].
+- `init_checkpointer()` / `close_checkpointer()` — short-term plane lifecycle
+- `init_store()` / `close_store()` — **new** long-term plane lifecycle, uses a separate `AsyncConnectionPool` so store contention cannot starve checkpoint writes
+- `prune_anon_memory(max_age_days=30)` — TTL sweeper for `("anon", session_id)` namespaces. See [[anon_namespace_ttl]].
+- `load_guest_memory(state)` — reads the four memory keys (`profile`, `preferences`, `recent_bookings_summary`, `service_history_summary`) from the appropriate namespace
+- `upsert_guest_memory(state, key, value)` — write-through helper
+- `_render_memory_preamble(memory)` — renders the compact "Known about this guest: …" block injected into every sub-agent prompt
+- `_extract_prefs_from_text(state, text)` — rule-based EN+TH keyword extraction from free text (zero LLM calls)
+- `_extract_facts_from_tool_calls(state, result)` — extracts structured facts from `create_reservation` and `create_service_request` tool-call args
+- `_memory_namespace(state)` — returns `("guest", user_id)` when authenticated, else `("anon", session_id)`
+
+## Memory: Dual-Plane Architecture (added 2026-04-20)
+
+> [!key-insight]
+> The 2026-04-20 commit adds a **long-term memory plane** on top of the existing short-term checkpointer. The two planes share PostgreSQL but use separate connection pools, separate tables, and separate lifecycle hooks. This is the thesis novel contribution — see [[thesis/memory_system_design]].
+
+### Plane 1 — Short-Term (pre-existing)
+
+`AsyncPostgresSaver` + `AsyncConnectionPool(min=2, max=10)`. Keyed by `thread_id = session_id`. Writes full `HotelState` snapshots to `checkpoints` / `checkpoint_blobs` / `checkpoint_writes` after every node transition. Fallback: `MemorySaver`.
+
+### Plane 2 — Long-Term (new)
+
+`AsyncPostgresStore` + `AsyncConnectionPool(min=1, max=5)`. Namespaced by `("guest", user_id)` or `("anon", session_id)`. Writes four small keys (`profile`, `preferences`, `recent_bookings_summary`, `service_history_summary`) to `store`. Fallback: `InMemoryStore` when `langgraph-checkpoint-postgres < 2.0.13` (store module absent).
+
+### Memory read → preamble injection
+
+Every sub-agent (`handle_booking`, `handle_service`, `handle_knowledge`, `handle_other_talk`) and the primary router call `load_guest_memory(state)` on entry, then inject `_render_memory_preamble(memory)` as a system-level context block into their prompt template. A returning guest with `user_id=alice-123` starting a fresh `session_id` recovers name, preferences, allergies, recent-booking summary, and service history on the very first turn.
+
+### Memory write-back — rule-based, zero extra LLM calls
+
+Two paths populate Plane 2:
+
+1. **Free-text path** — `_extract_prefs_from_text()` scans each `HumanMessage` against English and Thai keyword tables. Hits upsert the `preferences` key. See [[bilingual_memory_extraction]].
+2. **Tool-call path** — `_extract_facts_from_tool_calls()` inspects `AIMessage.tool_calls` for `create_reservation` / `create_service_request` and extracts structured facts (room type, dates, service type, etc.) from the args. No LLM summariser in v1. See [[rule_based_memory_write_back]].
+
+### Anonymous namespace TTL
+
+`prune_anon_memory(max_age_days=30)` issues a parameterised `DELETE FROM store WHERE prefix LIKE 'anon.%%' AND updated_at < NOW() - (%s * INTERVAL '1 day')`. Scheduled by the FastAPI lifespan at `server.py` (24h interval). See [[anon_namespace_ttl]].
+
+### Env controls
+
+| Variable | Default | Options | Effect |
+|---|---|---|---|
+| `APP_CHECKPOINTER_NAME` | `postgres` | `postgres` / `memory` | Short-term backend |
+| `APP_STORE_NAME` | `postgres` | `postgres` / `memory` / `off` | Long-term backend |
+| `DATABASE_URL` | — | PostgreSQL URI | Shared by both planes |
+
+### Validation
+
+27/27 cases passed in the new `memory` test suite on local Qwen3.5-Opus-9B. See [[memory-test-suite-2026-04-20]].
 
 ## Related
 
-- [[components/primary_assistant]] — the router node
-- [[components/booking_subagent]], [[components/service_subagent]], [[components/knowledge_subagent]], [[components/other_talk_subagent]]
-- [[components/langgraph_adapter]] — calls `invoke_hotel_agent()`
+- [[components/primary_assistant]] — the router node (now memory-aware)
+- [[components/booking_subagent]], [[components/service_subagent]], [[components/knowledge_subagent]], [[components/other_talk_subagent]] — all four now load memory on entry and write back
+- [[components/langgraph_adapter]] — forwards `store` argument into `get_hotel_graph()`
+- [[components/server]] — lifespan wires `init_store`/`close_store` + schedules the 24h anon sweeper
 - [[concepts/langgraph_state_machine_architecture]]
-- [[concepts/sub_agent_routing]]
+- [[concepts/dual_plane_memory]] — the two-plane model explained
+- [[concepts/rule_based_memory_write_back]] — zero-LLM extraction
+- [[concepts/bilingual_memory_extraction]] — Thai + English keyword tables
+- [[concepts/tool_call_codeblock_leak]] — the three leak shapes and the post-processor
+- [[concepts/anon_namespace_ttl]] — GDPR-motivated anonymous TTL
+- [[flows/cross_session_memory]] — end-to-end sequence diagram
+- [[thesis/memory_system_design]] — thesis-grade write-up

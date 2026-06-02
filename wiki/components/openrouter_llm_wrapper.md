@@ -63,10 +63,6 @@ Notable models:
 | `qwen/qwen3.5-397b-a17b` | MoE 397B (17B active), latest |
 | `minimax/minimax-m2.7` | Budget option, strong agentic |
 
-## Brand Inconsistency Note
-
-The `openrouter_llm.py` file has `OPENROUTER_REFERER` defaulting to `"https://siam-serenity-hotel.com"` — a different hotel name from the project standard "The Grand Horizon Hotel". This is a minor stale artifact from an earlier fork point.
-
 ## Related
 
 - [[entities/OpenRouter]]
