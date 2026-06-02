@@ -238,3 +238,79 @@ CREATE TRIGGER update_guests_updated_at
     BEFORE UPDATE ON guests
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at();
+
+-- =============================================================================
+-- Application Role: hotel_app (least-privilege)
+-- =============================================================================
+-- Created so the running FastAPI application does NOT connect as the postgres
+-- superuser. hotel_app gets exactly the permissions the chat path needs and
+-- nothing more. Migrations and admin scripts continue to use postgres.
+--
+-- Permissions:
+--   * SELECT/INSERT/UPDATE on all app tables (room_types, rooms, guests,
+--     reservations, service_requests, housekeeping, hotel_services,
+--     conversation_history, payment_links).
+--   * SELECT/INSERT/UPDATE on users + audit_log (auth + audit need to
+--     insert rows; updates needed for last_login, failed_login_attempts).
+--   * No DELETE on reservations / audit_log / payment_links — destructive
+--     intent must go through soft-delete (status='cancelled') instead.
+--   * No DELETE on users either — deactivation goes via is_active=false.
+--   * DELETE on housekeeping + service_requests + conversation_history
+--     allowed (operational cleanup is normal there).
+--   * No DROP / TRUNCATE / ALTER / CREATE permissions on anything.
+--   * USAGE on SEQUENCEs (needed for SERIAL columns).
+--   * EXECUTE on the two trigger functions (auto-confirmation + updated_at).
+--
+-- LangGraph framework tables (checkpoints*, store*) are created at runtime
+-- by AsyncPostgresSaver.setup() / AsyncPostgresStore.setup() which run
+-- under the postgres superuser during the FastAPI lifespan. After they
+-- exist, hotel_app needs full DML (incl. DELETE for the 30-day anon
+-- TTL sweeper). They get a separate grant block lower down.
+-- =============================================================================
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'hotel_app') THEN
+        CREATE ROLE hotel_app LOGIN PASSWORD 'hotel_app_pass_CHANGE_ME';
+    END IF;
+END $$;
+
+GRANT CONNECT ON DATABASE hotel TO hotel_app;
+GRANT USAGE ON SCHEMA public TO hotel_app;
+
+-- App tables: full read + write, no destructive DDL
+GRANT SELECT, INSERT, UPDATE ON
+    room_types, rooms, guests, reservations,
+    service_requests, housekeeping, hotel_services,
+    conversation_history, payment_links,
+    users, audit_log
+    TO hotel_app;
+
+-- Operational cleanup allowed only on these (normal lifecycle):
+GRANT DELETE ON housekeeping, service_requests, conversation_history TO hotel_app;
+
+-- Sequences (needed for SERIAL inserts)
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO hotel_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT USAGE, SELECT ON SEQUENCES TO hotel_app;
+
+-- Trigger functions defined above
+GRANT EXECUTE ON FUNCTION generate_confirmation_number() TO hotel_app;
+GRANT EXECUTE ON FUNCTION update_updated_at() TO hotel_app;
+
+-- LangGraph framework tables — granted IF they exist already (otherwise
+-- granted at first-run via a separate DO block after lifespan setup()).
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'checkpoints') THEN
+        EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON checkpoints, checkpoint_blobs, checkpoint_writes, checkpoint_migrations TO hotel_app';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'store') THEN
+        EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON store, store_migrations TO hotel_app';
+    END IF;
+END $$;
+
+-- Default privileges for any future tables created by postgres in this schema
+-- DO NOT give DELETE by default — that has to be granted explicitly per-table.
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT SELECT, INSERT, UPDATE ON TABLES TO hotel_app;

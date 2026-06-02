@@ -172,37 +172,65 @@ def get_llm(temperature: float = 0.3, max_tokens: int = 2048, streaming: bool = 
     temp = temperature
     tokens = max_tokens
 
+    # Sampling discipline for CJK-leak prevention (see §5.14.7 of thesis CH5).
+    # top_p=0.8  — nucleus sampling, tighter than the ~0.95 default; cuts the
+    #              long tail where CJK tokens leak in a Thai/English context.
+    # min_p=0.05 — relative threshold: drop any token with p < 5% of p_top.
+    #              The strongest filter against out-of-distribution CJK.
+    # repeat_penalty (Ollama) / repetition_penalty (OpenRouter) = 1.05 — mild
+    #              loop guard for chain-of-thought runaway, doesn't hurt fluency.
+    TOP_P = 0.8
+    MIN_P = 0.05
+    REPEAT_PENALTY = 1.05
+
     if runtime_config.backend == LLMBackend.OLLAMA:
         # Qwen3.5 on Ollama splits output into reasoning/content fields.
         # With think=True, streaming chunks have content="" (tokens go to
         # delta.reasoning which langchain doesn't expose). Disable thinking
         # so all tokens go to content for proper SSE streaming.
-        logger.info(f"Using Ollama LLM: {runtime_config.ollama_model} (thinking={runtime_config.thinking})")
+        logger.info(
+            f"Using Ollama LLM: {runtime_config.ollama_model} "
+            f"(thinking={runtime_config.thinking}, top_p={TOP_P}, min_p={MIN_P}, repeat_penalty={REPEAT_PENALTY})"
+        )
+        # min_p and repeat_penalty are Ollama-specific extensions; the OpenAI-
+        # compatible endpoint passes them through `extra_body.options`.
         return ChatOpenAI(
             model=runtime_config.ollama_model,
             openai_api_key="sk-ollama-not-needed",
             openai_api_base=runtime_config.ollama_base_url,
             temperature=temp,
             max_tokens=tokens,
+            top_p=TOP_P,
             streaming=streaming,
+            model_kwargs={
+                "extra_body": {
+                    "options": {
+                        "min_p": MIN_P,
+                        "repeat_penalty": REPEAT_PENALTY,
+                    }
+                }
+            },
         )
     else:
         # Rate limit OpenRouter calls to prevent 429
         runtime_config.rate_limiter.wait_and_acquire()
         model = runtime_config.openrouter_model
-        logger.info(f"Using OpenRouter LLM: {model} (thinking={runtime_config.thinking})")
+        logger.info(
+            f"Using OpenRouter LLM: {model} "
+            f"(thinking={runtime_config.thinking}, top_p={TOP_P}, min_p={MIN_P}, repetition_penalty={REPEAT_PENALTY})"
+        )
 
         api_key = runtime_config.openrouter_api_key or os.getenv("OPENROUTER_API_KEY")
 
-        # Build extra body params for OpenRouter reasoning
-        model_kwargs = {}
+        # Build extra body: sampling discipline + (optional) thinking reasoning.
+        # OpenRouter uses `repetition_penalty` (not Ollama's `repeat_penalty`)
+        # and accepts `min_p` directly on the body for Qwen-family providers.
+        extra_body = {
+            "min_p": MIN_P,
+            "repetition_penalty": REPEAT_PENALTY,
+        }
         if runtime_config.thinking:
-            # Enable reasoning via OpenRouter's reasoning parameter
-            model_kwargs["extra_body"] = {
-                "reasoning": {
-                    "effort": "high",
-                },
-            }
+            extra_body["reasoning"] = {"effort": "high"}
 
         return ChatOpenAI(
             model=model,
@@ -210,8 +238,9 @@ def get_llm(temperature: float = 0.3, max_tokens: int = 2048, streaming: bool = 
             openai_api_base=runtime_config.openrouter_base_url,
             temperature=temp,
             max_tokens=tokens,
+            top_p=TOP_P,
             streaming=streaming,
-            model_kwargs=model_kwargs,
+            model_kwargs={"extra_body": extra_body},
             default_headers={
                 "HTTP-Referer": os.getenv("OPENROUTER_REFERER", "https://grand-horizon-hotel.com"),
                 "X-Title": os.getenv("OPENROUTER_TITLE", "Grand Horizon Concierge"),

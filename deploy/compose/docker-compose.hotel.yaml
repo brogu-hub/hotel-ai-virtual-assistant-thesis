@@ -152,7 +152,11 @@ services:
       APP_VECTORSTORE_NAME: qdrant
 
       # --- Database: Local PostgreSQL ---
-      DATABASE_URL: postgresql://postgres:hotelpass123@hotel-db:5432/hotel
+      # DATABASE_URL is read from .env so the app can connect as a
+      # least-privilege role (hotel_app) while the postgres container itself
+      # still boots as the postgres superuser. See deploy/compose/init-scripts/init-hotel.sql
+      # for the hotel_app role definition (no DELETE on reservations/audit_log/payment_links).
+      DATABASE_URL: ${DATABASE_URL:-postgresql://hotel_app:hotel_app_pass_CHANGE_ME@hotel-db:5432/hotel}
       POSTGRES_HOST: hotel-db
       POSTGRES_PORT: "5432"
       POSTGRES_DB: hotel

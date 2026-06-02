@@ -67,6 +67,74 @@ class AuditActions:
     LLM_CONFIG_CHANGED = "settings.llm.changed"
     AUDIT_VIEWED = "admin.audit.viewed"
 
+    # --- Chat-driven writes (not admin actions; LLM-tool-initiated) ---
+    # These are the "soft-mutation" operations the guest-facing agent can
+    # trigger. Logging them lets ops detect anomalous volume (e.g. a single
+    # session cancelling 50 bookings in a minute = compromised account or
+    # prompt-injection attempt) even though each individual call is
+    # functionally legitimate.
+    CHAT_BOOKING_CREATED   = "chat.booking.created"
+    CHAT_BOOKING_CANCELLED = "chat.booking.cancelled"
+    CHAT_BOOKING_UPDATED   = "chat.booking.updated"
+    CHAT_SERVICE_REQUEST   = "chat.service_request.created"
+    CHAT_PAYMENT_LINK      = "chat.payment_link.created"
+
+
+# =============================================================================
+# Synchronous audit helper for LangGraph tool functions
+# =============================================================================
+# LangGraph @tool functions in src/agent/hotel_tools.py run synchronously
+# inside the asyncio sub-agent. The async audit() above can't be awaited
+# from a sync context without bridging. This sync helper writes directly
+# to the audit_log table using a fresh DB connection — slightly less
+# efficient than batching, but isolates audit failures and keeps the tool
+# code paths simple.
+
+def sync_audit(
+    action: str,
+    *,
+    actor_username: str = "chat-agent",
+    actor_role: str = "system",
+    resource_type: Optional[str] = None,
+    resource_id: Optional[str] = None,
+    details: Optional[Dict[str, Any]] = None,
+    success: bool = True,
+) -> None:
+    """
+    Synchronous audit-log INSERT for use from LangGraph @tool functions.
+
+    Best-effort: any failure is logged and swallowed. Never raises into
+    the caller because audit must not break a business operation.
+    """
+    try:
+        import json
+        import psycopg2
+        from .database import get_db_connection
+
+        details_json = json.dumps(details) if details else None
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO audit_log (
+                        action, actor_username, actor_role,
+                        resource_type, resource_id, details, success
+                    ) VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s)
+                    """,
+                    (
+                        action,
+                        actor_username,
+                        actor_role,
+                        resource_type,
+                        resource_id,
+                        details_json,
+                        success,
+                    ),
+                )
+                conn.commit()
+    except Exception as e:
+        logger.warning(f"sync_audit failed (action={action}): {e}")
+
 
 def _get_client_ip(request: Optional[Request]) -> Optional[str]:
     """Extract the client IP, respecting X-Forwarded-For."""

@@ -86,12 +86,35 @@ class HybridRouter:
         ```
     """
 
-    # Patterns that indicate blocked/unsafe content
+    # Patterns that indicate blocked/unsafe content.
+    # Two categories:
+    #   (1) prompt-injection / social-engineering shapes
+    #   (2) database / shell destructive shapes — fold of the
+    #       previously-dead actions.check_input_safety() list, hardened
+    #       (case-insensitive, word-boundary, common comment terminators)
     BLOCKED_PATTERNS = [
+        # --- category 1: prompt injection / social engineering ---
         r"\b(hack|exploit|bypass|injection|sql injection)\b",
         r"\b(illegal|weapon|drug|steal|fraud)\b",
         r"\b(ignore previous|forget instructions|jailbreak)\b",
         r"\b(password hack|credential dump)\b",
+        r"\b(xss|script injection)\b",
+        r"\b(password bypass)\b",
+
+        # --- category 2: destructive SQL / shell shapes ---
+        # NL→SQL is not active in the chat path, but a hostile prompt that
+        # tricks the LLM into emitting these strings as text can still trip
+        # log scrapers, copy-paste pipelines, and any future SQL surface.
+        r"\b(drop\s+table|drop\s+database|drop\s+schema)\b",
+        r"\b(delete\s+from)\b",
+        r"\b(truncate\s+table|truncate\b)",
+        r"\b(union\s+select|union\s+all\s+select)\b",
+        r"\b(alter\s+table|alter\s+role|alter\s+user)\b",
+        r"\b(grant\s+all|revoke\s+all)\b",
+        # SQL-comment-based comment-out attack: `'; -- ` or `'); -- `
+        r"(;\s*--|;\s*#)",
+        # Python/JS eval-style code injection
+        r"\b(exec\s*\(|eval\s*\(|os\.system|subprocess)\b",
     ]
 
     # Patterns for complexity classification (logging/metrics only)

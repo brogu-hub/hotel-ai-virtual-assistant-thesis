@@ -714,6 +714,25 @@ def cancel_reservation(reservation_id: str, reason: str) -> str:
                 result = cur.fetchone()
                 conn.commit()
 
+                # Audit the cancellation (best-effort, won't fail the operation).
+                # Logs to audit_log so ops can detect anomalous cancellation volume.
+                try:
+                    from src.hotel_guardrails.audit import sync_audit, AuditActions
+                    sync_audit(
+                        action=AuditActions.CHAT_BOOKING_CANCELLED,
+                        resource_type="reservation",
+                        resource_id=str(result["confirmation_number"]) if result else reservation_id,
+                        details={
+                            "reason": reason,
+                            "found": bool(result),
+                            "check_in_date": str(result["check_in_date"]) if result else None,
+                            "refund_amount": float(result["total_amount"]) if result and result.get("total_amount") else None,
+                        },
+                        success=bool(result),
+                    )
+                except Exception:
+                    pass  # audit must never break the business flow
+
                 if not result:
                     return f"ไม่พบการจองที่สามารถยกเลิกได้หมายเลข {reservation_id} / No cancellable reservation found for {reservation_id}"
 
