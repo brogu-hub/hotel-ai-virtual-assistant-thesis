@@ -1,0 +1,37 @@
+---
+title: "Figure 5.25 — Server-side Retry Flow (invoke_hotel_agent quality gate)"
+---
+flowchart TB
+    START([POST /chat<br/>or /chat/stream]):::entry
+    INVOKE["LangGraph<br/>graph.ainvoke()"]:::svc
+    EXTRACT["Extract candidate_text<br/>from last AIMessage"]:::svc
+    Q1{candidate_text<br/>empty?}:::check
+    Q2{has_tool_leak?<br/>regex against<br/>9 hotel tool names}:::check
+    RETRY{attempt <<br/>max_retries?}:::check
+    LOG["log.warning<br/>reason + retry count"]:::svc
+    INC["attempt += 1"]:::svc
+    SUCCESS([return success<br/>response, retries=attempt]):::ok
+    FAIL([return last response<br/>had_leak=True<br/>retries=max_retries]):::fail
+
+    START --> INVOKE
+    INVOKE --> EXTRACT
+    EXTRACT --> Q1
+    Q1 -->|yes| RETRY
+    Q1 -->|no| Q2
+    Q2 -->|yes — leaked| RETRY
+    Q2 -->|no — clean| SUCCESS
+    RETRY -->|yes| LOG
+    RETRY -->|no — exhausted| FAIL
+    LOG --> INC
+    INC --> INVOKE
+
+    %% Side note on per-model retry budget
+    BUDGET[/"max_retries from<br/>RuntimeLLMConfig:<br/>• Ollama local 9B = 2<br/>• OpenRouter cloud = 1"/]:::note
+    BUDGET -.-> RETRY
+
+    classDef entry fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000
+    classDef svc   fill:#e3f2fd,stroke:#0277bd,color:#000
+    classDef check fill:#fff9c4,stroke:#f9a825,color:#000
+    classDef ok    fill:#c8e6c9,stroke:#1b5e20,stroke-width:2px,color:#000
+    classDef fail  fill:#ffcdd2,stroke:#b71c1c,stroke-width:2px,color:#000
+    classDef note  fill:#eeeeee,stroke:#616161,stroke-dasharray:5 3,color:#000

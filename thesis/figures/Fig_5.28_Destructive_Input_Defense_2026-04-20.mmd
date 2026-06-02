@@ -1,0 +1,57 @@
+---
+title: "Figure 5.28 — Destructive-Input Defense (§5.14.8, 3 layers + deferred)"
+---
+flowchart TB
+    REQ([POST /chat<br/>message]):::entry
+
+    %% Layer A
+    LA["**Layer A: BLOCKED_PATTERNS**<br/>hybrid_router.py regex<br/><br/>**Prompt injection:**<br/>hack · exploit · jailbreak · xss<br/><br/>**Destructive SQL:**<br/>DROP TABLE · DELETE FROM<br/>TRUNCATE · UNION SELECT<br/>ALTER · GRANT · semi-comment<br/>EXEC#40; · EVAL#40;"]:::layerA
+
+    Q1{any pattern<br/>match?}:::check
+    BLOCKED([RoutingPath.BLOCKED<br/>→ bilingual TH/EN refusal<br/>→ HTTP 200 with safety message<br/>never reaches LLM or DB]):::blocked
+
+    LG["LangGraph router<br/>+ 4 sub-agents:<br/>booking · service<br/>knowledge · other_talk"]:::svc
+
+    TOOL["@tool function<br/>e.g. cancel_reservation<br/>create_reservation<br/>generate_payment_link"]:::svc
+
+    %% Layer B
+    LB["**Layer B: hotel_app DB Role**<br/>least-privilege PostgreSQL role<br/><br/>**Granted:**<br/>SELECT, INSERT, UPDATE<br/>on app tables<br/><br/>**Revoked:**<br/>DELETE on reservations,<br/>audit_log, payment_links, users<br/><br/>**Allowed DELETE:**<br/>housekeeping,<br/>service_requests,<br/>conversation_history"]:::layerB
+
+    Q2{DELETE on<br/>protected table?}:::check
+    DBERR([ERROR:<br/>permission denied<br/>for table reservations<br/>rejected at PostgreSQL]):::blocked
+
+    %% Layer C
+    LC["**Layer C: sync_audit()**<br/>writes structured row<br/>to audit_log table<br/><br/>**Captures (chat.* actions):**<br/>• action (CHAT_BOOKING_CREATED ...)<br/>• actor_username = 'chat-agent'<br/>• resource_id (HTL... or service id)<br/>• details (jsonb)<br/>• success (true / false)<br/><br/>**Even failed attempts logged**<br/>→ detects enumeration<br/>against confirmation_number space"]:::layerC
+
+    DB[(PostgreSQL<br/>hotel_app role<br/>+ audit_log)]:::store
+
+    %% Deferred Layer D
+    LD["**Deferred Layer D:<br/>Vanna NL→SQL allowlist**<br/><br/>Vanna structured_data<br/>retriever NOT imported<br/>by hotel_guardrails currently<br/><br/>If activated, intercept<br/>vanna.run_sql output and<br/>reject if regex matches:<br/>drop · delete · truncate<br/>alter · grant · update<br/>insert · create · exec"]:::deferred
+
+    SUCCESS([response<br/>returned to user]):::ok
+
+    REQ --> LA
+    LA --> Q1
+    Q1 -->|yes — match| BLOCKED
+    Q1 -->|no — clean| LG
+    LG --> TOOL
+    TOOL --> LB
+    LB --> Q2
+    Q2 -->|yes — protected| DBERR
+    Q2 -->|no — allowed op| DB
+    TOOL --> LC
+    LC --> DB
+    DB --> SUCCESS
+
+    LD -.-> LB
+
+    classDef entry    fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000
+    classDef layerA   fill:#ffebee,stroke:#b71c1c,stroke-width:2.5px,color:#000
+    classDef layerB   fill:#e3f2fd,stroke:#0d47a1,stroke-width:2.5px,color:#000
+    classDef layerC   fill:#f3e5f5,stroke:#4a148c,stroke-width:2.5px,color:#000
+    classDef deferred fill:#fafafa,stroke:#616161,stroke-dasharray:8 4,color:#000
+    classDef check    fill:#fff9c4,stroke:#f9a825,color:#000
+    classDef blocked  fill:#ffcdd2,stroke:#b71c1c,stroke-width:2px,color:#000
+    classDef svc      fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef store    fill:#c8e6c9,stroke:#1b5e20,stroke-width:2px,color:#000
+    classDef ok       fill:#dcedc8,stroke:#33691e,stroke-width:2px,color:#000

@@ -1,0 +1,46 @@
+---
+title: "Figure 5.26 — Thai Particle Decision Tree (ครับ / ค่ะ / คะ matching)"
+---
+flowchart TB
+    USER([User message]):::entry
+    DETECT["Detect Thai particles<br/>in user message"]:::svc
+    Q1{contains<br/>ครับ?}:::check
+    Q2{contains<br/>ค่ะ or คะ?}:::check
+    DEFAULT["No particle detected<br/>→ default to ค่ะ<br/>(female concierge<br/>persona)"]:::svc
+    USE_M["Use ครับ for ENTIRE response<br/>never mix with ค่ะ/คะ"]:::male
+    USE_F["Use ค่ะ/คะ for ENTIRE response<br/>• ค่ะ at end of statements<br/>• คะ at end of questions<br/>never mix with ครับ"]:::female
+    SP["System prompt:<br/>strict particle rule<br/>+ explicit examples"]:::svc
+    LLM_GEN["LLM generates<br/>response"]:::llm
+    Q3{response matches<br/>chosen particle<br/>consistently?}:::check
+    PASS([return response]):::ok
+    RETRY([retry via §5.14.3<br/>quality gate]):::fail
+
+    USER --> DETECT
+    DETECT --> Q1
+    Q1 -->|yes| USE_M
+    Q1 -->|no| Q2
+    Q2 -->|yes| USE_F
+    Q2 -->|no — no particle| DEFAULT
+    DEFAULT --> USE_F
+    USE_M --> SP
+    USE_F --> SP
+    SP --> LLM_GEN
+    LLM_GEN --> Q3
+    Q3 -->|yes — consistent| PASS
+    Q3 -->|mismatch or mixing| RETRY
+
+    %% Example callouts
+    EX_M[/"Example (male):<br/>'สวัสดีครับ ยินดีต้อนรับครับ'<br/>(all ครับ)"/]:::note
+    EX_F[/"Example (female):<br/>'สวัสดีค่ะ ยินดีต้อนรับค่ะ'<br/>(all ค่ะ/คะ)"/]:::note
+    USE_M -.-> EX_M
+    USE_F -.-> EX_F
+
+    classDef entry fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000
+    classDef svc   fill:#e3f2fd,stroke:#0277bd,color:#000
+    classDef check fill:#fff9c4,stroke:#f9a825,color:#000
+    classDef male  fill:#bbdefb,stroke:#0d47a1,stroke-width:2px,color:#000
+    classDef female fill:#f8bbd0,stroke:#880e4f,stroke-width:2px,color:#000
+    classDef llm   fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef ok    fill:#c8e6c9,stroke:#1b5e20,stroke-width:2px,color:#000
+    classDef fail  fill:#ffcdd2,stroke:#b71c1c,stroke-width:2px,color:#000
+    classDef note  fill:#eeeeee,stroke:#616161,stroke-dasharray:5 3,color:#000

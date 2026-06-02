@@ -1,0 +1,54 @@
+---
+title: "Figure 5.27 — Trilingual EN/TH/CN Policy + Language-Leak Defense (5 layers)"
+---
+flowchart TB
+    USER([User message]):::entry
+
+    %% Layer 1: Sampling discipline
+    L1["**Layer 1: Sampling Discipline**<br/>get_llm() sets:<br/>• top_p = 0.8<br/>• min_p = 0.05<br/>• repeat_penalty = 1.05<br/>cuts off-script tokens<br/>at sampling time"]:::layer1
+
+    %% Layer 2: Prompt policy
+    L2["**Layer 2: Trilingual System Prompt**<br/>'reply in SAME language as input'<br/>EN → English (Latin)<br/>TH → Thai script<br/>CN → Mandarin (Hanzi)<br/>+ Chinese tone block (use 您)"]:::layer2
+
+    GEN["LLM generation<br/>(Qwen3.5-Opus-9B or Qwen3-max)"]:::llm
+
+    %% Layer 3: Detector
+    DETECT["detect_input_language(msg)<br/>by script dominance ≥ 20%"]:::svc
+    L3{"**Layer 3: has_language_leak()**<br/>response script ≠ expected?<br/><br/>• EN/TH: any CJK char<br/>NOT in user input?<br/>• CN: ≥5 Thai chars OR<br/>cjk_total < 10 in body ≥ 60?"}:::layer3
+
+    USER_CJK[/"user_cjk_whitelist:<br/>chars guest provided<br/>(e.g. 王小明)<br/>may be echoed"/]:::note
+
+    %% Layer 4: Retry
+    L4{"**Layer 4: Retry Loop**<br/>attempt < max_retries?<br/>(2 local / 1 cloud)"}:::layer4
+
+    %% Layer 5: Strip
+    L5["**Layer 5: strip_language_leak()**<br/>drop off-script runs ≥ 2 chars<br/>not in user_cjk_whitelist<br/>(preserves names)"]:::layer5
+
+    PASS([clean response<br/>returned to user]):::ok
+    FAIL([response with<br/>had_lang_leak=True]):::warn
+
+    USER --> L1
+    L1 --> L2
+    L2 --> GEN
+    GEN --> DETECT
+    DETECT --> L3
+    L3 -->|no leak| PASS
+    L3 -->|leak detected| L4
+    L4 -->|yes| L1
+    L4 -->|no — exhausted| L5
+    L5 --> FAIL
+
+    USER_CJK -.-> L3
+    USER_CJK -.-> L5
+
+    classDef entry  fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000
+    classDef layer1 fill:#fce4ec,stroke:#880e4f,stroke-width:2px,color:#000
+    classDef layer2 fill:#e1f5fe,stroke:#01579b,stroke-width:2px,color:#000
+    classDef layer3 fill:#fff9c4,stroke:#f57f17,stroke-width:2px,color:#000
+    classDef layer4 fill:#dcedc8,stroke:#33691e,stroke-width:2px,color:#000
+    classDef layer5 fill:#d1c4e9,stroke:#311b92,stroke-width:2px,color:#000
+    classDef svc    fill:#e3f2fd,stroke:#0277bd,color:#000
+    classDef llm    fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef ok     fill:#c8e6c9,stroke:#1b5e20,stroke-width:2px,color:#000
+    classDef warn   fill:#ffe0b2,stroke:#bf360c,stroke-width:2px,color:#000
+    classDef note   fill:#eeeeee,stroke:#616161,stroke-dasharray:5 3,color:#000
