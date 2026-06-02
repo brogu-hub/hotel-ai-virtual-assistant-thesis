@@ -1,0 +1,78 @@
+---
+title: "PostgreSQL Application Schema — Part 1/3: Booking Core (5 tables)"
+---
+erDiagram
+    room_types ||--o{ rooms : "categorizes"
+    rooms ||--o{ reservations : "booked_as"
+    guests ||--o{ reservations : "books"
+    reservations ||--o{ payment_links : "paid_via"
+
+    room_types {
+        SERIAL room_type_id PK
+        VARCHAR name
+        VARCHAR name_th
+        TEXT description
+        TEXT description_th
+        DECIMAL base_price
+        INTEGER max_occupancy
+        JSONB amenities
+        TIMESTAMP created_at
+    }
+
+    rooms {
+        SERIAL room_id PK
+        VARCHAR room_number UK
+        INTEGER room_type_id FK
+        INTEGER floor
+        VARCHAR status "available|occupied|maintenance|cleaning"
+        VARCHAR view_type
+        TIMESTAMP last_cleaned
+        TEXT notes
+        TIMESTAMP created_at
+    }
+
+    guests {
+        SERIAL guest_id PK
+        VARCHAR first_name
+        VARCHAR last_name
+        VARCHAR first_name_th
+        VARCHAR last_name_th
+        VARCHAR email UK
+        VARCHAR phone
+        VARCHAR id_number "passport/national ID"
+        VARCHAR nationality
+        VARCHAR loyalty_tier "Standard|Silver|Gold|Platinum"
+        INTEGER loyalty_points
+        JSONB preferences
+        TIMESTAMP created_at
+        TIMESTAMP updated_at
+    }
+
+    reservations {
+        SERIAL reservation_id PK
+        VARCHAR confirmation_number UK "HTL+YYMMDD+####"
+        INTEGER guest_id FK
+        INTEGER room_id FK
+        DATE check_in_date
+        DATE check_out_date
+        INTEGER num_guests
+        VARCHAR status "pending|confirmed|checked_in|checked_out|cancelled"
+        DECIMAL total_amount
+        VARCHAR payment_status "pending|paid|refunded"
+        TEXT special_requests
+        VARCHAR booking_source
+        TEXT cancellation_reason
+        TIMESTAMP created_at
+        TIMESTAMP updated_at
+    }
+
+    payment_links {
+        SERIAL payment_id PK
+        VARCHAR token UK "uuid4"
+        INTEGER reservation_id FK
+        DECIMAL amount
+        VARCHAR currency "THB"
+        VARCHAR status "pending|completed|expired"
+        TIMESTAMP created_at
+        TIMESTAMP expires_at "NOW + 30 min"
+    }

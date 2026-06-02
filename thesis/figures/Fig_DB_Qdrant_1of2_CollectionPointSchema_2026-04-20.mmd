@@ -1,0 +1,48 @@
+---
+title: "Qdrant Vector Store — Part 1/2: Collection & Point Schema"
+---
+flowchart TB
+    subgraph CFG["Collection Config — hotel_knowledge"]
+        direction TB
+        C1["name: hotel_knowledge"]
+        C2["vectors.size: 4096<br/>(qwen3-embedding-8b)"]
+        C3["vectors.distance: Cosine"]
+        C4["shard_number: 1"]
+        C5["replication_factor: 1"]
+        C6["on_disk_payload: true"]
+        C7["points_count: 10"]
+        C8["payload_schema: empty<br/>(client-side filtering)"]
+    end
+
+    subgraph HNSW["hnsw_config"]
+        direction TB
+        H1["m: 16"]
+        H2["ef_construct: 100"]
+        H3["full_scan_threshold: 10000"]
+        H4["on_disk: false"]
+    end
+
+    subgraph OPT["optimizer_config"]
+        direction TB
+        O1["deleted_threshold: 0.2"]
+        O2["indexing_threshold: 10000"]
+        O3["flush_interval_sec: 5"]
+        O4["vacuum_min_vector_number: 1000"]
+    end
+
+    subgraph PT["Point Schema (per-row)"]
+        direction TB
+        P1["id: uuid4"]
+        P2["vector: float[4096]<br/>qwen3-embedding-8b"]
+        P3["payload.page_content: TEXT<br/>raw markdown chunk"]
+        P4["payload.metadata.source: TEXT<br/>e.g. dining_services.md"]
+    end
+
+    CFG --> HNSW
+    CFG --> OPT
+    CFG --> PT
+
+    style CFG  fill:#e1f5ff,stroke:#0288d1
+    style HNSW fill:#fff3e0,stroke:#f57c00
+    style OPT  fill:#fff3e0,stroke:#f57c00
+    style PT   fill:#f3e5f5,stroke:#7b1fa2

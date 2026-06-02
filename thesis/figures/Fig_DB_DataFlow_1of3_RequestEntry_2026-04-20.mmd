@@ -1,0 +1,33 @@
+---
+title: "Data Flow — Part 1/3: Request Entry, Safety & Routing"
+---
+flowchart TB
+    GUEST([Guest]):::actor
+    CLIENT[Frontend / API Client]:::external
+    GUEST -->|HTTPS| CLIENT
+
+    CLIENT -->|"POST /chat<br/>{message, session_id,<br/>user_id, language}"| API[FastAPI<br/>server.py]:::svc
+
+    API -->|"safety check<br/>(regex patterns)"| HR[hybrid_router<br/>HybridRouter.route]:::svc
+    HR -->|"PII redact<br/>email · phone · ID · cc"| PII[pii_redactor.py]:::svc
+    PII -->|"redacted message"| ADP[langgraph_adapter<br/>invoke_hotel_agent]:::svc
+
+    ADP --> HG[hotel_langgraph<br/>StateGraph<br/>compile + invoke]:::svc
+
+    HG --> ROUTER[primary_assistant<br/>system prompt:<br/>EN/TH/CN trilingual<br/>+ Thai particle rules]:::node
+
+    ROUTER -->|"routing tool-call"| SUB{{Sub-agent dispatch}}:::router
+
+    SUB -->|ToHotelBooking| BA[hotel_booking]:::node
+    SUB -->|ToHotelService| SA[hotel_service]:::node
+    SUB -->|ToHotelKnowledge| KA[hotel_knowledge]:::node
+    SUB -->|HandleOtherTalk| OA[other_talk]:::node
+
+    BA & SA & KA & OA --> NEXT[/See Part 2/3:<br/>Tool Execution & RAG/]:::next
+
+    classDef actor    fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000
+    classDef external fill:#fce4ec,stroke:#ad1457,color:#000
+    classDef svc      fill:#e3f2fd,stroke:#0277bd,color:#000
+    classDef node     fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef router   fill:#fff9c4,stroke:#f9a825,color:#000
+    classDef next     fill:#eeeeee,stroke:#616161,stroke-dasharray:5 5,color:#000

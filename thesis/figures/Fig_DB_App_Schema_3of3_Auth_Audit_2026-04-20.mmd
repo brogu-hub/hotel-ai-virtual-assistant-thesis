@@ -1,0 +1,44 @@
+---
+title: "PostgreSQL Application Schema — Part 3/3: Auth & Audit (2 tables + 1 ref)"
+---
+erDiagram
+    guests ||--o| users : "registered_as"
+    users ||--o{ audit_log : "performs"
+
+    guests {
+        SERIAL guest_id PK
+        VARCHAR email UK
+    }
+
+    users {
+        SERIAL user_id PK
+        VARCHAR username UK
+        VARCHAR email UK
+        VARCHAR password_hash "bcrypt"
+        VARCHAR role "user|admin"
+        VARCHAR full_name
+        BOOLEAN is_active
+        INTEGER guest_id FK "nullable"
+        TIMESTAMP last_login
+        INTEGER failed_login_attempts
+        TIMESTAMP locked_until
+        TIMESTAMP password_changed_at
+        BOOLEAN password_is_default
+        TIMESTAMP created_at
+        TIMESTAMP updated_at
+    }
+
+    audit_log {
+        BIGSERIAL audit_id PK
+        INTEGER actor_user_id FK "nullable"
+        VARCHAR actor_username
+        VARCHAR actor_role
+        VARCHAR action "user.login | booking.cancel | settings.llm.patch | ..."
+        VARCHAR resource_type
+        VARCHAR resource_id
+        JSONB details
+        VARCHAR ip_address
+        VARCHAR user_agent
+        BOOLEAN success
+        TIMESTAMP created_at
+    }

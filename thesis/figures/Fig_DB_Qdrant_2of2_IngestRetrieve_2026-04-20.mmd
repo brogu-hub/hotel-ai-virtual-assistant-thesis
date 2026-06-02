@@ -1,0 +1,50 @@
+---
+title: "Qdrant Vector Store — Part 2/2: Ingest & Retrieve Pipelines"
+---
+flowchart TB
+    subgraph SRC["Source Documents (data/hotel/)"]
+        direction TB
+        S1["dining_services.md"]
+        S2["room_types.md"]
+        S3["spa_wellness.md"]
+        S4["facilities_amenities.md"]
+        S5["hotel_faq.md"]
+        S6["policies_rules.md"]
+        S7["room_guide.md"]
+        S8["transportation.md"]
+        S9["local_attractions.md"]
+        S10["emergency_contacts.md"]
+    end
+
+    subgraph INGEST["Ingest Pipeline"]
+        direction TB
+        I1["ingest_service<br/>per-doc chunking"]
+        I2["Embedding<br/>qwen3-embedding-8b<br/>4096-dim"]
+        I1 --> I2
+    end
+
+    subgraph QD["Qdrant hotel_knowledge<br/>(10 points, Cosine)"]
+        direction TB
+        Q1["Point row<br/>id · vector · payload"]
+    end
+
+    subgraph RETRIEVE["Retrieve Pipeline (KA sub-agent)"]
+        direction TB
+        R1["RAG Query<br/>search_hotel_knowledge"]
+        R2["Query Embedding<br/>qwen3-embedding-8b"]
+        R3["Reranker<br/>Qwen3-0.6B"]
+        R4["Top-K chunks<br/>+ sources"]
+        R1 --> R2
+        R3 --> R4
+    end
+
+    SRC --> INGEST
+    INGEST -->|"upsert points"| QD
+
+    R2 -->|"top-10 by Cosine"| QD
+    QD -->|"chunks + scores"| R3
+
+    style SRC      fill:#e8f5e9,stroke:#388e3c
+    style INGEST   fill:#fff3e0,stroke:#ef6c00
+    style QD       fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+    style RETRIEVE fill:#fce4ec,stroke:#c2185b

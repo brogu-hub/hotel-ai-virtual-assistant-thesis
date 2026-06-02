@@ -1,0 +1,75 @@
+---
+title: "PostgreSQL Application Schema — Part 2/3: Operations & Chatbot (4 tables + 3 refs)"
+---
+erDiagram
+    guests ||--o{ service_requests : "requests"
+    guests ||--o{ conversation_history : "talks_in"
+    reservations ||--o{ service_requests : "during"
+    rooms ||--o{ housekeeping : "cleaned_in"
+
+    guests {
+        SERIAL guest_id PK
+        VARCHAR email UK
+        VARCHAR loyalty_tier
+    }
+
+    reservations {
+        SERIAL reservation_id PK
+        VARCHAR confirmation_number UK
+        VARCHAR status
+    }
+
+    rooms {
+        SERIAL room_id PK
+        VARCHAR room_number UK
+        VARCHAR status
+    }
+
+    service_requests {
+        SERIAL request_id PK
+        INTEGER reservation_id FK
+        INTEGER guest_id FK
+        VARCHAR request_type "room_service|extra_towels|wake_up_call|spa|..."
+        TEXT description
+        TEXT description_th
+        VARCHAR status "pending|in_progress|completed|cancelled"
+        VARCHAR priority "low|normal|high|urgent"
+        VARCHAR assigned_to
+        TIMESTAMP created_at
+        TIMESTAMP resolved_at
+    }
+
+    housekeeping {
+        SERIAL task_id PK
+        INTEGER room_id FK
+        VARCHAR task_type
+        VARCHAR status "pending|in_progress|completed"
+        VARCHAR assigned_to
+        DATE scheduled_date
+        TIMESTAMP completed_at
+        TEXT notes
+        TIMESTAMP created_at
+    }
+
+    hotel_services {
+        SERIAL service_id PK
+        VARCHAR name
+        VARCHAR name_th
+        VARCHAR category
+        TEXT description
+        TEXT description_th
+        DECIMAL price
+        VARCHAR availability_hours
+        VARCHAR location
+        BOOLEAN is_active
+        TIMESTAMP created_at
+    }
+
+    conversation_history {
+        SERIAL conversation_id PK
+        VARCHAR session_id
+        INTEGER guest_id FK
+        VARCHAR role "user|assistant|system"
+        TEXT content
+        TIMESTAMP created_at
+    }

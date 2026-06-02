@@ -1,0 +1,86 @@
+---
+title: "Hotel AI — End-to-End Data Flow (PostgreSQL + Qdrant)"
+---
+flowchart LR
+    %% --- entry layer ---
+    GUEST([Guest]):::actor
+    CLIENT[Frontend / API Client]:::external
+    GUEST -->|HTTPS| CLIENT
+
+    %% --- API + safety ---
+    CLIENT -->|"POST /chat<br/>{message, session_id, user_id, language}"| API[FastAPI server.py]:::svc
+    API -->|safety pre-filter| HR[hybrid_router]:::svc
+    HR -->|"PII redact (regex)<br/>pii_redactor.py"| ADP[langgraph_adapter]:::svc
+
+    %% --- LangGraph state machine ---
+    ADP --> HG[hotel_langgraph<br/>StateGraph]:::svc
+    HG --> ROUTER[primary_assistant<br/>routing tool-call]:::node
+    ROUTER --> SUB{{Sub-agent dispatch}}:::router
+    SUB --> BA[hotel_booking]:::node
+    SUB --> SA[hotel_service]:::node
+    SUB --> KA[hotel_knowledge]:::node
+    SUB --> OA[other_talk]:::node
+
+    %% --- LLM backends ---
+    BA & SA & KA & OA -->|"ChatOpenAI<br/>OpenAI-compatible"| LLM{{LLM Backend}}:::external
+    LLM -->|"Local 9B<br/>(Ollama, dev)"| OLLAMA[(hotel-ollama<br/>Qwen3.5-Opus-9B)]:::external
+    LLM -->|"Cloud<br/>(OpenRouter, prod)"| OR[(OpenRouter API<br/>Qwen3-max)]:::external
+
+    %% --- RAG / Knowledge subagent ---
+    KA -->|"search_hotel_knowledge"| EMB[Embedding<br/>qwen3-embedding-8b]:::svc
+    EMB -->|"dense vector<br/>4096-d"| QD[(Qdrant<br/>hotel_knowledge<br/>4096-d Cosine<br/>10 points)]:::qdrant
+    QD -->|"top-10 chunks<br/>w/ scores"| RR[Reranker<br/>Qwen3-0.6B]:::svc
+    RR -->|"top-K reranked"| KA
+
+    %% --- Booking + Service tools hit PostgreSQL via actions.py ---
+    BA -->|"check_room_availability<br/>create_reservation<br/>cancel_reservation"| ACT[actions.py<br/>tool catalog]:::svc
+    SA -->|"create_service_request<br/>get_hotel_services"| ACT
+    ACT -->|"psycopg2<br/>ThreadedConnectionPool"| PGAPP[(PostgreSQL — hotel DB<br/>App tables)]:::pgapp
+
+    %% --- Plane 1: short-term memory (PostgresSaver) ---
+    HG -->|"after every node<br/>AsyncPostgresSaver"| PGCP[(PostgreSQL — hotel DB<br/>checkpoints*<br/>thread_id = session_id)]:::pgcheckpoint
+    PGCP -.->|"replay on next turn"| HG
+
+    %% --- Plane 2: long-term memory (PostgresStore) ---
+    ROUTER -->|"load_guest_memory"| PGSTORE[(PostgreSQL — hotel DB<br/>store<br/>prefix = guest.user_id<br/>or anon.session_id)]:::pgstore
+    BA -->|"load_guest_memory"| PGSTORE
+    SA -->|"load_guest_memory"| PGSTORE
+    KA -->|"load_guest_memory"| PGSTORE
+    OA -->|"load_guest_memory"| PGSTORE
+    PGSTORE -.->|"profile, preferences,<br/>recent_bookings,<br/>service_history"| ROUTER
+
+    %% Memory writeback (rule-based, zero LLM)
+    BA -.->|"_extract_facts_<br/>from_tool_calls()"| PGSTORE
+    SA -.->|"_extract_facts_<br/>from_tool_calls()"| PGSTORE
+    KA -.->|"_extract_prefs_<br/>from_text()"| PGSTORE
+    OA -.->|"_extract_prefs_<br/>from_text()"| PGSTORE
+
+    %% TTL sweeper
+    SWEEP[/24h sweeper<br/>prune_anon_memory/]:::svc -.->|"DELETE WHERE prefix LIKE<br/>'anon.%' AND age > 30d"| PGSTORE
+
+    %% --- Quality post-processing ---
+    BA & SA & KA & OA -->|"AIMessage"| QC[Quality Check<br/>has_tool_leak +<br/>has_language_leak]:::svc
+    QC -->|"leak detected<br/>retry up to N"| HG
+    QC -->|"strip_*_leak<br/>last resort"| RESP[/JSON Response/]:::resp
+    RESP --> API
+    API --> CLIENT
+
+    %% --- Audit + conversation history (write-only side channels) ---
+    API -.->|"every /chat turn"| AUDIT[(PostgreSQL — hotel DB<br/>audit_log)]:::pgapp
+    HG -.->|"persisted per turn"| CONV[(PostgreSQL — hotel DB<br/>conversation_history)]:::pgapp
+
+    %% --- Auth path (separate from chat) ---
+    CLIENT -.->|"/auth/login<br/>/admin/*"| AUTH[auth.py<br/>JWT + bcrypt]:::svc
+    AUTH -->|"users + rate limits"| PGAPP
+
+    %% --- Styles ---
+    classDef actor      fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000
+    classDef external   fill:#fce4ec,stroke:#ad1457,color:#000
+    classDef svc        fill:#e3f2fd,stroke:#0277bd,color:#000
+    classDef node       fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef router     fill:#fff9c4,stroke:#f9a825,color:#000
+    classDef qdrant     fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px,color:#000
+    classDef pgapp      fill:#c8e6c9,stroke:#1b5e20,stroke-width:2px,color:#000
+    classDef pgcheckpoint fill:#bbdefb,stroke:#0d47a1,stroke-width:2px,color:#000
+    classDef pgstore    fill:#ffe0b2,stroke:#bf360c,stroke-width:2px,color:#000
+    classDef resp       fill:#dcedc8,stroke:#33691e,color:#000

@@ -1,0 +1,45 @@
+---
+title: "Data Flow — Part 3/3: Dual-Plane Memory + Quality Gate + Response"
+---
+flowchart TB
+    PREV[/From Part 2/3:<br/>4 sub-agents +<br/>tool/RAG results/]:::prev
+
+    PREV --> SUBS[4 sub-agents<br/>booking · service · knowledge · other]:::node
+
+    %% --- Plane 1: short-term checkpointer ---
+    HG[hotel_langgraph<br/>StateGraph]:::svc -->|"after every node transition<br/>AsyncPostgresSaver"| PGCP[(PostgreSQL — hotel DB<br/>checkpoints*<br/>thread_id = session_id<br/>Pool: min=2 max=10)]:::pgcheckpoint
+    PGCP -.->|"replay on next turn<br/>same session_id"| HG
+    SUBS --> HG
+
+    %% --- Plane 2: long-term store ---
+    SUBS -->|"load_guest_memory<br/>on entry"| PGSTORE[(PostgreSQL — hotel DB<br/>store<br/>prefix = guest.user_id<br/>or anon.session_id<br/>Pool: min=1 max=5)]:::pgstore
+    PGSTORE -.->|"profile · preferences<br/>recent_bookings<br/>service_history"| SUBS
+
+    %% Rule-based write-back (zero LLM)
+    SUBS -.->|"_extract_prefs_from_text()<br/>EN+TH+CN keyword tables"| PGSTORE
+    SUBS -.->|"_extract_facts_from_tool_calls()<br/>create_reservation args<br/>create_service_request args"| PGSTORE
+
+    %% TTL sweeper
+    SWEEP[/24h scheduled sweeper<br/>prune_anon_memory/]:::svc -.->|"DELETE FROM store<br/>WHERE prefix LIKE 'anon.%'<br/>AND age > 30d"| PGSTORE
+
+    %% --- Quality gate ---
+    SUBS -->|"AIMessage"| QC[Quality Check<br/>has_tool_leak<br/>+ has_language_leak]:::svc
+    QC -->|"leak detected<br/>retry up to N<br/>2 local · 1 cloud"| HG
+    QC -->|"strip_tool_call_codeblocks<br/>strip_language_leak<br/>last resort"| RESP[/JSON Response<br/>response · session_id · intent<br/>retries · had_leak<br/>had_lang_leak/]:::resp
+
+    RESP --> API[FastAPI<br/>server.py]:::svc
+
+    %% --- Side-channel writes ---
+    API -.->|"every /chat turn<br/>action, actor, resource, details"| AUDIT[(PostgreSQL — hotel DB<br/>audit_log)]:::pgapp
+    HG -.->|"role · content · session_id<br/>per turn"| CONV[(PostgreSQL — hotel DB<br/>conversation_history)]:::pgapp
+
+    API -->|"HTTP 200"| CLIENT[Frontend / API Client]:::external
+
+    classDef prev     fill:#eeeeee,stroke:#616161,stroke-dasharray:5 5,color:#000
+    classDef svc      fill:#e3f2fd,stroke:#0277bd,color:#000
+    classDef node     fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef external fill:#fce4ec,stroke:#ad1457,color:#000
+    classDef resp     fill:#dcedc8,stroke:#33691e,color:#000
+    classDef pgapp    fill:#c8e6c9,stroke:#1b5e20,stroke-width:2px,color:#000
+    classDef pgcheckpoint fill:#bbdefb,stroke:#0d47a1,stroke-width:2px,color:#000
+    classDef pgstore  fill:#ffe0b2,stroke:#bf360c,stroke-width:2px,color:#000

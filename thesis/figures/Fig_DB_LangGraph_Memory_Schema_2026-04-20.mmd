@@ -1,0 +1,57 @@
+---
+title: "LangGraph Memory — Auto-Managed PostgreSQL Tables (6 tables, dual-plane)"
+---
+erDiagram
+    checkpoints ||..|| checkpoint_blobs : "shares thread_id"
+    checkpoints ||..|| checkpoint_writes : "shares thread_id"
+    checkpoint_migrations ||..o| checkpoints : "schema version"
+    store_migrations ||..o| store : "schema version"
+
+    checkpoints {
+        TEXT thread_id PK "= session_id"
+        TEXT checkpoint_ns PK "default empty"
+        TEXT checkpoint_id PK
+        TEXT parent_checkpoint_id
+        TEXT type
+        JSONB checkpoint "full HotelState snapshot"
+        JSONB metadata
+    }
+
+    checkpoint_blobs {
+        TEXT thread_id PK
+        TEXT checkpoint_ns PK
+        TEXT channel PK "e.g. messages"
+        TEXT version PK
+        TEXT type
+        BYTEA blob "pickled channel value"
+    }
+
+    checkpoint_writes {
+        TEXT thread_id PK
+        TEXT checkpoint_ns PK
+        TEXT checkpoint_id PK
+        TEXT task_id PK
+        INTEGER idx PK
+        TEXT channel
+        TEXT type
+        BYTEA blob
+        TEXT task_path
+    }
+
+    checkpoint_migrations {
+        INTEGER v PK "schema version"
+    }
+
+    store {
+        TEXT prefix PK "guest.{user_id} or anon.{session_id}"
+        TEXT key PK "profile|preferences|recent_bookings_summary|service_history_summary"
+        JSONB value
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ updated_at
+        TIMESTAMPTZ expires_at "nullable, TTL"
+        INTEGER ttl_minutes
+    }
+
+    store_migrations {
+        INTEGER v PK "schema version"
+    }

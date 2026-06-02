@@ -1,0 +1,166 @@
+---
+title: "Hotel AI — PostgreSQL Application Schema (hotel DB, 11 tables)"
+---
+erDiagram
+    room_types ||--o{ rooms : "categorizes"
+    rooms ||--o{ reservations : "booked_as"
+    rooms ||--o{ housekeeping : "cleaned_in"
+    guests ||--o{ reservations : "books"
+    guests ||--o{ service_requests : "requests"
+    guests ||--o{ conversation_history : "talks_in"
+    guests ||--o| users : "registered_as"
+    reservations ||--o{ service_requests : "during"
+    reservations ||--o{ payment_links : "paid_via"
+    users ||--o{ audit_log : "performs"
+
+    room_types {
+        SERIAL room_type_id PK
+        VARCHAR name
+        VARCHAR name_th
+        TEXT description
+        TEXT description_th
+        DECIMAL base_price
+        INTEGER max_occupancy
+        JSONB amenities
+        TIMESTAMP created_at
+    }
+
+    rooms {
+        SERIAL room_id PK
+        VARCHAR room_number UK
+        INTEGER room_type_id FK
+        INTEGER floor
+        VARCHAR status "available|occupied|maintenance|cleaning"
+        VARCHAR view_type
+        TIMESTAMP last_cleaned
+        TEXT notes
+        TIMESTAMP created_at
+    }
+
+    guests {
+        SERIAL guest_id PK
+        VARCHAR first_name
+        VARCHAR last_name
+        VARCHAR first_name_th
+        VARCHAR last_name_th
+        VARCHAR email UK
+        VARCHAR phone
+        VARCHAR id_number
+        VARCHAR nationality
+        VARCHAR loyalty_tier "Standard|Silver|Gold|Platinum"
+        INTEGER loyalty_points
+        JSONB preferences
+        TIMESTAMP created_at
+        TIMESTAMP updated_at
+    }
+
+    reservations {
+        SERIAL reservation_id PK
+        VARCHAR confirmation_number UK "HTL+YYMMDD+####"
+        INTEGER guest_id FK
+        INTEGER room_id FK
+        DATE check_in_date
+        DATE check_out_date
+        INTEGER num_guests
+        VARCHAR status "pending|confirmed|checked_in|checked_out|cancelled"
+        DECIMAL total_amount
+        VARCHAR payment_status "pending|paid|refunded"
+        TEXT special_requests
+        VARCHAR booking_source
+        TEXT cancellation_reason
+        TIMESTAMP created_at
+        TIMESTAMP updated_at
+    }
+
+    service_requests {
+        SERIAL request_id PK
+        INTEGER reservation_id FK
+        INTEGER guest_id FK
+        VARCHAR request_type "room_service|extra_towels|wake_up_call|spa|..."
+        TEXT description
+        TEXT description_th
+        VARCHAR status "pending|in_progress|completed|cancelled"
+        VARCHAR priority "low|normal|high|urgent"
+        VARCHAR assigned_to
+        TIMESTAMP created_at
+        TIMESTAMP resolved_at
+    }
+
+    housekeeping {
+        SERIAL task_id PK
+        INTEGER room_id FK
+        VARCHAR task_type
+        VARCHAR status
+        VARCHAR assigned_to
+        DATE scheduled_date
+        TIMESTAMP completed_at
+        TEXT notes
+        TIMESTAMP created_at
+    }
+
+    hotel_services {
+        SERIAL service_id PK
+        VARCHAR name
+        VARCHAR name_th
+        VARCHAR category
+        TEXT description
+        TEXT description_th
+        DECIMAL price
+        VARCHAR availability_hours
+        VARCHAR location
+        BOOLEAN is_active
+        TIMESTAMP created_at
+    }
+
+    conversation_history {
+        SERIAL conversation_id PK
+        VARCHAR session_id
+        INTEGER guest_id FK
+        VARCHAR role "user|assistant|system"
+        TEXT content
+        TIMESTAMP created_at
+    }
+
+    users {
+        SERIAL user_id PK
+        VARCHAR username UK
+        VARCHAR email UK
+        VARCHAR password_hash "bcrypt"
+        VARCHAR role "user|admin"
+        VARCHAR full_name
+        BOOLEAN is_active
+        INTEGER guest_id FK "nullable"
+        TIMESTAMP last_login
+        INTEGER failed_login_attempts
+        TIMESTAMP locked_until
+        TIMESTAMP password_changed_at
+        BOOLEAN password_is_default
+        TIMESTAMP created_at
+        TIMESTAMP updated_at
+    }
+
+    audit_log {
+        BIGSERIAL audit_id PK
+        INTEGER actor_user_id FK "nullable"
+        VARCHAR actor_username
+        VARCHAR actor_role
+        VARCHAR action "e.g. user.login, booking.cancel"
+        VARCHAR resource_type
+        VARCHAR resource_id
+        JSONB details
+        VARCHAR ip_address
+        VARCHAR user_agent
+        BOOLEAN success
+        TIMESTAMP created_at
+    }
+
+    payment_links {
+        SERIAL payment_id PK
+        VARCHAR token UK "uuid4"
+        INTEGER reservation_id FK
+        DECIMAL amount
+        VARCHAR currency "THB"
+        VARCHAR status "pending|completed|expired"
+        TIMESTAMP created_at
+        TIMESTAMP expires_at "NOW + 30 min"
+    }
