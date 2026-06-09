@@ -879,7 +879,7 @@ def search_hotel_knowledge(query: str) -> str:
         from src.retrievers.hotel_knowledge.chains import HotelKnowledgeRetriever
 
         retriever = HotelKnowledgeRetriever()
-        results = retriever.document_search(query, num_docs=3)
+        results = retriever.document_search(query, num_docs=int(os.getenv("HOTEL_RAG_NUM_DOCS", "5")))
 
         if results:
             # Format results from RAG

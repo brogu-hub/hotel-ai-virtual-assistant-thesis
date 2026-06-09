@@ -405,6 +405,178 @@ async def handle_service(state: HotelState, config: RunnableConfig) -> Dict:
     return {"messages": [result], "current_intent": "service"}
 
 
+# ----------------------------------------------------------------------------
+# Pricing pre-fetch helper for the knowledge sub-agent
+# ----------------------------------------------------------------------------
+
+# Room type detection: EN / TH / CN
+_ROOM_TYPE_PATTERNS = [
+    ("Standard",  [r"standard\b", r"สแตนดาร์ด", r"สแตนดาด", r"标准间", r"标准房"]),
+    ("Deluxe",    [r"deluxe\b",   r"ดีลักซ์",   r"ดีลัก",   r"豪华间", r"豪华房"]),
+    ("Suite",     [r"suite\b",    r"สวีท",     r"สูท",     r"套房"]),
+    ("Penthouse", [r"penthouse\b",r"เพนท์เฮาส์",r"เพนเฮาส์",r"顶层套房", r"顶楼套房"]),
+]
+
+# Thai month names for date parsing
+_TH_MONTHS = {
+    "มกราคม": 1, "ม.ค.": 1, "ม.ค": 1, "กุมภาพันธ์": 2, "ก.พ.": 2, "ก.พ": 2,
+    "มีนาคม": 3, "มี.ค.": 3, "มี.ค": 3, "เมษายน": 4, "เม.ย.": 4, "เม.ย": 4,
+    "พฤษภาคม": 5, "พ.ค.": 5, "พ.ค": 5, "มิถุนายน": 6, "มิ.ย.": 6, "มิ.ย": 6,
+    "กรกฎาคม": 7, "ก.ค.": 7, "ก.ค": 7, "สิงหาคม": 8, "ส.ค.": 8, "ส.ค": 8,
+    "กันยายน": 9, "ก.ย.": 9, "ก.ย": 9, "ตุลาคม": 10, "ต.ค.": 10, "ต.ค": 10,
+    "พฤศจิกายน": 11, "พ.ย.": 11, "พ.ย": 11, "ธันวาคม": 12, "ธ.ค.": 12, "ธ.ค": 12,
+}
+
+# English month names
+_EN_MONTHS = {
+    "january": 1, "jan": 1, "february": 2, "feb": 2, "march": 3, "mar": 3,
+    "april": 4, "apr": 4, "may": 5, "june": 6, "jun": 6, "july": 7, "jul": 7,
+    "august": 8, "aug": 8, "september": 9, "sep": 9, "sept": 9,
+    "october": 10, "oct": 10, "november": 11, "nov": 11, "december": 12, "dec": 12,
+}
+
+
+def _detect_room_type(text: str) -> Optional[str]:
+    """Return canonical English room type if any pattern matches, else None."""
+    low = text.lower()
+    for canonical, patterns in _ROOM_TYPE_PATTERNS:
+        for pat in patterns:
+            if _re.search(pat, low):
+                return canonical + " Room" if canonical != "Penthouse" else "Penthouse"
+    return None
+
+
+def _extract_dates(text: str) -> List[str]:
+    """Extract dates in YYYY-MM-DD format from EN/TH/CN free text.
+
+    Returns at most 2 dates (check-in, check-out). Best-effort — returns
+    [] if no date can be parsed confidently.
+    """
+    from datetime import datetime, timedelta
+    dates = []
+
+    # 1. ISO format: 2026-07-15 or 2026/07/15
+    for m in _re.finditer(r"\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b", text):
+        try:
+            y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            dates.append(f"{y:04d}-{mo:02d}-{d:02d}")
+        except ValueError:
+            pass
+
+    # 2. Chinese: 2026年7月15日, 7月15日
+    today_year = datetime.now().year
+    for m in _re.finditer(r"(?:(\d{4})\s*年)?\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日?", text):
+        try:
+            y = int(m.group(1)) if m.group(1) else today_year
+            mo, d = int(m.group(2)), int(m.group(3))
+            dates.append(f"{y:04d}-{mo:02d}-{d:02d}")
+        except ValueError:
+            pass
+
+    # 3. Thai: "15 กรกฎาคม 2026" or "15 ก.ค. 2026" or "15-17 กรกฎาคม 2026"
+    th_month_re = "|".join(_re.escape(m) for m in _TH_MONTHS.keys())
+    th_pattern = _re.compile(
+        rf"(\d{{1,2}})(?:\s*(?:ถึง|-|–)\s*(\d{{1,2}}))?\s*({th_month_re})\s*(\d{{4}})?",
+        _re.IGNORECASE,
+    )
+    for m in th_pattern.finditer(text):
+        try:
+            d1 = int(m.group(1))
+            d2 = int(m.group(2)) if m.group(2) else None
+            mo = _TH_MONTHS[m.group(3)]
+            y = int(m.group(4)) if m.group(4) else today_year
+            dates.append(f"{y:04d}-{mo:02d}-{d1:02d}")
+            if d2:
+                dates.append(f"{y:04d}-{mo:02d}-{d2:02d}")
+        except (ValueError, KeyError):
+            pass
+
+    # 4. English: "July 15", "July 15 to July 17, 2026", "July 15-17"
+    en_month_re = "|".join(_EN_MONTHS.keys())
+    en_pattern = _re.compile(
+        rf"\b({en_month_re})\s+(\d{{1,2}})(?:\s*(?:to|through|-|–)\s*(?:(?:({en_month_re})\s+)?(\d{{1,2}})))?(?:[\s,]+(\d{{4}}))?",
+        _re.IGNORECASE,
+    )
+    for m in en_pattern.finditer(text):
+        try:
+            mo1 = _EN_MONTHS[m.group(1).lower()]
+            d1 = int(m.group(2))
+            mo2 = _EN_MONTHS[m.group(3).lower()] if m.group(3) else mo1
+            d2 = int(m.group(4)) if m.group(4) else None
+            y = int(m.group(5)) if m.group(5) else today_year
+            dates.append(f"{y:04d}-{mo1:02d}-{d1:02d}")
+            if d2:
+                dates.append(f"{y:04d}-{mo2:02d}-{d2:02d}")
+        except (ValueError, KeyError):
+            pass
+
+    # Dedup while preserving order, return at most 2
+    seen, out = set(), []
+    for d in dates:
+        if d not in seen:
+            seen.add(d)
+            out.append(d)
+        if len(out) >= 2:
+            break
+    return out
+
+
+def _maybe_compute_pricing_context(message: str) -> str:
+    """If the user asks about pricing for a specific room type + date(s),
+    pre-compute dynamic pricing and return a context block for the LLM.
+
+    Returns empty string when the message doesn't look like a pricing query
+    (no room type, or no parseable date) — the LLM then falls back to the
+    static rate card from RAG.
+    """
+    if not message:
+        return ""
+
+    # Cheap intent gate — only trigger on messages that mention price/cost
+    low = message.lower()
+    price_signals = (
+        "price", "cost", "how much", "rate", "ราคา", "เท่าไหร่", "เท่าไร", "กี่บาท",
+        "价格", "多少钱", "多少", "费用",
+    )
+    if not any(s in low or s in message for s in price_signals):
+        return ""
+
+    room_type = _detect_room_type(message)
+    if not room_type:
+        return ""
+
+    dates = _extract_dates(message)
+    if not dates:
+        return ""
+
+    check_in = dates[0]
+    check_out = dates[1] if len(dates) > 1 else None
+
+    if not check_out:
+        # Single-date query — quote a 1-night stay starting that day.
+        try:
+            from datetime import datetime as _dt, timedelta as _td
+            d = _dt.strptime(check_in, "%Y-%m-%d")
+            check_out = (d + _td(days=1)).strftime("%Y-%m-%d")
+        except Exception:
+            check_out = check_in
+
+    try:
+        from src.agent.hotel_tools import calculate_dynamic_price
+        result = calculate_dynamic_price.invoke({
+            "room_type": room_type,
+            "check_in_date": check_in,
+            "check_out_date": check_out,
+        })
+        return (
+            "LIVE PRICING (already calculated for these specific dates — "
+            "USE THESE NUMBERS, NOT the rate card above):\n" + result
+        )
+    except Exception as e:
+        logger.warning(f"_maybe_compute_pricing_context failed: {e}")
+        return ""
+
+
 async def handle_knowledge(state: HotelState, config: RunnableConfig) -> Dict:
     """Handle RAG-based knowledge queries."""
     from src.agent.hotel_tools import search_hotel_knowledge
@@ -441,7 +613,18 @@ async def handle_knowledge(state: HotelState, config: RunnableConfig) -> Dict:
         logger.error(f"RAG search failed: {e}")
         knowledge_result = "No information found."
 
+    # Live dynamic pricing — invoked when the guest asks about cost for a
+    # specific room type + date(s). The knowledge sub-agent's RAG only
+    # returns the static rate card from data/hotel/room_types.md; without
+    # this pre-fetch the LLM would quote base_price even when an Early
+    # Bird discount or Last-Minute surcharge applies. See §4.x rationale.
+    pricing_block = _maybe_compute_pricing_context(last_user_message)
+
     # Generate response: user message first, then knowledge context
+    extra_context = f"HOTEL INFORMATION (already retrieved for you):\n{knowledge_result}"
+    if pricing_block:
+        extra_context += f"\n\n{pricing_block}"
+
     rag_prompt = ChatPromptTemplate.from_messages([
         ("system", main_prompt),
         ("human", last_user_message),
@@ -456,14 +639,20 @@ OUTPUT FORMAT — STRICT:
   search result — just answer with it directly.
 - Do NOT preface the answer with "I'll search …" or "Let me look up …"
   — go straight to the facts.
+- If a LIVE PRICING block is shown, use THOSE numbers (they already
+  include any Early Bird discount or Last-Minute surcharge) instead of
+  the rate card numbers from HOTEL INFORMATION.
 
-HOTEL INFORMATION (already retrieved for you):
-{knowledge_result}"""),
+{extra_context}"""),
     ])
 
     llm_settings = config.get('configurable', {}).get('llm_settings', {})
+    # iter4 fix: knowledge sub-agent uses LOW temperature (0.1) instead of 0.3
+    # to reduce hallucination on numeric facts (phone numbers, times, prices,
+    # addresses). Other sub-agents keep their defaults — single-layer change
+    # per confound isolation protocol.
     llm = get_llm(
-        temperature=llm_settings.get('temperature', 0.3),
+        temperature=llm_settings.get('temperature', 0.1),
         max_tokens=llm_settings.get('max_tokens', 1024)
     )
 
