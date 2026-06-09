@@ -647,12 +647,12 @@ OUTPUT FORMAT — STRICT:
     ])
 
     llm_settings = config.get('configurable', {}).get('llm_settings', {})
-    # iter4 fix: knowledge sub-agent uses LOW temperature (0.1) instead of 0.3
-    # to reduce hallucination on numeric facts (phone numbers, times, prices,
-    # addresses). Other sub-agents keep their defaults — single-layer change
-    # per confound isolation protocol.
+    # Temperature sweep (iter4/iter6) showed no meaningful improvement at
+    # T=0.1 (over-conservative: +5 rag_miss, +2 tool_not_called) or
+    # T=0.2 (plateau, weighted +1pp only). T=0.3 is the optimum for the
+    # knowledge sub-agent.
     llm = get_llm(
-        temperature=llm_settings.get('temperature', 0.1),
+        temperature=llm_settings.get('temperature', 0.3),
         max_tokens=llm_settings.get('max_tokens', 1024)
     )
 

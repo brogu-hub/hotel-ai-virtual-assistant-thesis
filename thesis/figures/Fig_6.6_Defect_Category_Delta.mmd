@@ -1,0 +1,10 @@
+---
+title: "Figure 6.6 — Defect Category Delta (baseline -> iter3 final config)"
+---
+%%{init: {'theme':'default'}}%%
+xychart-beta
+    title "Defect counts: pre-fix baseline (n=138) vs post-fix iter3 (n=96)"
+    x-axis "Defect category" ["incomplete", "rag_miss", "hallucination", "over_refuse", "spec_wrong", "tool_not_called", "rag_drift", "wrong_routing", "empty_response", "language_leak"]
+    y-axis "Defect count" 0 --> 45
+    bar [42, 30, 28, 19, 12, 6, 3, 1, 1, 0]
+    bar [11, 6, 14, 4, 6, 1, 0, 2, 2, 1]
