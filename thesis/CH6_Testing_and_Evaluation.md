@@ -143,3 +143,116 @@ The key insight: `OLLAMA_NUM_PARALLEL` divides the GPU's fixed token/sec through
 | 20 concurrent `GET /admin/audit` | total **0.16s**, all 200 |
 | 2 concurrent `/chat` (within GPU slots) | **14.5s** wall time |
 | 4 concurrent `/chat` (2 queued) | **19.7s** wall time, 0 failures |
+
+---
+
+## 6.5 Strategic Backtest — LLM-as-Judge Pipeline
+
+The 25-case golden dataset in §6.1.2 covers the canonical happy paths
+but is too small to surface the long-tail defects that affect production
+quality (stale knowledge, retrieval misses on buried facts, tool-call
+omissions, etc). To address this we built a second, larger evaluation
+pipeline based on the *strategic backtest* framework: a 504-case golden
+dataset, an LLM-as-judge scoring stage, and per-stratum reporting with
+Wilson confidence intervals and a regression watchlist.
+
+This section presents the pre-fix baseline numbers, the patches applied,
+and the post-fix delta. The full methodology is in Chapter 3 §3.x; the
+defect inventory and patch evidence is in Appendix C.
+
+### 6.5.1 Pipeline architecture
+
+[Figure 6.x: Eval Pipeline Architecture — golden generation (Gemini 2.5
+Flash) → 504-case dataset → live chatbot /chat → DeepSeek Chat v3.1 judge
+→ per-stratum + watchlist report.]
+
+The pipeline has four pieces, each in its own script under `scripts/eval/`:
+
+| Script | Role |
+|---|---|
+| `backtest_generate.py` | Source-grounded Q&A generation via `google/gemini-2.5-flash` (OpenRouter). One pass per `.md` section produces 3 EN + 3 TH + 3 CN pairs with strict-JSON schema. |
+| `backtest_canaries.py` | 15 hand-curated stability sentinels; pattern-based pass/fail; aborts downstream eval if >2 fail. |
+| `backtest_runner.py` | Hits `POST /chat` for each case, captures response + `tool_calls` + retries + `had_leak` flags; sends to `deepseek/deepseek-chat-v3.1` judge with a rubric prompt that returns strict JSON (verdict + defect tags). Resumable. |
+| `backtest_report.py` | Aggregates raw rows into per-stratum CSV (with Wilson CI), per-defect table, watchlist JSON, and a Markdown report. Supports `--compare-to <previous_run>` for delta tables. |
+| `audit_data_db_drift.py` | Deterministic complement to the LLM judge — regex-grep on `data/hotel/*.md` vs `room_types.base_price` DB column. Non-LLM, exit-code 0/1 for CI gating. |
+
+### 6.5.2 Dataset coverage
+
+| Source | Cases | Per language |
+|---|---:|---|
+| Generated from `data/hotel/*.md` sections (49 sections × 9) | 405 | 135 EN + 135 TH + 135 CN |
+| Programmatic pricing templates (4 rooms × 3 brackets × 3 langs) | 36 | 12 EN + 12 TH + 12 CN |
+| Hand-curated canaries (stability sentinels) | 15 | 5 EN + 5 TH + 3 CN + 2 infra |
+| Hand-curated hard negatives (refusal-correct) | 6 | EN-only |
+| Hand-curated adversarial (SQL drop, jailbreak, PII probe, …) | 6 | EN-only |
+| **Total** | **504** | **159 + 159 + 159 + 27 special** |
+
+### 6.5.3 Defect taxonomy
+
+Every judged response carries 0 or more tags from this fixed 15-tag
+taxonomy (rationale in §3.x.3):
+
+`rag_miss` · `rag_drift` · `room_conflation` · `spec_wrong` ·
+`incomplete` · `tool_not_called` · `tool_error` · `hallucination` ·
+`language_leak` · `tool_call_leak` · `particle_mismatch` ·
+`wrong_routing` · `empty_response` · `format_error` · `over_refuse`
+
+The first three are *new* concerns surfaced by this pipeline — the
+existing §5.14 quality gates cover only `language_leak` and
+`tool_call_leak`.
+
+### 6.5.4 Pre-fix baseline (200-case stratified sample + 27 specials)
+
+_(to be populated from `eval/results/baseline-prefix/<ts>/report.md`)_
+
+### 6.5.5 Patches applied (per §3.x confound-isolation protocol)
+
+| # | Layer | Change | Target bucket |
+|---|---|---|---|
+| 1 | KB content | Stripped prices from `data/hotel/room_types.md`; replaced with `calculate_dynamic_price` directive | `rag_drift` |
+| 2 | Retrieval | `chunk_size` 26,212 → 2,000 chars in `chains.py:109-131`; re-ingested Qdrant collection | `rag_miss` |
+| 3 | Retrieval | `num_docs` 3 → 5 in `hotel_tools.py:882` | `incomplete`, `rag_miss` |
+| 4 | Prompt | Pre-fetched dynamic pricing block injected into `handle_knowledge` prompt when both room type and date(s) are detected | `tool_not_called` |
+
+Each patch was applied in a separate commit so the run-by-run delta in
+§6.5.6 attributes the change to one layer at a time.
+
+### 6.5.6 Post-fix backtest + delta
+
+_(to be populated from `eval/results/baseline-prefix-postfix/<ts>/report.md`)_
+
+### 6.5.7 Threats to validity
+
+1. **Single judge model.** DeepSeek Chat v3.1 is the sole LLM judge.
+   We mitigated by enforcing strict-JSON output (response_format) and
+   running a small spot-check on the first 10 judgments (§3.x.x), but
+   did not run the full FPR/FNR rubric stability gate the strategy
+   defined. Future work: run 30 known-correct + 30 known-incorrect
+   triples through the judge and confirm FPR < 10% AND FNR < 10%.
+
+2. **Judge-system overlap.** The chatbot uses Qwen3.5 Opus 9B locally
+   (or Qwen3-max on the cloud path). DeepSeek Chat v3.1 is a different
+   vendor family (DeepSeek, not Qwen), which reduces judge-bias risk
+   from "model judges itself." But both are LLMs; a human-judge
+   comparison would be stronger.
+
+3. **Dataset contamination.** The 405 generated cases were produced
+   from the same `.md` files the chatbot's RAG indexes. Cases that
+   probe exactly the chunks RAG already retrieves will pass trivially.
+   We mitigated this with the hand-curated hard negatives (refusal
+   cases that have NO source in the KB) and pricing templates (whose
+   ground truth comes from the DB, not the markdown). But a portion of
+   the 75-80% pass rate we expect is "trivially correct" — interpret
+   the absolute number cautiously and weight the per-defect deltas
+   higher.
+
+4. **Stratified sample, not full dataset, for baseline.** The
+   pre-fix baseline run sampled 200 stratified cases (not all 504).
+   The 95% Wilson CIs for per-domain pass rates are ±5–10pp wide at
+   that sample size. Aggregate trends are reliable; small per-domain
+   shifts are not. The post-fix run uses the full 504 (CIs ±3pp).
+
+5. **Cold-start latency variance.** The Ollama backend takes ~24s
+   on the first call to load the 6 GB Q4_K_M model into VRAM. The
+   first eval row's chat_latency_s is therefore inflated. Subsequent
+   rows are warm (~10s). This affects latency stats, not verdict.

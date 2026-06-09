@@ -1,0 +1,59 @@
+---
+title: "Figure 6.5 — Eval Pipeline Architecture (golden generation -> live chat -> judge -> per-stratum report)"
+---
+flowchart TB
+    KB[/"data/hotel/*.md<br/>(10 files, 49 H2 sections)"/]:::source
+    DB[("PostgreSQL<br/>room_types.base_price")]:::source
+
+    GEN["**1. backtest_generate.py**<br/>google/gemini-2.5-flash via OpenRouter<br/>source-grounded prompt -> strict JSON<br/>3 EN + 3 TH + 3 CN Q&amp;A per section"]:::script
+
+    PRC["**2. backtest_pricing_templates.py**<br/>deterministic Q&amp;A from DB base_price<br/>x Early Bird / Standard / Last-Minute<br/>4 rooms x 3 brackets x 3 langs = 36 cases"]:::script
+
+    HAND[/"hand-curated:<br/>canaries.jsonl (15)<br/>hard_negatives.jsonl (6)<br/>adversarial.jsonl (6)"/]:::manual
+
+    DS[("eval/dataset/<br/>golden_{en,th,cn}.jsonl<br/>504 cases total")]:::store
+
+    CAN["**3. backtest_canaries.py**<br/>15 stability sentinels<br/>deterministic pass/fail<br/>aborts if &gt; 2 fail"]:::script
+
+    RUN["**4. backtest_runner.py**<br/>POST /chat for each case<br/>capture response + tool_calls<br/>+ had_leak + had_lang_leak"]:::script
+
+    CHAT[/"hotel-api<br/>localhost:8088/chat<br/>(LangGraph + sub-agents)"/]:::svc
+
+    JUDGE["**LLM-as-judge**<br/>deepseek/deepseek-chat-v3.1<br/>via OpenRouter<br/>structured JSON output<br/>verdict + defect tags"]:::judge
+
+    RAW[("eval/results/&lt;tag&gt;/&lt;ts&gt;/raw.jsonl<br/>+ manifest.json (6 version pins)")]:::store
+
+    REP["**5. backtest_report.py**<br/>per-stratum CSV (Wilson 95% CI)<br/>per-defect CSV<br/>regression watchlist<br/>promotion gates<br/>delta vs baseline"]:::script
+
+    DRIFT["**6. audit_data_db_drift.py**<br/>deterministic regex grep<br/>MD prices vs DB.base_price<br/>(no LLM, CI-friendly)"]:::deterministic
+
+    OUT[/"report.md<br/>(verdict: SHIP / NO-SHIP)<br/>+ per-question CSV<br/>+ watchlist.json"/]:::out
+
+    KB --> GEN
+    DB --> PRC
+    GEN --> DS
+    PRC --> DS
+    HAND --> DS
+
+    DS --> CAN
+    CAN -->|all pass| RUN
+    CAN -.->|&gt; 2 fail| ABORT([abort run]):::fail
+
+    DS --> RUN
+    RUN <--> CHAT
+    RUN --> JUDGE
+    JUDGE --> RAW
+
+    RAW --> REP
+    DRIFT -.->|rag_drift count| REP
+    REP --> OUT
+
+    classDef source        fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000
+    classDef script        fill:#e3f2fd,stroke:#0277bd,stroke-width:2px,color:#000
+    classDef manual        fill:#fce4ec,stroke:#880e4f,stroke-width:2px,color:#000
+    classDef store         fill:#c8e6c9,stroke:#1b5e20,stroke-width:2px,color:#000
+    classDef svc           fill:#e8f5e9,stroke:#2e7d32,color:#000
+    classDef judge         fill:#d1c4e9,stroke:#311b92,stroke-width:2.5px,color:#000
+    classDef deterministic fill:#fff9c4,stroke:#f57f17,stroke-width:2px,color:#000
+    classDef out           fill:#dcedc8,stroke:#33691e,stroke-width:2.5px,color:#000
+    classDef fail          fill:#ffcdd2,stroke:#b71c1c,stroke-width:2px,color:#000
