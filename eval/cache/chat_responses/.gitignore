@@ -1,0 +1,3 @@
+# Cache shards — run artefacts, do not commit.
+*
+!.gitignore

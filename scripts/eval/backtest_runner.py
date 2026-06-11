@@ -34,9 +34,11 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import os
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -58,6 +60,13 @@ from eval.backtest_common import (  # noqa: E402
     has_language_leak,
     load_jsonl,
     stratified_sample,
+)
+from eval.backtest_cache import (  # noqa: E402
+    compute_chat_sha,
+    compute_corpus_sha,
+    make_key,
+    read_cache,
+    write_cache,
 )
 
 # Default judge — per the eval plan's approved model choice
@@ -262,14 +271,56 @@ def judge_response(
     return deterministic_fallback_verdict(case, response_text, actual_tools)
 
 
+def _precheck_shortcircuit(
+    case: Dict[str, Any],
+    response_text: str,
+    actual_tools: List[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """D2: deterministic checks BEFORE the LLM judge (skip judge call on
+    unambiguous failures). Returns a verdict dict if any fires, else None."""
+    must_not = case.get("must_not_contain", []) or []
+    defects: List[str] = []
+    reason_bits: List[str] = []
+    if not response_text or len(response_text.strip()) < 10:
+        defects.append("empty_response")
+        reason_bits.append("response empty/<10 chars")
+    if TOOL_CALL_LEAK_RE.search(response_text or ""):
+        defects.append("tool_call_leak")
+        reason_bits.append("raw tool syntax in response")
+    if must_not and any(s in (response_text or "") for s in must_not):
+        defects.append("over_refuse")
+        reason_bits.append("matched must_not_contain token")
+    if not defects:
+        return None
+    return {
+        "verdict": "incorrect",
+        "reason": "; ".join(reason_bits),
+        "hallucination_detected": False,
+        "defects": defects,
+        "dimension_scores": {
+            "factual_accuracy": "FAIL",
+            "language_match": "PASS",
+            "tool_invocation": "N/A",
+            "no_hallucination": "PASS",
+            "completeness": "FAIL" if "empty_response" in defects else "PASS",
+            "safety": "FAIL" if "tool_call_leak" in defects else "PASS",
+        },
+        "judge_source": "precheck_shortcircuit",
+    }
+
+
 def evaluate_case(
     case: Dict[str, Any],
     *,
     endpoint: str,
     judge_model: str,
     chat_timeout: float,
+    use_chat_cache: bool = True,
+    chat_sha: str = "",
+    corpus_sha: str = "",
+    cache_version: str = "",
 ) -> Dict[str, Any]:
-    """Hit /chat, judge, return one result row."""
+    """Hit /chat (cache or live), judge (or precheck-shortcircuit), return one result row."""
     cid = case["id"]
     started = time.time()
     response_text = ""
@@ -278,25 +329,44 @@ def evaluate_case(
     had_leak = False
     had_lang_leak = False
     error = None
+    chat_source = "live"
+    chat_latency = 0.0
 
-    try:
-        envelope = hit_chat(
-            endpoint=endpoint,
-            message=case["question"],
-            session_id=f"backtest-{cid}-{int(started)}",
-            user_id="backtest-runner",
-            timeout=chat_timeout,
-        )
+    # --- D1: chat-response cache lookup -------------------------------------
+    cache_key = make_key(cid, chat_sha, corpus_sha, version=cache_version) if use_chat_cache else ""
+    cached_env = read_cache(cid, cache_key) if (use_chat_cache and cache_key) else None
+    if cached_env is not None:
+        envelope = cached_env
         response_text = envelope.get("response") or envelope.get("message") or ""
         actual_tools = extract_tool_calls(envelope)
         retries = envelope.get("retries", 0) or envelope.get("retry_count", 0)
         had_leak = envelope.get("had_leak", False)
         had_lang_leak = envelope.get("had_lang_leak", False)
-    except Exception as exc:
-        error = f"chat error: {type(exc).__name__}: {exc}"
-        response_text = ""
-
-    chat_latency = time.time() - started
+        chat_source = "cache"
+        chat_latency = 0.0
+    else:
+        try:
+            envelope = hit_chat(
+                endpoint=endpoint,
+                message=case["question"],
+                session_id=f"backtest-{cid}-{int(started)}",
+                user_id="backtest-runner",
+                timeout=chat_timeout,
+            )
+            response_text = envelope.get("response") or envelope.get("message") or ""
+            actual_tools = extract_tool_calls(envelope)
+            retries = envelope.get("retries", 0) or envelope.get("retry_count", 0)
+            had_leak = envelope.get("had_leak", False)
+            had_lang_leak = envelope.get("had_lang_leak", False)
+            chat_latency = time.time() - started
+            if use_chat_cache and cache_key and response_text:
+                # Only cache non-empty responses; errors stay un-cached so a
+                # transient backend hiccup doesn't poison subsequent runs.
+                write_cache(cid, cache_key, envelope)
+        except Exception as exc:
+            error = f"chat error: {type(exc).__name__}: {exc}"
+            response_text = ""
+            chat_latency = time.time() - started
 
     judge_start = time.time()
     if error:
@@ -309,7 +379,12 @@ def evaluate_case(
             "judge_source": "chat_error",
         }
     else:
-        verdict = judge_response(judge_model, case, response_text, actual_tools)
+        # --- D2: deterministic precheck short-circuit -----------------------
+        pre = _precheck_shortcircuit(case, response_text, actual_tools)
+        if pre is not None:
+            verdict = pre
+        else:
+            verdict = judge_response(judge_model, case, response_text, actual_tools)
     judge_latency = time.time() - judge_start
 
     return {
@@ -327,6 +402,7 @@ def evaluate_case(
         "retries": retries,
         "had_leak": had_leak,
         "had_lang_leak": had_lang_leak,
+        "chat_source": chat_source,
         "verdict": verdict.get("verdict"),
         "reason": verdict.get("reason"),
         "defects": verdict.get("defects", []),
@@ -388,6 +464,15 @@ def main() -> int:
     p.add_argument("--limit", type=int, default=0, help="cap N cases (debugging)")
     p.add_argument("--abort-canary-failures", type=int, default=2,
                    help="if more than this many canaries fail, abort the rest")
+    # --- Phase D flags ---
+    p.add_argument("--use-chat-cache", dest="use_chat_cache", action="store_true",
+                   default=True, help="D1: replay cached /chat envelopes when (model,corpus) unchanged (default on)")
+    p.add_argument("--no-chat-cache", dest="use_chat_cache", action="store_false",
+                   help="D1: force live /chat calls")
+    p.add_argument("--chat-cache-version", default="",
+                   help="D1: extra string mixed into cache key to invalidate on demand")
+    p.add_argument("--max-chat-parallel", type=int, default=0,
+                   help="D3: ThreadPool size (0=auto: 2 for ollama/localhost, 8 for cloud)")
     args = p.parse_args()
 
     if not os.getenv("OPENROUTER_API_KEY"):
@@ -399,12 +484,32 @@ def main() -> int:
     run_dir.mkdir(parents=True, exist_ok=True)
     raw_path = run_dir / "raw.jsonl"
 
+    # --- D1 setup: derive cache shas (once per run) -----------------------
+    llm_model = os.getenv("OLLAMA_MODEL", os.getenv("APP_LLM_MODELNAME", "unknown"))
+    chat_sha = compute_chat_sha(llm_model, args.endpoint)
+    corpus_sha = compute_corpus_sha()
+
+    # --- D3 setup: auto-pick parallelism ----------------------------------
+    if args.max_chat_parallel > 0:
+        max_parallel = args.max_chat_parallel
+    elif "localhost" in args.endpoint or "ollama" in args.endpoint.lower():
+        max_parallel = 2  # Ollama: 2 keeps the GPU queue warm
+    else:
+        max_parallel = 8  # cloud / gemma4 over Railway
+
     # Save manifest
     manifest = {
         "tag": args.tag,
         "ts": ts,
         "endpoint": args.endpoint,
         "judge_model": args.judge_model,
+        "chat_cache": {
+            "enabled": args.use_chat_cache,
+            "chat_sha": chat_sha,
+            "corpus_sha": corpus_sha,
+            "version": args.chat_cache_version,
+        },
+        "max_chat_parallel": max_parallel,
         "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         **capture_version_pins(judge_model=args.judge_model),
     }
@@ -455,45 +560,94 @@ def main() -> int:
     partial_n = 0
     canary_fails = 0
     aborted = False
+    cache_hits = 0
+    precheck_skips = 0
+    write_lock = threading.Lock()
+    state_lock = threading.Lock()
 
-    for idx, case in enumerate(pending, start=1):
-        row = evaluate_case(
+    def _worker(case: Dict[str, Any]) -> Dict[str, Any]:
+        return evaluate_case(
             case,
             endpoint=args.endpoint,
             judge_model=args.judge_model,
             chat_timeout=args.chat_timeout,
+            use_chat_cache=args.use_chat_cache,
+            chat_sha=chat_sha,
+            corpus_sha=corpus_sha,
+            cache_version=args.chat_cache_version,
         )
-        append_jsonl(raw_path, row)
+
+    def _commit(idx_in_run: int, case: Dict[str, Any], row: Dict[str, Any]) -> bool:
+        """Append + tally + canary-abort check, all under locks. Returns abort flag."""
+        nonlocal pass_n, partial_n, fail_n, canary_fails, cache_hits, precheck_skips
+        with write_lock:
+            append_jsonl(raw_path, row)
         v = row["verdict"]
-        if v == "correct":
-            pass_n += 1
-            mark = "[PASS]"
-        elif v == "partial":
-            partial_n += 1
-            mark = "[PART]"
-        else:
-            fail_n += 1
-            mark = "[FAIL]"
-
-        if case.get("status") == "canary" and v != "correct":
-            canary_fails += 1
-
+        with state_lock:
+            if v == "correct":
+                pass_n += 1
+                mark = "[PASS]"
+            elif v == "partial":
+                partial_n += 1
+                mark = "[PART]"
+            else:
+                fail_n += 1
+                mark = "[FAIL]"
+            if row.get("chat_source") == "cache":
+                cache_hits += 1
+            if row.get("judge_source") == "precheck_shortcircuit":
+                precheck_skips += 1
+            if case.get("status") == "canary" and v != "correct":
+                canary_fails += 1
+            abort = canary_fails > args.abort_canary_failures
         print(
-            f"  {mark} {idx:>3}/{len(pending)} "
+            f"  {mark} {idx_in_run:>3}/{len(pending)} "
             f"{row['id']:<48} "
-            f"chat={row['chat_latency_s']:>5.1f}s "
-            f"judge={row['judge_latency_s']:>4.1f}s  "
-            f"{row['reason'][:60]}"
+            f"chat={row['chat_latency_s']:>5.1f}s({row.get('chat_source','live')[0]}) "
+            f"judge={row['judge_latency_s']:>4.1f}s({(row.get('judge_source') or '?')[:4]})  "
+            f"{(row.get('reason') or '')[:60]}"
         )
+        return abort
 
-        if canary_fails > args.abort_canary_failures:
-            print(f"\n  ABORTED: {canary_fails} canaries failed (> tolerance {args.abort_canary_failures})")
-            aborted = True
-            break
+    if max_parallel <= 1:
+        for idx, case in enumerate(pending, start=1):
+            row = _worker(case)
+            if _commit(idx, case, row):
+                print(f"\n  ABORTED: {canary_fails} canaries failed (> tolerance {args.abort_canary_failures})")
+                aborted = True
+                break
+    else:
+        completed = 0
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_parallel) as ex:
+            futures: Dict[concurrent.futures.Future, tuple] = {}
+            for idx, case in enumerate(pending, start=1):
+                futures[ex.submit(_worker, case)] = (idx, case)
+            for fut in concurrent.futures.as_completed(futures):
+                idx, case = futures[fut]
+                completed += 1
+                try:
+                    row = fut.result()
+                except Exception as exc:
+                    row = {
+                        "id": case["id"], "verdict": "incorrect",
+                        "reason": f"worker crash: {type(exc).__name__}: {exc}",
+                        "chat_latency_s": 0.0, "judge_latency_s": 0.0,
+                        "defects": ["empty_response"], "judge_source": "worker_crash",
+                        "chat_source": "error",
+                        "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    }
+                if _commit(completed, case, row):
+                    aborted = True
+                    for f in futures:
+                        if not f.done():
+                            f.cancel()
+                    print(f"\n  ABORTED: {canary_fails} canaries failed (> tolerance {args.abort_canary_failures})")
+                    break
 
     print()
     print(f"=== summary: {pass_n} pass, {partial_n} partial, {fail_n} fail "
-          f"({pass_n+partial_n+fail_n}/{len(pending)} pending complete) ===")
+          f"({pass_n+partial_n+fail_n}/{len(pending)} pending complete) "
+          f"| cache_hits={cache_hits} precheck_skips={precheck_skips} parallel={max_parallel} ===")
     if aborted:
         return 1
     return 0

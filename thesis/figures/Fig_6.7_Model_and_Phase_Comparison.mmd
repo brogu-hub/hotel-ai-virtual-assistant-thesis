@@ -1,0 +1,10 @@
+---
+title: "Figure 6.7 — Strict-pass rate across iterations and base models (100-case sample, seed=42)"
+---
+%%{init: {'theme':'default'}}%%
+xychart-beta
+    title "Strict pass rate: iter3 (Qwen 9B) -> Phase A (Gemma 4 12B) -> reverted B/C stack"
+    x-axis "Run" ["baseline","iter3 (Qwen)","Phase A (gemma4)","Phase B (+reranker)","Phase C (+breadcrumb)"]
+    y-axis "Strict pass rate (%)" 0 --> 100
+    bar [54.3, 79.2, 80.2, 78.1, 71.9]
+    line [75, 75, 75, 75, 75]
