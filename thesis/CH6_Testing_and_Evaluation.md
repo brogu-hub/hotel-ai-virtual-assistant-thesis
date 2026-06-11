@@ -250,8 +250,13 @@ Patches applied one layer at a time per the confound-isolation protocol of §3.4
 | iter4 | Model | `handle_knowledge` temperature 0.3→0.1 | 78.1% | −1.1 pp | REVERT (plateau; hallucination −4 but `rag_miss` +5 and `tool_not_called` +2 — over-conservative) |
 | iter5 | Retrieval | `num_docs` 5→8 | 68.2% (killed at 66/96) | −11.0 pp | KILLED (regression; more chunks = more noise; `rag_drift` resurfaced at 3) |
 | iter6 | Model | `handle_knowledge` temperature 0.3→0.2 | **79.2%** | 0.0 pp | PLATEAU (defect profile identical to iter3) |
+| iter7 | Prompt | Verbatim-quote rule in `handle_knowledge` ("MUST quote prices/sizes/phones/lists exactly; reproduce every bullet") | 70.8% | −8.4 pp | REVERT (`hallucination` +6, `incomplete` +7 — the rule made the model more confident on wrong details rather than more grounded) |
+| iter8 | KB content | Added 6 negative-fact Q&A entries to `hotel_faq.md` ("no casino", "no helipad", "no underwater suite"). hotel_faq chunks 5→8. | 74.0% | −5.2 pp | REVERT (hard negatives flipped 3/3 in sample but new chunks competed in embedding space, costing `rag_miss` +4 and `incomplete` +4 in other strata) |
+| iter9 | Model | Inject detected-language lock as a 2nd system message in `handle_booking` to fix EN→TH leak on missing-email refusal | 74.0% | −5.2 pp | REVERT (target case `hardneg_book_without_email_en` was already PASS in iter3; no demonstrable benefit, and same 5pp gap vs iter3 — likely sample variance, but no signal to keep the change) |
 
 **Final shipped configuration (iter3):** `chunk_size=1000 chars × 200 overlap` (giving 49 per-section Qdrant chunks), `num_docs=5`, `temperature=0.3`, KB room prices stripped, pricing pre-fetch helper active in the knowledge sub-agent.
+
+**Methodology note on iter7-9.** A six-agent workflow investigation (parallel defect drill-downs + live trilingual probe + synthesised recommendation) proposed these three Tier-1 changes as the highest-ratio next moves, predicting +5–7 pp aggregate uplift. All three failed on the 100-case stratified sample (seed=42, same as iter3) and were reverted via `git checkout`. This is itself useful evidence: (i) confound isolation worked — each change was tested alone so its individual effect was measurable; (ii) prompt-engineering and KB additions beyond iter3's chunk-size fix produce diminishing or negative returns at the 9B model size; (iii) the 100-case sample's Wilson 95% CI of ±9 pp means small per-iteration deltas are not distinguishable from noise at this n. Iter3 remains the optimum for the local Ollama configuration.
 
 **Key learnings:**
 
