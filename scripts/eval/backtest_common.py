@@ -254,17 +254,29 @@ def capture_version_pins(
 
 
 def _dataset_signature(path: Path) -> str:
-    """SHA256 short-prefix of a JSONL file's bytes — stable across reorderings.
+    """SHA256 short-prefix of a dataset file (or all *.jsonl in a directory).
 
     Useful as the dataset_version pin so two runs against the same golden
-    file produce the same signature even if file metadata differs.
+    file/dir produce the same signature even if file metadata differs.
+    Directory hashing walks sorted *.jsonl files and folds (relative-path,
+    bytes) into the same hasher — so adding/renaming/reordering files
+    changes the signature deterministically.
     """
     if not path.exists():
         return "missing"
     h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
+    if path.is_dir():
+        for jsonl in sorted(path.glob("*.jsonl")):
+            h.update(jsonl.name.encode("utf-8"))
+            h.update(b"\0")
+            with open(jsonl, "rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    h.update(chunk)
+            h.update(b"\0\0")
+    else:
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
     return f"sha256_{h.hexdigest()[:12]}"
 
 

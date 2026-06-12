@@ -1,0 +1,402 @@
+"""Dual confound-isolated backtest driver: Gemma Q8 + Stack-OFF, then Stack-ON.
+
+Designed for the AP_D per-case Q&A comparison in the thesis. Holds the model
+constant at gemma4:12b-it-q8_0 and flips ONLY the augmentation stack between
+runs so the delta is cleanly attributable to Phase G/H/H.A/H.B/H.C.
+
+Stack-OFF env (Backtest #1):
+    HYBRID_RETRIEVAL=false             # Phase H.B disabled
+    RERANKER_BACKEND=none              # Phase H.C disabled
+    HOTEL_QUERY_REWRITE_ENABLED=false  # Phase G/H.A disabled
+    HOTEL_PROMPT_PATH=...stackoff.yaml # Phase G model_overrides disabled
+    HOTEL_RAG_NUM_DOCS_PER_SUBQ=3      # pre-Phase-G default
+
+Stack-ON env (Backtest #2):
+    HYBRID_RETRIEVAL=true
+    RERANKER_BACKEND=qwen
+    HOTEL_QUERY_REWRITE_ENABLED=true
+    HOTEL_PROMPT_PATH=  (default search list -> hotel_prompt.yaml)
+    HOTEL_RAG_NUM_DOCS_PER_SUBQ=5
+
+For each backtest the driver:
+  1. Mutates the .env file in-place with the stack-specific block (line-bounded,
+     not the whole file).
+  2. Recreates hotel-api via `docker compose up -d --force-recreate` so the
+     import-time env vars (HYBRID_RETRIEVAL, RERANKER_BACKEND) take effect.
+  3. Polls /healthz until 200.
+  4. PUTs /settings/llm to set gemma4:12b-it-q8_0 + thinking=True (runtime
+     state resets on recreate).
+  5. Warms Gemma into VRAM via `ollama run ... "hi"` (evicts whatever was loaded).
+  6. Runs backtest_canaries.py — abort run if more than 1 canary fails.
+  7. Runs the OpenRouter balance check; abort if < $0.50.
+  8. Runs backtest_runner.py on the full 514-case set with the appropriate --tag.
+  9. Runs backtest_report.py to render per-stratum tables.
+
+After both runs complete:
+  - Runs build_apd_table.py with both run dirs to populate AP_D.
+  - Restores the original .env (so the host returns to whatever was set before).
+  - Prints final summary with both tags + balance delta.
+
+Wall-clock estimate: ~5-6 hours per backtest at gemma4:12b-it-q8_0 / Ollama
+NUM_PARALLEL=1, so ~11-12 hours total. Run in background.
+
+Resume: backtest_runner.py already skips cases already in raw.jsonl. If this
+driver is interrupted mid-run, re-invoking it picks up where it left off
+(per-stack); --force-fresh on the CLI overrides.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+ENV_PATH = ROOT / ".env"
+COMPOSE_PATH = ROOT / "deploy" / "compose" / "docker-compose.hotel.yaml"
+
+STACK_OFF_ENV = {
+    "HYBRID_RETRIEVAL": "false",
+    "RERANKER_BACKEND": "none",
+    "HOTEL_QUERY_REWRITE_ENABLED": "false",
+    "HOTEL_PROMPT_PATH": "/app/src/agent/hotel_prompt_stackoff.yaml",
+    "HOTEL_RAG_NUM_DOCS_PER_SUBQ": "3",
+    "OLLAMA_MODEL": "gemma4:12b-it-q8_0",
+}
+
+STACK_ON_ENV = {
+    "HYBRID_RETRIEVAL": "true",
+    "RERANKER_BACKEND": "qwen",
+    "HOTEL_QUERY_REWRITE_ENABLED": "true",
+    "HOTEL_PROMPT_PATH": "",
+    "HOTEL_RAG_NUM_DOCS_PER_SUBQ": "5",
+    "OLLAMA_MODEL": "gemma4:12b-it-q8_0",
+}
+
+STACK_MARKER_START = "# >>> RUN_DUAL_BACKTEST stack overrides BEGIN >>>"
+STACK_MARKER_END = "# <<< RUN_DUAL_BACKTEST stack overrides END <<<"
+
+
+def log(msg: str) -> None:
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    print(f"[{ts}] {msg}", flush=True)
+
+
+def patch_env_file(stack_overrides: dict[str, str]) -> None:
+    """Replace the stack-override block in .env with the given values."""
+    if not ENV_PATH.exists():
+        raise RuntimeError(f".env not found at {ENV_PATH}")
+    body = ENV_PATH.read_text(encoding="utf-8")
+    # Strip any prior managed block.
+    pattern = re.compile(
+        re.escape(STACK_MARKER_START) + r".*?" + re.escape(STACK_MARKER_END) + r"\n?",
+        re.DOTALL,
+    )
+    body = pattern.sub("", body)
+    if not body.endswith("\n"):
+        body += "\n"
+    body += f"\n{STACK_MARKER_START}\n"
+    for k, v in stack_overrides.items():
+        body += f"{k}={v}\n"
+    body += f"{STACK_MARKER_END}\n"
+    ENV_PATH.write_text(body, encoding="utf-8")
+
+
+def restore_env_file() -> None:
+    """Remove the managed block so .env returns to the pre-driver state."""
+    if not ENV_PATH.exists():
+        return
+    body = ENV_PATH.read_text(encoding="utf-8")
+    pattern = re.compile(
+        r"\n?" + re.escape(STACK_MARKER_START) + r".*?" + re.escape(STACK_MARKER_END) + r"\n?",
+        re.DOTALL,
+    )
+    body = pattern.sub("", body)
+    ENV_PATH.write_text(body, encoding="utf-8")
+
+
+def docker_compose(*args: str, check: bool = True, capture: bool = False) -> subprocess.CompletedProcess:
+    cmd = ["docker", "compose", "-f", str(COMPOSE_PATH), *args]
+    log(f"$ {' '.join(cmd)}")
+    return subprocess.run(
+        cmd,
+        cwd=str(ROOT),
+        check=check,
+        text=True,
+        capture_output=capture,
+    )
+
+
+def recreate_hotel_api() -> None:
+    docker_compose("up", "-d", "--force-recreate", "--no-deps", "hotel-api")
+
+
+def wait_for_healthz(timeout_s: int = 180) -> None:
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen("http://localhost:8088/healthz", timeout=5) as r:
+                if r.status == 200:
+                    log("  /healthz OK")
+                    return
+        except (urllib.error.URLError, urllib.error.HTTPError, ConnectionResetError, TimeoutError):
+            pass
+        time.sleep(3)
+    raise RuntimeError(f"hotel-api did not become healthy within {timeout_s}s")
+
+
+def admin_token() -> str:
+    body = json.dumps({"username": "admin", "password": "admin123"}).encode("utf-8")
+    req = urllib.request.Request(
+        "http://localhost:8088/auth/login",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.loads(r.read())["access_token"]
+
+
+def put_llm_settings(model: str = "gemma4:12b-it-q8_0") -> None:
+    token = admin_token()
+    body = json.dumps({"backend": "ollama", "model": model}).encode("utf-8")
+    req = urllib.request.Request(
+        "http://localhost:8088/settings/llm",
+        data=body,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        method="PUT",
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        d = json.loads(r.read())
+    log(f"  /settings/llm -> {d.get('model')} thinking={d.get('thinking')}")
+
+
+def warm_ollama_model(model: str = "gemma4:12b-it-q8_0") -> None:
+    log(f"  warming {model} into VRAM…")
+    subprocess.run(
+        ["docker", "exec", "hotel-ollama", "ollama", "run", model, "hi"],
+        check=False,
+        capture_output=True,
+        timeout=600,
+    )
+
+
+def check_openrouter_balance(min_balance: float = 0.50) -> float:
+    helper = ROOT / "scripts" / "eval" / "check_openrouter_balance.py"
+    out = subprocess.run(
+        [sys.executable, str(helper)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    log(f"  balance: {out.stdout.strip()}")
+    # parse "$X.XXXX available"
+    m = re.search(r"\$([0-9.]+)\s+available", out.stdout)
+    bal = float(m.group(1)) if m else -1.0
+    if bal < min_balance:
+        raise RuntimeError(f"OpenRouter balance ${bal:.4f} below minimum ${min_balance:.2f}")
+    return bal
+
+
+def run_canaries(endpoint: str = "http://localhost:8088", max_failures: int = 1) -> int:
+    log("  canary gate (15 sentinels)…")
+    p = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "eval" / "backtest_canaries.py"),
+            "--endpoint",
+            endpoint,
+        ],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+        timeout=1800,
+    )
+    sys.stdout.write(p.stdout)
+    sys.stderr.write(p.stderr)
+    # backtest_canaries.py exit code: 0 OK, 1 too many failed
+    if p.returncode > max_failures:
+        raise RuntimeError(f"canary gate failed (exit={p.returncode})")
+    return p.returncode
+
+
+def run_full_backtest(tag: str, endpoint: str = "http://localhost:8088") -> Path:
+    log(f"  full backtest (tag={tag})…")
+    p = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "eval" / "backtest_runner.py"),
+            "--tag",
+            tag,
+            "--endpoint",
+            endpoint,
+            "--no-canaries",  # already gated above
+            "--abort-canary-failures",
+            "16",
+        ],
+        cwd=str(ROOT),
+        # Don't capture — we want streaming progress in the parent log.
+        check=False,
+        timeout=24 * 3600,  # 24h hard ceiling
+    )
+    if p.returncode != 0:
+        log(f"  WARN: backtest_runner.py exit={p.returncode} (raw.jsonl preserved for resume)")
+
+    # find the run dir (latest under eval/results/<tag>/)
+    tag_dir = ROOT / "eval" / "results" / tag
+    candidates = sorted([d for d in tag_dir.glob("*") if d.is_dir()], reverse=True)
+    if not candidates:
+        raise RuntimeError(f"no run dir found under {tag_dir}")
+    return candidates[0]
+
+
+def run_report(run_dir: Path) -> None:
+    log(f"  rendering report for {run_dir}…")
+    p = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "eval" / "backtest_report.py"),
+            "--run-dir",
+            str(run_dir),
+        ],
+        cwd=str(ROOT),
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
+    if p.stdout:
+        sys.stdout.write(p.stdout)
+    if p.returncode != 0:
+        log(f"  WARN: backtest_report.py exit={p.returncode}")
+
+
+def run_stack(tag: str, stack_env: dict[str, str]) -> Path:
+    log(f"=== STACK '{tag}' begin ===")
+    log("  patching .env with stack overrides")
+    patch_env_file(stack_env)
+    log("  recreating hotel-api container")
+    recreate_hotel_api()
+    wait_for_healthz()
+    log("  setting LLM to gemma4:12b-it-q8_0 via /settings/llm")
+    put_llm_settings("gemma4:12b-it-q8_0")
+    warm_ollama_model("gemma4:12b-it-q8_0")
+    check_openrouter_balance(min_balance=0.50)
+    run_canaries()
+    run_dir = run_full_backtest(tag)
+    run_report(run_dir)
+    bal = check_openrouter_balance(min_balance=0.0)
+    log(f"=== STACK '{tag}' done. run_dir={run_dir} balance=${bal:.4f} ===")
+    return run_dir
+
+
+def build_apd_table(stackoff_dir: Path, stackon_dir: Path, qwen_dir: Path) -> None:
+    log("=== building AP_D per-case Q&A table ===")
+    out = ROOT / "thesis" / "AP_D_Per_Case_QA.md"
+    p = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "eval" / "build_apd_table.py"),
+            "--run-a", str(qwen_dir),
+            "--run-b", str(stackoff_dir),
+            "--run-c", str(stackon_dir),
+            "--out", str(out),
+        ],
+        cwd=str(ROOT),
+        check=False,
+        text=True,
+        capture_output=True,
+        timeout=300,
+    )
+    sys.stdout.write(p.stdout)
+    if p.returncode != 0:
+        sys.stderr.write(p.stderr)
+        log(f"  WARN: build_apd_table.py exit={p.returncode}")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--stackoff-tag", default="gemma_q8_stackoff")
+    ap.add_argument("--stackon-tag", default="gemma_q8_stackon")
+    ap.add_argument(
+        "--qwen-baseline",
+        default="eval/results/final-postfix/20260609T205731",
+        help="Qwen 9B baseline dir for AP_D column A",
+    )
+    ap.add_argument("--skip-stackoff", action="store_true", help="resume — skip Backtest #1")
+    ap.add_argument("--skip-stackon", action="store_true", help="resume — skip Backtest #2")
+    ap.add_argument(
+        "--restore-env",
+        action="store_true",
+        help="Just strip the managed .env block and exit (cleanup after crash)",
+    )
+    args = ap.parse_args()
+
+    if args.restore_env:
+        restore_env_file()
+        log("restored .env (stripped managed block)")
+        return 0
+
+    # Sanity: docker compose + balance helper reachable
+    try:
+        subprocess.run(["docker", "--version"], check=True, capture_output=True, timeout=10)
+    except (subprocess.CalledProcessError, FileNotFoundError, TimeoutError) as e:
+        log(f"FATAL: docker unavailable: {e}")
+        return 2
+
+    check_openrouter_balance(min_balance=1.00)
+
+    stackoff_dir = stackon_dir = None
+    try:
+        if not args.skip_stackoff:
+            stackoff_dir = run_stack(args.stackoff_tag, STACK_OFF_ENV)
+        else:
+            # Find the most recent stackoff run for AP_D.
+            cands = sorted(
+                (ROOT / "eval" / "results" / args.stackoff_tag).glob("*"),
+                reverse=True,
+            )
+            stackoff_dir = cands[0] if cands else None
+
+        if not args.skip_stackon:
+            stackon_dir = run_stack(args.stackon_tag, STACK_ON_ENV)
+        else:
+            cands = sorted(
+                (ROOT / "eval" / "results" / args.stackon_tag).glob("*"),
+                reverse=True,
+            )
+            stackon_dir = cands[0] if cands else None
+
+        if stackoff_dir and stackon_dir:
+            qwen_dir = (ROOT / args.qwen_baseline).resolve()
+            build_apd_table(stackoff_dir, stackon_dir, qwen_dir)
+    finally:
+        restore_env_file()
+        log("restored .env (stripped managed block)")
+
+    log("=== dual backtest complete ===")
+    log(f"  Backtest #1 (Stack-OFF): {stackoff_dir}")
+    log(f"  Backtest #2 (Stack-ON):  {stackon_dir}")
+    bal = check_openrouter_balance(min_balance=0.0)
+    log(f"  OpenRouter balance after: ${bal:.4f}")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        log("interrupted; .env will be restored on next --restore-env invocation")
+        sys.exit(130)

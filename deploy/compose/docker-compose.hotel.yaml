@@ -195,6 +195,17 @@ services:
       RERANKER_MODEL: ${RERANKER_MODEL:-BAAI/bge-reranker-v2-m3}
       RERANKER_DEVICE: ${RERANKER_DEVICE:-cpu}
 
+      # --- Augmentation stack toggles (Phase G/H/H.A/H.B/H.C) ---
+      # Flipped between Stack-OFF (Backtest #1) and Stack-ON (Backtest #2)
+      # by scripts/eval/run_dual_backtest.py via the host .env file.
+      # See thesis/CH4_System_Design_INSERT.md §4.Y.4 for the toggle table.
+      HYBRID_RETRIEVAL: ${HYBRID_RETRIEVAL:-true}
+      HOTEL_QUERY_REWRITE_ENABLED: ${HOTEL_QUERY_REWRITE_ENABLED:-true}
+      HOTEL_PROMPT_PATH: ${HOTEL_PROMPT_PATH:-}
+      HOTEL_RAG_NUM_DOCS_PER_SUBQ: ${HOTEL_RAG_NUM_DOCS_PER_SUBQ:-5}
+      BM25_TOP_K: ${BM25_TOP_K:-30}
+      RRF_K: ${RRF_K:-60}
+
       # --- Authentication (JWT + bcrypt) ---
       JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-in-prod-8f3a9e2b1c7d4f6e5a8b9c0d1e2f3a4b}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
