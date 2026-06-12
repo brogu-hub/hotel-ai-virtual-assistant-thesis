@@ -110,6 +110,11 @@ def load_hotel_prompts(model: Optional[str] = None) -> Dict[str, Any]:
     the base prompts (partial replacement — base keys not mentioned in the
     override stay untouched). If ``model`` is None, falls back to the
     runtime LLM config's active_model.
+
+    HOTEL_PROMPT_PATH env override: when set, this exact path is loaded
+    instead of the default search list. Used by the Stack-OFF backtest to
+    point at hotel_prompt_stackoff.yaml (no model_overrides block) so we
+    can isolate the prompt-engineering contribution from retrieval.
     """
     if model is None:
         try:
@@ -118,12 +123,15 @@ def load_hotel_prompts(model: Optional[str] = None) -> Dict[str, Any]:
         except Exception:
             model = os.getenv("OLLAMA_MODEL", "")
 
-    # Try multiple paths for Railway compatibility
-    possible_paths = [
-        os.path.join(os.path.dirname(__file__), "..", "agent", "hotel_prompt.yaml"),
-        "/app/src/agent/hotel_prompt.yaml",
-        "src/agent/hotel_prompt.yaml",
-    ]
+    env_path = os.getenv("HOTEL_PROMPT_PATH", "").strip()
+    if env_path:
+        possible_paths = [env_path]
+    else:
+        possible_paths = [
+            os.path.join(os.path.dirname(__file__), "..", "agent", "hotel_prompt.yaml"),
+            "/app/src/agent/hotel_prompt.yaml",
+            "src/agent/hotel_prompt.yaml",
+        ]
 
     prompts = None
     for prompt_path in possible_paths:
@@ -800,8 +808,16 @@ async def handle_knowledge(state: HotelState, config: RunnableConfig) -> Dict:
     # time?"), retrieve the top-3 chunks PER sub-question rather than
     # 5 chunks for the combined embedding (which lands between intent
     # clusters and returns generic facility chunks).
+    #
+    # HOTEL_QUERY_REWRITE_ENABLED env gate: covers (a) multi-intent split,
+    # (b) _strip_greeting_intro on embed paths, (c) _extract_query_keywords
+    # politeness-particle strip. All three were introduced together in
+    # Phase G/H.A as the "query rewriting" family. Setting this env to
+    # "false" forces the pre-Phase-G/H baseline (single-embedding, raw
+    # user text) for the confound-isolated Stack-OFF backtest.
+    rewrite_enabled = os.getenv("HOTEL_QUERY_REWRITE_ENABLED", "true").lower() == "true"
     try:
-        sub_queries = _split_multi_intent(last_user_message)
+        sub_queries = _split_multi_intent(last_user_message) if rewrite_enabled else [last_user_message]
         if len(sub_queries) > 1:
             logger.info(
                 f"handle_knowledge: multi-intent decomposition -> {len(sub_queries)} sub-queries: "
@@ -822,7 +838,10 @@ async def handle_knowledge(state: HotelState, config: RunnableConfig) -> Dict:
                     # runs the RAG on "เวลาอาหารเช้า" (no หน่อย, no ค่ะ).
                     # The LLM still sees the original ``sq`` in the answer
                     # prompt (see ``[Q{i}: {sq}]`` formatting below).
-                    embed_sq = _extract_query_keywords(_strip_greeting_intro(sq))
+                    embed_sq = (
+                        _extract_query_keywords(_strip_greeting_intro(sq))
+                        if rewrite_enabled else sq
+                    )
                     try:
                         r = search_hotel_knowledge.invoke(embed_sq)
                     except Exception as e:
@@ -846,7 +865,10 @@ async def handle_knowledge(state: HotelState, config: RunnableConfig) -> Dict:
             # Phase H: single-intent path also strips greeting + politeness
             # before embedding (else "请问 WiFi 密码是什么？" regresses vs
             # the multi-intent path which now strips).
-            single_embed = _extract_query_keywords(_strip_greeting_intro(last_user_message))
+            single_embed = (
+                _extract_query_keywords(_strip_greeting_intro(last_user_message))
+                if rewrite_enabled else last_user_message
+            )
             knowledge_result = search_hotel_knowledge.invoke(single_embed)
             if len(knowledge_result) > 2000:
                 knowledge_result = knowledge_result[:2000] + "\n..."

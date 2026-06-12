@@ -517,7 +517,20 @@ def main() -> int:
         },
         "max_chat_parallel": max_parallel,
         "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        **capture_version_pins(judge_model=args.judge_model),
+        **capture_version_pins(
+            judge_model=args.judge_model,
+            dataset_path=DATASET_DIR,
+            extra={
+                # Phase H.D: pin the augmentation-stack toggles into the
+                # manifest so Stack-OFF vs Stack-ON runs are distinguishable
+                # by reviewers without diffing source. See CH4 §4.Y.4.
+                "stack_query_rewrite": os.getenv("HOTEL_QUERY_REWRITE_ENABLED", "true"),
+                "stack_hybrid": os.getenv("HYBRID_RETRIEVAL", "true"),
+                "stack_reranker": os.getenv("RERANKER_BACKEND", "none"),
+                "stack_prompt_path": os.getenv("HOTEL_PROMPT_PATH", "(default hotel_prompt.yaml)"),
+                "stack_num_docs_per_subq": os.getenv("HOTEL_RAG_NUM_DOCS_PER_SUBQ", "5"),
+            },
+        ),
     }
     (run_dir / "manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
