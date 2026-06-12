@@ -316,6 +316,7 @@ async def handle_booking(state: HotelState, config: RunnableConfig) -> Dict:
         check_out_guest,
         get_reservation_details,
         get_guest_reservations,
+        calculate_dynamic_price,
     )
 
     prompts = load_hotel_prompts()
@@ -334,8 +335,26 @@ async def handle_booking(state: HotelState, config: RunnableConfig) -> Dict:
     if user_text:
         await _extract_prefs_from_text(state, user_text)
 
+    # D3 fix: booking-envelope pricing intents (e.g. "จะมาพักวันที่ 15 มิถุนายน
+    # 3 คืน ค่าห้องดีลักซ์เท่าไหร่") never reach handle_knowledge, so pre-fetch
+    # dynamic pricing here too. Without this, the booking sub-agent quotes
+    # base_price from the rate card and misses Last-Minute / Early-Bird brackets.
+    # Same helper used by handle_knowledge — Thai/CN/EN dates + room types covered.
+    pricing_block = _maybe_compute_pricing_context(user_text) if user_text else ""
+    if pricing_block:
+        booking_prompt = (
+            booking_prompt
+            + "\n\n"
+            + pricing_block
+            + "\n\nWhen quoting a price for these dates/room type, USE THE LIVE"
+            + " PRICING NUMBERS ABOVE (they already include any Early-Bird"
+            + " discount or Last-Minute surcharge). Do NOT quote the base"
+            + " rate-card price from memory."
+        )
+
     booking_tools = [
         check_room_availability,
+        calculate_dynamic_price,
         create_reservation,
         confirm_reservation,
         update_reservation,
@@ -577,6 +596,60 @@ def _maybe_compute_pricing_context(message: str) -> str:
         return ""
 
 
+# D2 fix: multi-intent decomposition for RAG.
+# Delimiters that signal the guest packed multiple distinct questions into
+# one message. We split on these BEFORE embedding so each intent gets its
+# own nearest-neighbour search in vector space — a single embedding of a
+# multi-intent query lands between topic clusters and retrieves generic
+# facility chunks instead of the specific facts (see live-test Defect 2).
+_MULTI_INTENT_SPLIT_RE = _re.compile(
+    r"\s*(?:\?+|；|;|\band also\b|\band\b|\balso\b|\bplus\b|"
+    r"และ|กับ|"
+    r"和|还有|、)\s*",
+    _re.IGNORECASE,
+)
+
+_INFO_KEYWORDS = (
+    "wifi", "password", "breakfast", "pool", "spa", "gym", "check",
+    "checkout", "check-in", "check-out", "parking", "laundry", "shuttle",
+    "restaurant", "bar", "hour", "time", "where", "when", "how", "what",
+    "อาหาร", "สระ", "อินเตอร์เน็ต", "WiFi", "รหัส", "เช็ค",
+    "早餐", "游泳池", "密码", "WiFi", "几点", "几号",
+)
+
+
+def _split_multi_intent(text: str, max_parts: int = 4) -> List[str]:
+    """D2: split a guest message into distinct sub-questions for RAG.
+
+    Returns a list of length 1 (no split needed) up to ``max_parts``.
+    Conservative: only splits when at least two of the resulting parts
+    contain an information keyword, so we don't over-fragment a normal
+    single-intent sentence that happens to contain 'and'.
+    """
+    if not text or len(text) < 12:
+        return [text] if text else []
+    raw_parts = [p.strip() for p in _MULTI_INTENT_SPLIT_RE.split(text) if p and p.strip()]
+    if len(raw_parts) < 2:
+        return [text]
+    informative = [
+        p for p in raw_parts
+        if any(kw.lower() in p.lower() for kw in _INFO_KEYWORDS)
+        or any(kw in p for kw in _INFO_KEYWORDS)
+    ]
+    if len(informative) < 2:
+        return [text]
+    seen, out = set(), []
+    for p in informative:
+        key = p.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(p)
+        if len(out) >= max_parts:
+            break
+    return out or [text]
+
+
 async def handle_knowledge(state: HotelState, config: RunnableConfig) -> Dict:
     """Handle RAG-based knowledge queries."""
     from src.agent.hotel_tools import search_hotel_knowledge
@@ -604,11 +677,43 @@ async def handle_knowledge(state: HotelState, config: RunnableConfig) -> Dict:
         await _extract_prefs_from_text(state, last_user_message)
 
     # Search knowledge base
+    # D2 fix: multi-intent decomposition. If the guest packed 2+ distinct
+    # info-bearing questions into one message ("WiFi password AND breakfast
+    # time?"), retrieve the top-3 chunks PER sub-question rather than
+    # 5 chunks for the combined embedding (which lands between intent
+    # clusters and returns generic facility chunks).
     try:
-        knowledge_result = search_hotel_knowledge.invoke(last_user_message)
-        # Trim to prevent overshadowing the user question (max ~2000 chars)
-        if len(knowledge_result) > 2000:
-            knowledge_result = knowledge_result[:2000] + "\n..."
+        sub_queries = _split_multi_intent(last_user_message)
+        if len(sub_queries) > 1:
+            logger.info(
+                f"handle_knowledge: multi-intent decomposition -> {len(sub_queries)} sub-queries: "
+                + " | ".join(q[:40] for q in sub_queries)
+            )
+            prev_n = os.environ.get("HOTEL_RAG_NUM_DOCS")
+            os.environ["HOTEL_RAG_NUM_DOCS"] = os.getenv("HOTEL_RAG_NUM_DOCS_PER_SUBQ", "3")
+            try:
+                blocks = []
+                for i, sq in enumerate(sub_queries, 1):
+                    try:
+                        r = search_hotel_knowledge.invoke(sq)
+                    except Exception as e:
+                        logger.warning(f"handle_knowledge: sub-query {i} RAG failed: {e}")
+                        r = "(no information found for this sub-question)"
+                    if len(r) > 900:
+                        r = r[:900] + "\n..."
+                    blocks.append(f"[Q{i}: {sq}]\n{r}")
+            finally:
+                if prev_n is None:
+                    os.environ.pop("HOTEL_RAG_NUM_DOCS", None)
+                else:
+                    os.environ["HOTEL_RAG_NUM_DOCS"] = prev_n
+            knowledge_result = "\n\n===\n\n".join(blocks)
+            if len(knowledge_result) > 2400:
+                knowledge_result = knowledge_result[:2400] + "\n..."
+        else:
+            knowledge_result = search_hotel_knowledge.invoke(last_user_message)
+            if len(knowledge_result) > 2000:
+                knowledge_result = knowledge_result[:2000] + "\n..."
     except Exception as e:
         logger.error(f"RAG search failed: {e}")
         knowledge_result = "No information found."
@@ -642,6 +747,35 @@ OUTPUT FORMAT — STRICT:
 - If a LIVE PRICING block is shown, use THOSE numbers (they already
   include any Early Bird discount or Last-Minute surcharge) instead of
   the rate card numbers from HOTEL INFORMATION.
+
+MULTI-INTENT RULE:
+- If HOTEL INFORMATION below is split into [Q1: ...], [Q2: ...] blocks,
+  the guest asked MULTIPLE distinct questions. Answer EACH one with its
+  own short paragraph or bullet, quoting the specific fact (time,
+  password, price, location) verbatim from the matching [Q#] block.
+- Do NOT merge them into a single high-level summary like "we offer
+  breakfast and WiFi". The guest wants the exact value for each ask.
+
+GROUNDING — anti-hallucination and anti-over-refusal:
+- HOTEL INFORMATION below is your authoritative source. READ IT carefully
+  before deciding whether you have a fact. Do not assume something is
+  missing without checking.
+- Guest-facing values like the WiFi password (`HOTEL2024GUEST`), embassy
+  phones, room sizes, breakfast hours, pool times, addresses ARE meant
+  to be shared. If you find them in HOTEL INFORMATION, quote them
+  verbatim. Do NOT invent a "security policy", "privacy", or "for
+  verification call the front desk" excuse — the KB explicitly publishes
+  these for guests.
+- When HOTEL INFORMATION lists a specific set of items (view options,
+  room types, embassies, amenities), repeat EXACTLY those items.
+  Example: if it says "View: Partial city view" for Deluxe, say "Partial
+  city view" — do NOT add "Mountain View" or "Ocean View" just because
+  they sound plausible for a hotel.
+- Only if you have CAREFULLY READ HOTEL INFORMATION and the specific
+  value the guest asked for genuinely is NOT there, then say so plainly
+  for that detail only ("I don't see that listed in our directory; the
+  front desk may be able to help") and continue answering everything
+  else the guest asked.
 
 {extra_context}"""),
     ])
@@ -1040,17 +1174,32 @@ You are the primary router. Route every guest message to exactly ONE specialist:
    Examples: "What time is breakfast?", "Where is the gym?", "รหัส WiFi", "pet policy",
    "ห้องประชุมมีไหม", "สระว่ายน้ำเปิดกี่โมง", "ร้านอาหารเปิดกี่โมง", "มี X ไหม",
    "สปามีบริการอะไร", "นโยบายยกเลิก", "Do you have meeting rooms?"
-4. **HandleOtherTalk** — ONLY pure greetings/thanks/goodbye with NO question attached
-   Examples: "Hello", "Thank you", "สวัสดี", "ขอบคุณ", "Goodbye", "Hi"
+4. **HandleOtherTalk** — ONLY pure greetings/thanks/goodbye/small-talk with NO question AND NO information request.
+   Examples (allowed): "Hello", "Thank you", "สวัสดี", "ขอบคุณ", "Goodbye", "Hi", "Bye", "你好", "谢谢", "再见"
+   COUNTER-examples (NOT HandleOtherTalk — route to Knowledge/Booking/Service instead):
+     "Hi I'm James, what time is breakfast?" → ToHotelKnowledge
+     "สวัสดีค่ะ ห้องพักว่างไหมคะ" → ToHotelBooking
+     "你好，请问早餐几点开始？" → ToHotelKnowledge
+
+## QUESTION-FIRST RULE (highest priority — overrides every other rule)
+If the guest message contains ANY of the following, you MUST route to ToHotelKnowledge, ToHotelBooking, or ToHotelService — NEVER HandleOtherTalk, even when the message also contains a greeting, a self-introduction, or check-in details:
+- A question mark: `?` or `？`
+- An English interrogative token: what, where, when, how, why, which, who, do you, does, is there, are there, can I, could you, may I, available
+- A Thai interrogative token: กี่, อะไร, ไหน, ที่ไหน, เท่าไหร่, อย่างไร, ยังไง, มีไหม, ได้ไหม, หรือไม่, ไหมคะ, ไหมครับ
+- A Chinese interrogative token: 几点, 几号, 几位, 多少, 什么, 哪里, 哪个, 怎么, 可以, 能不能, 有没有, 请问
+Decide which specialist by the SUBJECT of the question, not by the greeting half. Default to ToHotelKnowledge when the question is about facilities, hours, dining, WiFi, or policies.
 
 IMPORTANT routing rules:
+- "Hi, I'm James, checking in tomorrow. What time does breakfast start and what's the WiFi password?" → ToHotelKnowledge (greeting + self-intro do NOT override the embedded questions)
+- "สวัสดีค่ะ ดิฉันชื่อสมศรี ห้องพักว่างไหมคะ" → ToHotelBooking
+- "你好，我叫王小明，请问早餐几点开始？" → ToHotelKnowledge
 - "cancel my booking" / "ยกเลิกการจอง" → ToHotelBooking (NOT HandleOtherTalk)
 - "what services do you have?" → ToHotelKnowledge (general info, NOT ToHotelService)
 - "I need a spa booking" → ToHotelService (specific service request)
 - Any question about hotel facilities (rooms, spa, dining, pool, etc.) → ToHotelKnowledge
 - Any Thai question ending with "มีไหม" / "กี่โมง" / "ที่ไหน" / "อย่างไร" → ToHotelKnowledge
 - When in doubt between Knowledge and Service, prefer ToHotelKnowledge
-- HandleOtherTalk ONLY for greetings without questions (Hello, Hi, Thanks, Bye)
+- HandleOtherTalk ONLY when the ENTIRE message is a pure greeting/thanks/goodbye with zero questions and zero info requests (Hello, Hi, Thanks, Bye, สวัสดี, ขอบคุณ, 你好, 谢谢)
 
 Always route. Never answer directly without routing first.
 """

@@ -162,6 +162,14 @@ AVAILABLE_MODELS = [
         "description": "Local Qwen3.5 base model, native thinking tags",
         "presets": {"temperature": 0.3, "max_tokens": 2048, "thinking": False, "max_retries": 2},
     },
+    {
+        "id": "gemma4:12b",
+        "name": "Gemma 4 12B",
+        "provider": "Ollama",
+        "backend": "ollama",
+        "description": "Google Gemma 4 12B (Q4_K_M, 262K ctx, multilingual). Thinking OFF for hotel use — empirically thinking mode makes the bot 'reason itself into refusal' on guest-facing values like WiFi password.",
+        "presets": {"temperature": 0.3, "max_tokens": 2048, "thinking": False, "max_retries": 1},
+    },
     # OpenRouter (cloud) — max_retries=0 or 1 to avoid doubling API costs
     {
         "id": "qwen/qwen3-max-thinking",

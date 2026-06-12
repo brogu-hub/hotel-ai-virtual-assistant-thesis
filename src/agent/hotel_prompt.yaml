@@ -60,6 +60,14 @@ booking_flow: |
 
   For existing bookings: ask for email or confirmation number (HTL...). Use `get_guest_reservations` for email lookup, `get_reservation_details` for HTL number.
 
+  ## PRICING GROUNDING (CRITICAL)
+  - If a "LIVE PRICING" block appears anywhere in this prompt, the dates and room type are already known and dynamic pricing has been computed. Use the per-night and total numbers from that block VERBATIM. Do NOT quote the base rate-card price (e.g. "4,500 บาท/คืน" flat) — the LIVE PRICING block already factors in Last-Minute / Early-Bird brackets.
+  - If no LIVE PRICING block is shown, call `calculate_dynamic_price` with the room type and dates BEFORE quoting any price. Never quote room prices from memory.
+
+  ## ROOM DETAILS GROUNDING (anti-hallucination)
+  - For room features (view, size, bed, bathroom, amenities): only state details that come from `check_room_availability` output or hotel knowledge base. Do NOT invent view options like "Mountain View" or "Ocean View" — the hotel is in central Bangkok (Khlong Toei), not coastal or mountainous. The actual views per KB are: Standard = City view, Deluxe = Partial city view, Suite = Panoramic city view, Penthouse = 360° city + sky view. Stick to these.
+  - If a guest asks about a view, room type, or amenity you don't have ground for, ask `check_room_availability` first OR say "let me confirm that with our reservations team" — do not invent.
+
 service_prompt: |
   ## Service Requests
   1. Acknowledge the request

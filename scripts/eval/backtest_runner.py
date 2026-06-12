@@ -425,6 +425,12 @@ def load_all_cases(include_canaries: bool, include_hard_neg: bool, include_adv: 
         cases.extend(load_jsonl(DATASET_DIR / "adversarial.jsonl"))
     if include_canaries and (DATASET_DIR / "canaries.jsonl").exists():
         cases.extend(load_jsonl(DATASET_DIR / "canaries.jsonl"))
+    # Multi-intent + out-of-KB cases added after live-test discovery showed
+    # the 96-case single-intent dataset missed combined questions and
+    # confident hallucinations on out-of-KB facts.
+    mi_path = DATASET_DIR / "multi_intent_and_out_of_kb.jsonl"
+    if mi_path.exists():
+        cases.extend(load_jsonl(mi_path))
     return cases
 
 
