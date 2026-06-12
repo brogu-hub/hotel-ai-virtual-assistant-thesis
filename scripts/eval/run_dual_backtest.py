@@ -319,6 +319,14 @@ def check_openrouter_balance(min_balance: float = 0.50) -> float:
 
 def run_canaries(endpoint: str = "http://localhost:8088", max_failures: int = 1) -> int:
     log("  canary gate (15 sentinels)…")
+    # The canary script prints Thai/Chinese probe text — Windows' default cp1252
+    # codec chokes on those bytes when subprocess captures stdout. Pass
+    # encoding='utf-8' + errors='replace' so the driver never dies on a code
+    # point. Also pipe through a hydrated env so OPENROUTER_API_KEY reaches
+    # the canary script (it might call the judge for rubric).
+    env = os.environ.copy()
+    env.update(load_dotenv_vars())
+    env["PYTHONIOENCODING"] = "utf-8"
     p = subprocess.run(
         [
             sys.executable,
@@ -329,10 +337,15 @@ def run_canaries(endpoint: str = "http://localhost:8088", max_failures: int = 1)
         cwd=str(ROOT),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=1800,
+        env=env,
     )
-    sys.stdout.write(p.stdout)
-    sys.stderr.write(p.stderr)
+    if p.stdout:
+        sys.stdout.write(p.stdout)
+    if p.stderr:
+        sys.stderr.write(p.stderr)
     # backtest_canaries.py exit code: 0 OK, 1 too many failed
     if p.returncode > max_failures:
         raise RuntimeError(f"canary gate failed (exit={p.returncode})")
@@ -341,6 +354,9 @@ def run_canaries(endpoint: str = "http://localhost:8088", max_failures: int = 1)
 
 def run_full_backtest(tag: str, endpoint: str = "http://localhost:8088") -> Path:
     log(f"  full backtest (tag={tag})…")
+    env = os.environ.copy()
+    env.update(load_dotenv_vars())
+    env["PYTHONIOENCODING"] = "utf-8"
     p = subprocess.run(
         [
             sys.executable,
@@ -366,6 +382,7 @@ def run_full_backtest(tag: str, endpoint: str = "http://localhost:8088") -> Path
         # Don't capture — we want streaming progress in the parent log.
         check=False,
         timeout=24 * 3600,  # 24h hard ceiling
+        env=env,
     )
     if p.returncode != 0:
         log(f"  WARN: backtest_runner.py exit={p.returncode} (raw.jsonl preserved for resume)")
@@ -391,6 +408,8 @@ def run_report(run_dir: Path) -> None:
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=600,
     )
     if p.stdout:
@@ -438,11 +457,15 @@ def build_apd_table(stackoff_dir: Path, stackon_dir: Path, qwen_dir: Path) -> No
         check=False,
         text=True,
         capture_output=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=300,
     )
-    sys.stdout.write(p.stdout)
+    if p.stdout:
+        sys.stdout.write(p.stdout)
     if p.returncode != 0:
-        sys.stderr.write(p.stderr)
+        if p.stderr:
+            sys.stderr.write(p.stderr)
         log(f"  WARN: build_apd_table.py exit={p.returncode}")
 
 
