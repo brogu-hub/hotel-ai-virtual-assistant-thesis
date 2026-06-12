@@ -123,6 +123,15 @@ services:
     build:
       context: ../../
       dockerfile: docker/dev/Dockerfile.dev
+    # Phase H.C: expose GPU to hotel-api so the cross-encoder reranker
+    # (BAAI/bge-reranker-v2-m3, ~1.3GB) runs on CUDA instead of CPU.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     volumes:
       - ../../src:/app/src:cached
       - ../../scripts:/app/scripts:cached
@@ -183,6 +192,8 @@ services:
       # loop (stalling all other requests). Set to "qwen" or "nvidia" to
       # re-enable if you add less accurate embedding models later.
       RERANKER_BACKEND: ${RERANKER_BACKEND:-none}
+      RERANKER_MODEL: ${RERANKER_MODEL:-BAAI/bge-reranker-v2-m3}
+      RERANKER_DEVICE: ${RERANKER_DEVICE:-cpu}
 
       # --- Authentication (JWT + bcrypt) ---
       JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-in-prod-8f3a9e2b1c7d4f6e5a8b9c0d1e2f3a4b}

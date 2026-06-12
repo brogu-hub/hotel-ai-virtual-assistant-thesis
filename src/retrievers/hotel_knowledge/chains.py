@@ -75,8 +75,12 @@ def get_reranker(top_n: int = 4):
     if RERANKER_BACKEND == "qwen":
         from src.common.reranker_qwen import get_qwen_reranker
 
-        logger.info("Using Qwen reranker (local CPU — slow, blocks event loop)")
-        return get_qwen_reranker(top_n=top_n)
+        device = os.getenv("RERANKER_DEVICE", "cpu")
+        model_name = os.getenv("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
+        logger.info(
+            f"Loading cross-encoder reranker: model={model_name} device={device}"
+        )
+        return get_qwen_reranker(top_n=top_n, device=device)
     if RERANKER_BACKEND == "nvidia":
         from src.common.reranker_nvidia import get_nvidia_reranker
 
