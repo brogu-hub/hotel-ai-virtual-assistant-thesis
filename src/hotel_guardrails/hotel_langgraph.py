@@ -102,8 +102,22 @@ class HandleOtherTalk(BaseModel):
 # Load Prompts
 # =============================================================================
 
-def load_hotel_prompts() -> Dict[str, Any]:
-    """Load prompts from hotel_prompt.yaml and inject current date/time."""
+def load_hotel_prompts(model: Optional[str] = None) -> Dict[str, Any]:
+    """Load prompts from hotel_prompt.yaml and merge per-model overrides.
+
+    Phase G prompt versioning: the YAML has a top-level ``model_overrides:``
+    dict keyed by model_id. When a model has an entry, its keys override
+    the base prompts (partial replacement — base keys not mentioned in the
+    override stay untouched). If ``model`` is None, falls back to the
+    runtime LLM config's active_model.
+    """
+    if model is None:
+        try:
+            from src.hotel_guardrails.config import get_runtime_llm_config
+            model = get_runtime_llm_config().active_model
+        except Exception:
+            model = os.getenv("OLLAMA_MODEL", "")
+
     # Try multiple paths for Railway compatibility
     possible_paths = [
         os.path.join(os.path.dirname(__file__), "..", "agent", "hotel_prompt.yaml"),
@@ -117,10 +131,24 @@ def load_hotel_prompts() -> Dict[str, Any]:
             if os.path.exists(prompt_path):
                 with open(prompt_path, 'r', encoding='utf-8') as f:
                     prompts = yaml.safe_load(f)
-                    logger.info(f"Loaded prompts from: {prompt_path}")
+                    logger.info(f"Loaded prompts from: {prompt_path} (model={model})")
                     break
         except Exception as e:
             logger.warning(f"Failed to load prompts from {prompt_path}: {e}")
+
+    # Apply per-model overrides (Phase G).
+    if prompts is not None and model:
+        overrides = (prompts.get("model_overrides") or {}).get(model, {})
+        if overrides:
+            for key, val in overrides.items():
+                prompts[key] = val
+            logger.info(
+                f"Applied {len(overrides)} prompt override(s) for model={model}: "
+                + ", ".join(sorted(overrides.keys()))
+            )
+        # Strip the override registry from the returned dict so callers
+        # don't accidentally treat it as a regular prompt key.
+        prompts.pop("model_overrides", None)
 
     if prompts is None:
         logger.warning("Using default prompts - no prompt file found")
@@ -617,6 +645,44 @@ _INFO_KEYWORDS = (
     "早餐", "游泳池", "密码", "WiFi", "几点", "几号",
 )
 
+# Phase G: greeting / self-intro patterns to strip from a sub-query BEFORE
+# embedding. The model's vector search drifts toward small-talk chunks when
+# "Hi, I'm James. Checking in tomorrow." is present, missing the actual
+# breakfast/WiFi sections.
+_GREETING_STRIP_RE = _re.compile(
+    r"^(?:"
+    r"hi\b[^.?!]*[.?!]?\s*"
+    r"|hello\b[^.?!]*[.?!]?\s*"
+    r"|hey\b[^.?!]*[.?!]?\s*"
+    r"|good (?:morning|afternoon|evening)\b[^.?!]*[.?!]?\s*"
+    r"|i['’]?m\s+\w+\b[^.?!]*[.?!]?\s*"
+    r"|i am\s+\w+\b[^.?!]*[.?!]?\s*"
+    r"|my name is\s+\w+\b[^.?!]*[.?!]?\s*"
+    r"|checking in\b[^.?!]*[.?!]?\s*"
+    r"|i['’]?ll be (?:checking in|arriving|staying)\b[^.?!]*[.?!]?\s*"
+    r"|สวัสดี\S*\s*"
+    r"|ดิฉันชื่อ\s*\S+\s*"
+    r"|ผมชื่อ\s*\S+\s*"
+    r"|จะมาพัก\b[^?]*?\s*"
+    r"|你好\S*\s*"
+    r"|我叫\s*\S+\s*"
+    r"|我是\s*\S+\s*"
+    r")+",
+    _re.IGNORECASE,
+)
+
+
+def _strip_greeting_intro(sub_query: str) -> str:
+    """Remove leading greetings + self-intros from a sub-query so the
+    embedding centroid lands on the actual info request, not the small-talk.
+
+    Returns the cleaned string, or the original if stripping would leave
+    fewer than 3 chars (e.g. the message WAS only a greeting)."""
+    if not sub_query:
+        return sub_query
+    cleaned = _GREETING_STRIP_RE.sub("", sub_query).strip(" ,.?!")
+    return cleaned if len(cleaned) >= 3 else sub_query
+
 
 def _split_multi_intent(text: str, max_parts: int = 4) -> List[str]:
     """D2: split a guest message into distinct sub-questions for RAG.
@@ -690,17 +756,28 @@ async def handle_knowledge(state: HotelState, config: RunnableConfig) -> Dict:
                 + " | ".join(q[:40] for q in sub_queries)
             )
             prev_n = os.environ.get("HOTEL_RAG_NUM_DOCS")
-            os.environ["HOTEL_RAG_NUM_DOCS"] = os.getenv("HOTEL_RAG_NUM_DOCS_PER_SUBQ", "3")
+            # Phase G: bumped per-subq from 3 to 5 because the WiFi sub-query
+            # "Could you tell me the WiFi password" was missing the WiFi chunk
+            # at top-3 (the politeness prefix shifted the embedding centroid).
+            # 5 chunks × 4 sub-queries = max 20 chunks out of 49 total.
+            os.environ["HOTEL_RAG_NUM_DOCS"] = os.getenv("HOTEL_RAG_NUM_DOCS_PER_SUBQ", "5")
             try:
                 blocks = []
                 for i, sq in enumerate(sub_queries, 1):
+                    # Phase G: strip greeting/self-intro from sub-query before
+                    # embedding, so "Hi I'm James, what time is breakfast" runs
+                    # the RAG on "what time is breakfast" instead.
+                    embed_sq = _strip_greeting_intro(sq)
                     try:
-                        r = search_hotel_knowledge.invoke(sq)
+                        r = search_hotel_knowledge.invoke(embed_sq)
                     except Exception as e:
                         logger.warning(f"handle_knowledge: sub-query {i} RAG failed: {e}")
                         r = "(no information found for this sub-question)"
                     if len(r) > 900:
                         r = r[:900] + "\n..."
+                    # Show the ORIGINAL sub-query to the LLM (preserves the
+                    # guest's phrasing for the answer) but ran RAG on the
+                    # stripped one.
                     blocks.append(f"[Q{i}: {sq}]\n{r}")
             finally:
                 if prev_n is None:
@@ -730,54 +807,26 @@ async def handle_knowledge(state: HotelState, config: RunnableConfig) -> Dict:
     if pricing_block:
         extra_context += f"\n\n{pricing_block}"
 
+    # Phase G: knowledge synthesis prompt is now in hotel_prompt.yaml under
+    # ``knowledge_synthesis`` (with optional per-model overrides). This makes
+    # the rule set tunable per LLM without code edits — gemma4:12b for
+    # example needs a more aggressively-worded version because of its
+    # stronger refusal priors. The string MUST contain a {extra_context}
+    # placeholder.
+    knowledge_synthesis_tmpl = prompts.get('knowledge_synthesis', '')
+    if knowledge_synthesis_tmpl and "{extra_context}" in knowledge_synthesis_tmpl:
+        synthesis_text = knowledge_synthesis_tmpl.replace("{extra_context}", extra_context)
+    else:
+        # Defensive fallback (very small) if prompts.yaml lacks the key.
+        synthesis_text = (
+            "Use this hotel information to answer the guest's question "
+            "above. Be direct and specific.\n\n" + extra_context
+        )
+
     rag_prompt = ChatPromptTemplate.from_messages([
         ("system", main_prompt),
         ("human", last_user_message),
-        ("system", f"""Use this hotel information to answer the guest's question above.
-Be direct and specific. Include times, prices, locations.
-Answer in the same language the guest used.
-
-OUTPUT FORMAT — STRICT:
-- Do NOT write code blocks (triple-backtick fences).
-- Do NOT write pseudo tool-calls like `search_hotel_knowledge(...)` or
-  `check_room_availability(...)`. The information below already IS the
-  search result — just answer with it directly.
-- Do NOT preface the answer with "I'll search …" or "Let me look up …"
-  — go straight to the facts.
-- If a LIVE PRICING block is shown, use THOSE numbers (they already
-  include any Early Bird discount or Last-Minute surcharge) instead of
-  the rate card numbers from HOTEL INFORMATION.
-
-MULTI-INTENT RULE:
-- If HOTEL INFORMATION below is split into [Q1: ...], [Q2: ...] blocks,
-  the guest asked MULTIPLE distinct questions. Answer EACH one with its
-  own short paragraph or bullet, quoting the specific fact (time,
-  password, price, location) verbatim from the matching [Q#] block.
-- Do NOT merge them into a single high-level summary like "we offer
-  breakfast and WiFi". The guest wants the exact value for each ask.
-
-GROUNDING — anti-hallucination and anti-over-refusal:
-- HOTEL INFORMATION below is your authoritative source. READ IT carefully
-  before deciding whether you have a fact. Do not assume something is
-  missing without checking.
-- Guest-facing values like the WiFi password (`HOTEL2024GUEST`), embassy
-  phones, room sizes, breakfast hours, pool times, addresses ARE meant
-  to be shared. If you find them in HOTEL INFORMATION, quote them
-  verbatim. Do NOT invent a "security policy", "privacy", or "for
-  verification call the front desk" excuse — the KB explicitly publishes
-  these for guests.
-- When HOTEL INFORMATION lists a specific set of items (view options,
-  room types, embassies, amenities), repeat EXACTLY those items.
-  Example: if it says "View: Partial city view" for Deluxe, say "Partial
-  city view" — do NOT add "Mountain View" or "Ocean View" just because
-  they sound plausible for a hotel.
-- Only if you have CAREFULLY READ HOTEL INFORMATION and the specific
-  value the guest asked for genuinely is NOT there, then say so plainly
-  for that detail only ("I don't see that listed in our directory; the
-  front desk may be able to help") and continue answering everything
-  else the guest asked.
-
-{extra_context}"""),
+        ("system", synthesis_text),
     ])
 
     llm_settings = config.get('configurable', {}).get('llm_settings', {})
