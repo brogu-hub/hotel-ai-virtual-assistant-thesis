@@ -350,7 +350,11 @@ def evaluate_case(
                 endpoint=endpoint,
                 message=case["question"],
                 session_id=f"backtest-{cid}-{int(started)}",
-                user_id="backtest-runner",
+                # Per-case user_id override: some cases (e.g. checked-in WiFi
+                # disclosure) need a real guest email so the LangGraph
+                # context-injection hook can look up their reservation.
+                # Default "backtest-runner" produces anonymous behavior.
+                user_id=case.get("user_id") or "backtest-runner",
                 timeout=chat_timeout,
             )
             response_text = envelope.get("response") or envelope.get("message") or ""
@@ -431,6 +435,12 @@ def load_all_cases(include_canaries: bool, include_hard_neg: bool, include_adv: 
     mi_path = DATASET_DIR / "multi_intent_and_out_of_kb.jsonl"
     if mi_path.exists():
         cases.extend(load_jsonl(mi_path))
+    # Phase H.D: checked-in WiFi probes (per-case user_id ties to a real
+    # checked_in reservation in seed data; exercises the LIVE GUEST WIFI
+    # context-injection path).
+    wifi_in = DATASET_DIR / "wifi_checkedin.jsonl"
+    if wifi_in.exists():
+        cases.extend(load_jsonl(wifi_in))
     return cases
 
 
