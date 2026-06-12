@@ -274,20 +274,37 @@ def admin_token() -> str:
 
 
 def put_llm_settings(model: str = "gemma4:12b-it-q8_0") -> None:
-    token = admin_token()
-    body = json.dumps({"backend": "ollama", "model": model}).encode("utf-8")
-    req = urllib.request.Request(
-        "http://localhost:8088/settings/llm",
-        data=body,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        },
-        method="PUT",
-    )
-    with urllib.request.urlopen(req, timeout=30) as r:
-        d = json.loads(r.read())
-    log(f"  /settings/llm -> {d.get('model')} thinking={d.get('thinking')}")
+    """Set the runtime LLM via PUT /settings/llm. Non-fatal on auth failure.
+
+    The container's OLLAMA_MODEL env already pins the default to Gemma Q8 at
+    boot, so this call is a belt-and-braces re-assertion. After a DB re-seed
+    the admin user may not exist yet (the seed-on-startup hook re-creates
+    it but auth state can be racy), so a 401 here should not abort the
+    whole dual backtest — fall through and trust the env default.
+    """
+    try:
+        token = admin_token()
+    except Exception as e:
+        log(f"  /settings/llm SKIP — admin_token failed ({type(e).__name__}: {e}); "
+            f"trusting OLLAMA_MODEL env default")
+        return
+    try:
+        body = json.dumps({"backend": "ollama", "model": model}).encode("utf-8")
+        req = urllib.request.Request(
+            "http://localhost:8088/settings/llm",
+            data=body,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            method="PUT",
+        )
+        with urllib.request.urlopen(req, timeout=30) as r:
+            d = json.loads(r.read())
+        log(f"  /settings/llm -> {d.get('model')} thinking={d.get('thinking')}")
+    except Exception as e:
+        log(f"  /settings/llm SKIP — PUT failed ({type(e).__name__}: {e}); "
+            f"trusting OLLAMA_MODEL env default")
 
 
 def warm_ollama_model(model: str = "gemma4:12b-it-q8_0") -> None:
