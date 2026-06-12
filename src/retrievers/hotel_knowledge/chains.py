@@ -22,10 +22,18 @@ Environment Variables:
 
 import os
 import logging
+import re as _re
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
 from langchain_core.documents import Document
+
+# Phase H.B — BM25 hybrid retrieval. rank_bm25 is in requirements.dev.txt.
+try:
+    from rank_bm25 import BM25Okapi
+except ImportError:
+    BM25Okapi = None
 
 from src.retrievers.base import BaseExample
 from src.common.embeddings_openrouter import (
@@ -130,6 +138,85 @@ CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", _auto_chunk_size))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", _auto_chunk_overlap))
 TOP_K_RETRIEVAL = int(os.getenv("TOP_K_RETRIEVAL", 30))
 TOP_K_RERANK = int(os.getenv("TOP_K_RERANK", 5))
+
+# Phase H.B — BM25 + vector hybrid via Reciprocal Rank Fusion.
+# Pure dense retrieval (qwen3-embedding-8b) under-weights rare literal
+# tokens (e.g. "HOTEL2024GUEST", "+66 2 245 7032"). BM25 over the same
+# 49-chunk corpus catches them and is fused with vector results.
+HYBRID_ENABLED = os.getenv("HYBRID_RETRIEVAL", "true").lower() == "true"
+RRF_K = int(os.getenv("RRF_K", "60"))
+BM25_TOP_K = int(os.getenv("BM25_TOP_K", "30"))
+
+# Module-level BM25 cache (lazy build; ~50ms for 49 chunks; reset by
+# ingest/delete hooks below).
+_bm25_lock = threading.Lock()
+_bm25_state: Dict[str, Any] = {"index": None, "docs": None}
+
+
+def _tokenize_bm25(text: str) -> List[str]:
+    """Bilingual tokenizer for BM25. Lowercase + \\w+ split keeps Latin,
+    Thai, and CJK as separate tokens. Sufficient for exact-keyword match
+    (HOTEL2024GUEST, +66, อาหารเช้า, 早餐)."""
+    return _re.findall(r"\w+", (text or "").lower(), flags=_re.UNICODE)
+
+
+def _build_bm25_index() -> None:
+    """Scroll Qdrant once and build an in-memory BM25Okapi index. Idempotent."""
+    if BM25Okapi is None:
+        logger.warning("rank_bm25 not installed — hybrid retrieval disabled")
+        return
+    try:
+        client = get_qdrant_client()
+        collection = get_collection_name()
+        docs: List[Dict[str, Any]] = []
+        offset = None
+        while True:
+            results, offset = client.scroll(
+                collection_name=collection,
+                limit=256,
+                offset=offset,
+                with_payload=True,
+            )
+            for p in results:
+                payload = p.payload or {}
+                content = (
+                    payload.get("page_content")
+                    or payload.get("content")
+                    or (payload.get("metadata") or {}).get("page_content", "")
+                )
+                if content:
+                    src = (
+                        (payload.get("metadata") or {}).get("source")
+                        or payload.get("source", "unknown")
+                    )
+                    docs.append({"content": content, "source": src})
+            if offset is None:
+                break
+        tokenized = [_tokenize_bm25(d["content"]) for d in docs]
+        index = BM25Okapi(tokenized) if tokenized else None
+        _bm25_state["index"] = index
+        _bm25_state["docs"] = docs
+        logger.info(f"BM25 index built: {len(docs)} chunks")
+    except Exception as e:
+        logger.error(f"BM25 index build failed: {e}")
+        _bm25_state["index"] = None
+        _bm25_state["docs"] = None
+
+
+def _get_bm25() -> Dict[str, Any]:
+    """Lazy-init guard around _build_bm25_index."""
+    if _bm25_state["index"] is None:
+        with _bm25_lock:
+            if _bm25_state["index"] is None:
+                _build_bm25_index()
+    return _bm25_state
+
+
+def _invalidate_bm25() -> None:
+    """Called by ingest/delete hooks so the next query rebuilds."""
+    with _bm25_lock:
+        _bm25_state["index"] = None
+        _bm25_state["docs"] = None
 
 
 class HotelKnowledgeRetriever(BaseExample):
@@ -264,6 +351,7 @@ class HotelKnowledgeRetriever(BaseExample):
             self.vectorstore.add_documents(chunks)
 
             logger.info(f"Ingested {len(chunks)} chunks from {filename}")
+            _invalidate_bm25()  # Phase H.B: corpus changed
             return len(chunks)
 
         except Exception as e:
@@ -292,6 +380,7 @@ class HotelKnowledgeRetriever(BaseExample):
             self.vectorstore.add_documents(chunks)
 
             logger.info(f"Ingested {len(chunks)} chunks from {source}")
+            _invalidate_bm25()  # Phase H.B: corpus changed
             return len(chunks)
 
         except Exception as e:
@@ -400,6 +489,66 @@ class HotelKnowledgeRetriever(BaseExample):
                     for doc in reranked_docs
                 ]
                 logger.info(f"Returning {len(results)} reranked results")
+            elif HYBRID_ENABLED and BM25Okapi is not None:
+                # Phase H.B: BM25 + vector hybrid via Reciprocal Rank Fusion.
+                # Pure dense retrieval under-weights rare literal tokens
+                # (HOTEL2024GUEST, +66 phone, 早餐 cross-lingual). BM25
+                # over the same 49-chunk corpus catches them.
+                bm25 = _get_bm25()
+                if bm25["index"] is not None:
+                    tokens = _tokenize_bm25(content)
+                    scores = bm25["index"].get_scores(tokens)
+                    bm25_ranked_idx = sorted(
+                        range(len(scores)), key=lambda i: scores[i], reverse=True
+                    )[:BM25_TOP_K]
+                    bm25_docs = [bm25["docs"][i] for i in bm25_ranked_idx]
+                    # Build rank lookups keyed by chunk content (LangChain
+                    # doesn't expose point IDs at this layer; content
+                    # equality is reliable for a 49-chunk corpus).
+                    vec_rank = {d.page_content: r for r, d in enumerate(docs)}
+                    bm25_rank = {d["content"]: r for r, d in enumerate(bm25_docs)}
+                    fused: List[tuple] = []
+                    for c in set(vec_rank) | set(bm25_rank):
+                        score = 0.0
+                        if c in vec_rank:
+                            score += 1.0 / (RRF_K + vec_rank[c])
+                        if c in bm25_rank:
+                            score += 1.0 / (RRF_K + bm25_rank[c])
+                        fused.append((c, score))
+                    fused.sort(key=lambda x: x[1], reverse=True)
+                    vec_content_to_doc = {d.page_content: d for d in docs}
+                    bm25_content_to_doc = {d["content"]: d for d in bm25_docs}
+                    results = []
+                    for c, score in fused[:num_docs]:
+                        if c in vec_content_to_doc:
+                            d = vec_content_to_doc[c]
+                            results.append({
+                                "source": d.metadata.get("source", "unknown"),
+                                "content": d.page_content,
+                                "score": score,
+                            })
+                        else:
+                            d = bm25_content_to_doc[c]
+                            results.append({
+                                "source": d["source"],
+                                "content": d["content"],
+                                "score": score,
+                            })
+                    logger.info(f"Returning {len(results)} hybrid (RRF) results")
+                else:
+                    # BM25 build failed — degrade to vector-only.
+                    results = [
+                        {
+                            "source": doc.metadata.get("source", "unknown"),
+                            "content": doc.page_content,
+                            "score": 0.0,
+                        }
+                        for doc in docs[:num_docs]
+                    ]
+                    logger.info(
+                        f"Returning {len(results)} results (vector only — "
+                        "BM25 unavailable)"
+                    )
             else:
                 # No reranker: trim to num_docs from the vector search output
                 results = [

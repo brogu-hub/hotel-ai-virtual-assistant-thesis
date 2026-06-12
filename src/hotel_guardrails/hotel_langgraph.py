@@ -684,6 +684,58 @@ def _strip_greeting_intro(sub_query: str) -> str:
     return cleaned if len(cleaned) >= 3 else sub_query
 
 
+# Phase H: keyword extraction — strip politeness particles + filler phrases
+# from a sub-query BEFORE embedding. The qwen3-embedding-8b centroid drifts
+# toward a 'generic-courtesy' cluster on polite TH/CN phrasings, missing
+# the breakfast/WiFi/spa chunk at top-5 even when the query is otherwise
+# specific. The LLM still sees the original sub-query in [Q{i}: ...] so
+# the response tone is preserved.
+_TH_PARTICLES = (
+    "ค่ะ", "คะ", "ครับ", "น่ะ", "หน่อย",
+    "ขอ", "ช่วย", "ที่", "ทาง", "โปรด",
+)
+_CN_POLITENESS = (
+    "请问", "麻烦", "您", "我想", "一下",
+    "可以告诉我", "是什么",
+)
+_EN_FILLERS = (
+    "could you tell me", "would you mind", "i'd like to know",
+    "i would like to know", "can you tell me",
+    "thank you", "thanks", "please",
+)
+
+_TH_CN_STRIP_RE = _re.compile(
+    "|".join(_re.escape(t) for t in (_TH_PARTICLES + _CN_POLITENESS))
+)
+_EN_FILLERS_RE = _re.compile(
+    r"\b(?:" + "|".join(_re.escape(f) for f in sorted(_EN_FILLERS, key=len, reverse=True)) + r")\b",
+    _re.IGNORECASE,
+)
+
+_THAI_RE = _re.compile(r"[฀-๿]")
+_CJK_RE = _re.compile(r"[一-鿿]")
+
+
+def _extract_query_keywords(text: str, lang_hint: Optional[str] = None) -> str:
+    """Phase H: strip politeness/filler markers from a sub-query before it
+    goes to the embedding model. Applies all script-applicable lists so
+    mixed-script messages ('WiFi password 请问') get fully cleaned. Falls
+    back to the original string if cleaning would leave < 3 chars.
+    """
+    if not text:
+        return text
+    cleaned = text
+    has_thai = bool(_THAI_RE.search(cleaned)) or lang_hint == "th"
+    has_cjk = bool(_CJK_RE.search(cleaned)) or lang_hint == "zh"
+    has_latin = bool(_re.search(r"[A-Za-z]", cleaned)) or lang_hint == "en"
+    if has_thai or has_cjk:
+        cleaned = _TH_CN_STRIP_RE.sub(" ", cleaned)
+    if has_latin:
+        cleaned = _EN_FILLERS_RE.sub(" ", cleaned)
+    cleaned = _re.sub(r"\s+", " ", cleaned).strip(" ,.?!。？，")
+    return cleaned if len(cleaned) >= 3 else text
+
+
 def _split_multi_intent(text: str, max_parts: int = 4) -> List[str]:
     """D2: split a guest message into distinct sub-questions for RAG.
 
@@ -764,10 +816,13 @@ async def handle_knowledge(state: HotelState, config: RunnableConfig) -> Dict:
             try:
                 blocks = []
                 for i, sq in enumerate(sub_queries, 1):
-                    # Phase G: strip greeting/self-intro from sub-query before
-                    # embedding, so "Hi I'm James, what time is breakfast" runs
-                    # the RAG on "what time is breakfast" instead.
-                    embed_sq = _strip_greeting_intro(sq)
+                    # Phase G+H: strip greeting/self-intro AND politeness
+                    # particles / filler phrases (TH/CN/EN) from the sub-query
+                    # before embedding. So "Hi I'm James, เวลาอาหารเช้าหน่อยค่ะ"
+                    # runs the RAG on "เวลาอาหารเช้า" (no หน่อย, no ค่ะ).
+                    # The LLM still sees the original ``sq`` in the answer
+                    # prompt (see ``[Q{i}: {sq}]`` formatting below).
+                    embed_sq = _extract_query_keywords(_strip_greeting_intro(sq))
                     try:
                         r = search_hotel_knowledge.invoke(embed_sq)
                     except Exception as e:
@@ -788,7 +843,11 @@ async def handle_knowledge(state: HotelState, config: RunnableConfig) -> Dict:
             if len(knowledge_result) > 2400:
                 knowledge_result = knowledge_result[:2400] + "\n..."
         else:
-            knowledge_result = search_hotel_knowledge.invoke(last_user_message)
+            # Phase H: single-intent path also strips greeting + politeness
+            # before embedding (else "请问 WiFi 密码是什么？" regresses vs
+            # the multi-intent path which now strips).
+            single_embed = _extract_query_keywords(_strip_greeting_intro(last_user_message))
+            knowledge_result = search_hotel_knowledge.invoke(single_embed)
             if len(knowledge_result) > 2000:
                 knowledge_result = knowledge_result[:2000] + "\n..."
     except Exception as e:
