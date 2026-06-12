@@ -157,12 +157,25 @@ knowledge_synthesis: |
   - HOTEL INFORMATION below is your authoritative source. READ IT carefully
     before deciding whether you have a fact. Do not assume something is
     missing without checking.
-  - Guest-facing values like the WiFi password (`HOTEL2024GUEST`), embassy
-    phones, room sizes, breakfast hours, pool times, addresses ARE meant
-    to be shared. If you find them in HOTEL INFORMATION, quote them
-    verbatim. Do NOT invent a "security policy", "privacy", or "for
-    verification call the front desk" excuse — the KB explicitly publishes
-    these for guests.
+  - Guest-facing values like embassy phones, room sizes, breakfast hours,
+    pool times, addresses ARE meant to be shared. If you find them in
+    HOTEL INFORMATION, quote them verbatim. Do NOT invent a "security
+    policy", "privacy", or "for verification call the front desk" excuse
+    — the KB explicitly publishes these for guests.
+  - WiFi password is the ONE exception. The Grand Horizon does not publish
+    a fixed WiFi password; every reservation gets its own per-stay
+    randomly-generated password at check-in. Two cases:
+      (a) If a `LIVE GUEST WIFI` block is present below, the asker IS a
+          currently-checked-in guest — share their room's per-stay
+          password verbatim from that block. Quote both SSID HotelGuest
+          and the password.
+      (b) If no `LIVE GUEST WIFI` block is present, the asker has not
+          checked in yet (or is anonymous). Decline politely, explain that
+          the password is printed on the welcome card at check-in and is
+          also available from reception (ext. 0) after check-in. Do NOT
+          invent a fixed password and do NOT quote any password text that
+          might appear in the HOTEL INFORMATION (it is policy text, not a
+          credential).
   - When HOTEL INFORMATION lists a specific set of items (view options,
     room types, embassies, amenities), repeat EXACTLY those items.
     Example: if it says "View: Partial city view" for Deluxe, say "Partial
@@ -206,14 +219,28 @@ model_overrides:
       EXACTLY, not to add safety caveats.
 
       ABSOLUTE RULES (no exceptions, no edge cases):
-      1. If HOTEL INFORMATION contains a WiFi password (e.g. "HOTEL2024GUEST"),
-         a phone number (e.g. "+66 2 245 7032"), a price (e.g. "5,400 บาท"),
-         a time (e.g. "6:30 AM"), or an address (e.g. "123 Sukhumvit Road"):
+      1. If HOTEL INFORMATION contains a phone number (e.g. "+66 2 245 7032"),
+         a price (e.g. "5,400 บาท"), a time (e.g. "6:30 AM"), or an address
+         (e.g. "123 Sukhumvit Road"):
          OUTPUT THE EXACT VALUE. Word-for-word.
          NEVER add "for security reasons", "for verification", "please
          contact the front desk for this", "I'm not at liberty to share",
          or any equivalent hedge. The KB IS the source of truth — if it
          publishes the value, the value is public.
+
+         EXCEPTION — WiFi password. The Grand Horizon DOES NOT have a
+         fixed published WiFi password. The password is per-stay,
+         randomly generated for each in-house reservation, and only
+         shared after the guest has checked in.
+           - If a `LIVE GUEST WIFI` block is present below, output its
+             SSID and per-stay password verbatim — the asker is a
+             checked-in guest and entitled to their own room's password.
+           - If NO `LIVE GUEST WIFI` block is present, politely decline
+             and explain: "Our WiFi password is per-stay and printed on
+             your welcome card at check-in; reception (ext. 0) can also
+             read it out once you have checked in." Do NOT invent a
+             password and do NOT echo any "Password:" line from HOTEL
+             INFORMATION (it is policy prose, not a credential).
       2. If a LIVE PRICING block exists in HOTEL INFORMATION, the rate
          card prices elsewhere in HOTEL INFORMATION are STALE for this
          booking. Use the LIVE PRICING per-night and total ONLY. Quote

@@ -202,7 +202,8 @@ def get_guest_reservations(guest_email: str) -> str:
     try:
         query = """
         SELECT res.reservation_id, res.confirmation_number, res.check_in_date, res.check_out_date,
-               res.status, res.total_amount, r.room_number, rt.name as room_type
+               res.status, res.total_amount, res.wifi_password,
+               r.room_number, rt.name as room_type
         FROM reservations res
         JOIN rooms r ON res.room_id = r.room_id
         JOIN room_types rt ON r.room_type_id = rt.room_type_id
@@ -224,7 +225,14 @@ def get_guest_reservations(guest_email: str) -> str:
         for res in reservations:
             result += f"- {res['confirmation_number']} | {res['room_type']} ห้อง {res['room_number']}\n"
             result += f"  {res['check_in_date']} - {res['check_out_date']} | {res['status']}\n"
-            result += f"  ยอด: {res['total_amount']:,.0f} บาท\n\n"
+            result += f"  ยอด: {res['total_amount']:,.0f} บาท\n"
+            # WiFi password is per-stay and privacy-sensitive: only show it
+            # for currently-checked-in stays. Pending/confirmed (pre-arrival)
+            # and checked_out (post-departure) reservations omit it to avoid
+            # leaking future/past guests' credentials via casual lookups.
+            if res.get("wifi_password") and res.get("status") == "checked_in":
+                result += f"  WiFi (this stay): SSID HotelGuest / รหัส {res['wifi_password']}\n"
+            result += "\n"
 
         return result
 
@@ -683,7 +691,7 @@ def check_in_guest(reservation_id: str) -> str:
                     SET status = 'checked_in', updated_at = CURRENT_TIMESTAMP
                     WHERE (reservation_id::text = %s OR confirmation_number = %s)
                     AND status = 'confirmed'
-                    RETURNING confirmation_number, room_id
+                    RETURNING confirmation_number, room_id, wifi_password
                 """, (reservation_id, reservation_id))
 
                 result = cur.fetchone()
@@ -698,12 +706,20 @@ def check_in_guest(reservation_id: str) -> str:
 
                 conn.commit()
 
+                wifi_line = (
+                    f"WiFi (this stay): SSID HotelGuest / Password "
+                    f"{result['wifi_password']}\n"
+                    f"WiFi (รายการเข้าพักนี้): ชื่อเครือข่าย HotelGuest / รหัส "
+                    f"{result['wifi_password']}\n"
+                    if result.get('wifi_password') else ""
+                )
                 return f"""
 เช็คอินสำเร็จ! / Check-in Complete!
 ==========================================
 หมายเลขยืนยัน: {result['confirmation_number']}
 สถานะ: เช็คอินแล้ว (Checked In)
 
+{wifi_line}
 ยินดีต้อนรับสู่โรงแรมครับ/ค่ะ!
 Welcome to our hotel!
 """

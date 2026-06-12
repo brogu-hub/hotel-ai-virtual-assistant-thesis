@@ -157,12 +157,25 @@ knowledge_synthesis: |
   - HOTEL INFORMATION below is your authoritative source. READ IT carefully
     before deciding whether you have a fact. Do not assume something is
     missing without checking.
-  - Guest-facing values like the WiFi password (`HOTEL2024GUEST`), embassy
-    phones, room sizes, breakfast hours, pool times, addresses ARE meant
-    to be shared. If you find them in HOTEL INFORMATION, quote them
-    verbatim. Do NOT invent a "security policy", "privacy", or "for
-    verification call the front desk" excuse — the KB explicitly publishes
-    these for guests.
+  - Guest-facing values like embassy phones, room sizes, breakfast hours,
+    pool times, addresses ARE meant to be shared. If you find them in
+    HOTEL INFORMATION, quote them verbatim. Do NOT invent a "security
+    policy", "privacy", or "for verification call the front desk" excuse
+    — the KB explicitly publishes these for guests.
+  - WiFi password is the ONE exception. The Grand Horizon does not publish
+    a fixed WiFi password; every reservation gets its own per-stay
+    randomly-generated password at check-in. Two cases:
+      (a) If a `LIVE GUEST WIFI` block is present below, the asker IS a
+          currently-checked-in guest — share their room's per-stay
+          password verbatim from that block. Quote both SSID HotelGuest
+          and the password.
+      (b) If no `LIVE GUEST WIFI` block is present, the asker has not
+          checked in yet (or is anonymous). Decline politely, explain that
+          the password is printed on the welcome card at check-in and is
+          also available from reception (ext. 0) after check-in. Do NOT
+          invent a fixed password and do NOT quote any password text that
+          might appear in the HOTEL INFORMATION (it is policy text, not a
+          credential).
   - When HOTEL INFORMATION lists a specific set of items (view options,
     room types, embassies, amenities), repeat EXACTLY those items.
     Example: if it says "View: Partial city view" for Deluxe, say "Partial

@@ -69,9 +69,24 @@ CREATE TABLE IF NOT EXISTS reservations (
     special_requests TEXT,
     booking_source VARCHAR(100),
     cancellation_reason TEXT,
+    -- Per-stay WiFi password — randomly generated at reservation create. Shared
+    -- with the guest only after check-in (status = 'checked_in'). NULL prior
+    -- to check-in for new bookings since the welcome card is printed at the
+    -- desk; defaulted here so seed reservations have a value too.
+    wifi_password VARCHAR(32) DEFAULT ('WiFi-' || upper(substring(md5(random()::text || clock_timestamp()::text) FROM 1 FOR 8))),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Migration: add wifi_password to existing reservations tables created before
+-- this column existed (idempotent — postgres NOOPs if already present).
+ALTER TABLE reservations
+    ADD COLUMN IF NOT EXISTS wifi_password VARCHAR(32)
+        DEFAULT ('WiFi-' || upper(substring(md5(random()::text || clock_timestamp()::text) FROM 1 FOR 8)));
+-- Backfill NULL rows (e.g., legacy rows inserted before the DEFAULT existed)
+UPDATE reservations
+   SET wifi_password = 'WiFi-' || upper(substring(md5(reservation_id::text || created_at::text) FROM 1 FOR 8))
+ WHERE wifi_password IS NULL;
 
 -- =============================================================================
 -- Service Requests Table
@@ -278,11 +293,16 @@ END $$;
 GRANT CONNECT ON DATABASE hotel TO hotel_app;
 GRANT USAGE ON SCHEMA public TO hotel_app;
 
--- App tables: full read + write, no destructive DDL
+-- App tables: full read + write, no destructive DDL.
+-- NOTE: payment_links is referenced by some downstream code paths but is not
+-- defined in this schema yet; the GRANT below skips it (the previous run
+-- aborted the whole GRANT statement and left hotel_app with zero privileges
+-- when payment_links was listed). When payment_links is added, restore it
+-- in this list AND create the table above.
 GRANT SELECT, INSERT, UPDATE ON
     room_types, rooms, guests, reservations,
     service_requests, housekeeping, hotel_services,
-    conversation_history, payment_links,
+    conversation_history,
     users, audit_log
     TO hotel_app;
 

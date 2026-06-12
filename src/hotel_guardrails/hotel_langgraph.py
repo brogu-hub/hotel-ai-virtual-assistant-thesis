@@ -632,6 +632,85 @@ def _maybe_compute_pricing_context(message: str) -> str:
         return ""
 
 
+# WiFi disclosure: The Grand Horizon does NOT publish a fixed WiFi password.
+# Each in-house reservation gets a randomly-generated per-stay password
+# (see policies_rules.md § "WiFi Access Policy" and facilities_amenities.md).
+# This helper looks up the requesting user_id's active reservation; if they
+# are checked in, we inject a LIVE GUEST WIFI block so the LLM can share
+# their own room's password. Otherwise we return empty and the LLM falls
+# through to the KB policy text and politely declines.
+_WIFI_INTENT_TOKENS = (
+    "wifi", "wi-fi", "wi fi", "password",
+    "รหัสไวไฟ", "รหัสwifi", "รหัส wifi", "อินเทอร์เน็ต", "ไวไฟ",
+    "wifi 密码", "wifi密码", "无线", "上网", "网络密码",
+)
+
+
+def _maybe_compute_wifi_context(message: str, user_id: str) -> str:
+    """Inject LIVE GUEST WIFI block when the asker is a checked-in guest.
+
+    Args:
+        message: The guest's last user message (used as the intent gate —
+            only fires when the message actually mentions WiFi/password).
+        user_id: The session's user_id. Either an authenticated guest email
+            we can look up in the guests table, or "guest"/anonymous in
+            which case we always return empty.
+
+    Returns: Either a "LIVE GUEST WIFI (...)" block string, or "" when the
+    guest hasn't checked in / doesn't ask about WiFi / we can't look them up.
+    Never raises — failure modes all degrade to empty so the LLM falls back
+    to the published KB policy.
+    """
+    if not message or not user_id:
+        return ""
+    low = (message or "").lower()
+    if not any(t in low for t in _WIFI_INTENT_TOKENS):
+        return ""
+    uid = (user_id or "").strip().lower()
+    if not uid or uid in ("guest", "anonymous", "test", "probe", "canary"):
+        return ""
+
+    try:
+        # user_id is treated as the guest's email — same convention as
+        # get_guest_reservations(). Fall through quietly if it's not.
+        if "@" not in uid:
+            return ""
+        from src.agent.hotel_tools import get_db_connection
+        import psycopg2.extras
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("""
+                    SELECT res.confirmation_number, res.wifi_password,
+                           res.check_in_date, res.check_out_date,
+                           r.room_number
+                    FROM reservations res
+                    JOIN rooms r ON res.room_id = r.room_id
+                    JOIN guests g ON res.guest_id = g.guest_id
+                    WHERE LOWER(g.email) = %s
+                      AND res.status = 'checked_in'
+                      AND CURRENT_DATE BETWEEN res.check_in_date AND res.check_out_date
+                    ORDER BY res.check_in_date DESC
+                    LIMIT 1
+                """, (uid,))
+                row = cur.fetchone()
+        if not row or not row.get("wifi_password"):
+            return ""
+        return (
+            "LIVE GUEST WIFI (this guest is currently checked in — share "
+            "THIS specific per-stay password verbatim, do NOT redirect them "
+            "to the front desk):\n"
+            f"- Room: {row['room_number']}\n"
+            f"- Confirmation: {row['confirmation_number']}\n"
+            f"- Network name (SSID): HotelGuest\n"
+            f"- Per-stay WiFi password: {row['wifi_password']}\n"
+            f"- Valid through check-out date: {row['check_out_date']}\n"
+            "- This password expires automatically at check-out."
+        )
+    except Exception as e:
+        logger.warning(f"_maybe_compute_wifi_context failed: {e}")
+        return ""
+
+
 # D2 fix: multi-intent decomposition for RAG.
 # Delimiters that signal the guest packed multiple distinct questions into
 # one message. We split on these BEFORE embedding so each intent gets its
@@ -882,11 +961,19 @@ async def handle_knowledge(state: HotelState, config: RunnableConfig) -> Dict:
     # this pre-fetch the LLM would quote base_price even when an Early
     # Bird discount or Last-Minute surcharge applies. See §4.x rationale.
     pricing_block = _maybe_compute_pricing_context(last_user_message)
+    # WiFi disclosure (Phase H.D): per-stay password is shared only with
+    # checked-in guests; anonymous askers get the KB policy and a polite decline.
+    wifi_block = _maybe_compute_wifi_context(
+        last_user_message,
+        state.get("user_id") or "",
+    )
 
     # Generate response: user message first, then knowledge context
     extra_context = f"HOTEL INFORMATION (already retrieved for you):\n{knowledge_result}"
     if pricing_block:
         extra_context += f"\n\n{pricing_block}"
+    if wifi_block:
+        extra_context += f"\n\n{wifi_block}"
 
     # Phase G: knowledge synthesis prompt is now in hotel_prompt.yaml under
     # ``knowledge_synthesis`` (with optional per-model overrides). This makes

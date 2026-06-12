@@ -205,6 +205,13 @@ services:
       HOTEL_RAG_NUM_DOCS_PER_SUBQ: ${HOTEL_RAG_NUM_DOCS_PER_SUBQ:-5}
       BM25_TOP_K: ${BM25_TOP_K:-30}
       RRF_K: ${RRF_K:-60}
+      # iter3 baseline chunking — without these the qwen3-embedding-8b
+      # 32k context defaults yield 1-chunk-per-doc (whole-document chunks
+      # that mix WiFi/pool/gym into a single 4 KB chunk), regressing
+      # retrieval quality. iter3 measured +6.1 pp at chunk_size=1000.
+      CHUNK_SIZE: ${CHUNK_SIZE:-1000}
+      CHUNK_OVERLAP: ${CHUNK_OVERLAP:-100}
+      HOTEL_RAG_NUM_DOCS: ${HOTEL_RAG_NUM_DOCS:-5}
 
       # --- Authentication (JWT + bcrypt) ---
       JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-in-prod-8f3a9e2b1c7d4f6e5a8b9c0d1e2f3a4b}

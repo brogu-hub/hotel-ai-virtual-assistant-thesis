@@ -86,16 +86,24 @@
 ## WiFi / อินเทอร์เน็ตไร้สาย
 
 **Network Name:** HotelGuest
-**Password:** HOTEL2024GUEST
+**Password:** Per-stay temporary password — randomly generated and printed on your welcome card at check-in. Also available in your in-room directory or by asking reception (ext. 0) once you have checked in.
 **Speed:** 100 Mbps
 **Coverage:** Throughout the entire hotel
-**Price:** Complimentary for all guests
+**Price:** Complimentary for all in-house guests
 
 ชื่อเครือข่าย: HotelGuest
-รหัสผ่าน: HOTEL2024GUEST
+รหัสผ่าน: รหัสผ่านแบบเฉพาะรายการเข้าพัก สุ่มสร้างให้แต่ละห้องและพิมพ์ไว้บนใบต้อนรับเมื่อท่านเช็คอิน นอกจากนี้ยังสามารถดูได้ในไดเรกทอรีในห้องพัก หรือสอบถามเคาน์เตอร์ต้อนรับ (ต่อ 0) หลังเช็คอินแล้ว
 ความเร็ว: 100 Mbps
 ครอบคลุม: ทั่วทั้งโรงแรม
 ราคา: ฟรีสำหรับผู้เข้าพักทุกท่าน
+
+WiFi 网络名称：HotelGuest
+WiFi 密码：每次入住随机生成的临时密码，于办理入住时印在欢迎卡上，您也可以在房内指南或办理入住后致电前台（分机 0）获取。
+速度：100 Mbps
+覆盖范围：全酒店
+价格：所有在住客人免费使用
+
+**Why the password rotates per stay:** for guest privacy and network security, The Grand Horizon does not publish a fixed WiFi password. Each in-house reservation receives its own randomly-generated password that expires when you check out. Anyone who has not yet checked in (including phone or chat enquiries) cannot be given a password — they will be invited to ask at the front desk upon arrival.
 
 **High-Speed Premium WiFi:**
 - Speed: 500 Mbps
@@ -103,6 +111,7 @@
 - Contact front desk to upgrade
 
 WiFi ความเร็วสูงพรีเมียม: 500 Mbps ราคา 300 บาท/วัน ติดต่อแผนกต้อนรับ
+高速优质 WiFi：500 Mbps，每日 300 泰铢，请联系前台升级。
 
 ## Concierge Services / บริการ Concierge
 
