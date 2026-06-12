@@ -124,6 +124,42 @@ def restore_env_file() -> None:
     ENV_PATH.write_text(body, encoding="utf-8")
 
 
+def load_dotenv_vars() -> dict[str, str]:
+    """Parse the repo-root .env into a dict.
+
+    docker compose's variable interpolation precedence puts the shell env
+    ABOVE the .env file. When we pass env= to subprocess.run, the subprocess
+    inherits ONLY what we put in env — .env is no longer auto-read because
+    cwd-based .env discovery is masked by the explicit env dict.
+
+    So we must hydrate the subprocess env with .env contents OURSELVES,
+    then layer stack overrides on top. Otherwise crucial vars like
+    OPENROUTER_API_KEY fall through to the YAML default (`sk-dummy-not-used`)
+    and embeddings 401 silently, returning empty RAG results and turning
+    every chat into an over-refusal regardless of stack state.
+
+    Strips the RUN_DUAL_BACKTEST managed block so leftover toggles from
+    a prior aborted run don't leak in.
+    """
+    out: dict[str, str] = {}
+    if not ENV_PATH.exists():
+        return out
+    body = ENV_PATH.read_text(encoding="utf-8")
+    body = re.sub(
+        re.escape(STACK_MARKER_START) + r".*?" + re.escape(STACK_MARKER_END) + r"\n?",
+        "",
+        body,
+        flags=re.DOTALL,
+    )
+    for raw in body.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        out[k.strip()] = v.strip().strip("\"'")
+    return out
+
+
 def docker_compose(
     *args: str,
     check: bool = True,
@@ -133,6 +169,9 @@ def docker_compose(
     cmd = ["docker", "compose", "-f", str(COMPOSE_PATH), *args]
     log(f"$ {' '.join(cmd)}")
     env = os.environ.copy()
+    # Hydrate from .env first (so OPENROUTER_API_KEY etc. reach the
+    # container's docker-compose interpolation pass).
+    env.update(load_dotenv_vars())
     if env_overrides:
         env.update(env_overrides)
     return subprocess.run(
@@ -192,6 +231,20 @@ def verify_container_env(expected: dict[str, str]) -> None:
             "container env did not match expected stack — aborting before "
             "polluting eval results with the wrong config"
         )
+    # Also verify OPENROUTER_API_KEY is real (not the docker-compose dummy
+    # fallback). If embeddings 401, every RAG retrieval returns empty and
+    # every /chat refuses with "information system unavailable" regardless
+    # of stack state — making the dual backtest useless. Catch this before
+    # burning hours of GPU time.
+    ork = actual.get("OPENROUTER_API_KEY", "")
+    if not ork or ork.startswith("sk-dummy"):
+        log(f"  OPENROUTER_API_KEY in container: {ork!r}")
+        raise RuntimeError(
+            "container is missing a real OPENROUTER_API_KEY (got dummy "
+            "fallback). The .env file's value did not propagate via the "
+            "subprocess env. Aborting before embeddings 401 corrupts the run."
+        )
+    log(f"    OK  OPENROUTER_API_KEY is real ({ork[:14]}…)")
 
 
 def wait_for_healthz(timeout_s: int = 180) -> None:
