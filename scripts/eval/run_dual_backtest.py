@@ -359,10 +359,24 @@ def run_canaries(endpoint: str = "http://localhost:8088", max_failures: int = 1)
         timeout=1800,
         env=env,
     )
-    if p.stdout:
-        sys.stdout.write(p.stdout)
-    if p.stderr:
-        sys.stderr.write(p.stderr)
+    # Best-effort echo of canary output to the driver log; never let this
+    # crash the run (third crash today was a parent-stdout cp1252 encode
+    # failure on the canary script's Thai/Chinese probe text).
+    def _safe_write(stream, payload: str) -> None:
+        if not payload:
+            return
+        try:
+            stream.write(payload)
+        except Exception as exc:
+            try:
+                stream.write(
+                    payload.encode("utf-8", errors="replace")
+                           .decode("ascii", errors="replace")
+                )
+            except Exception:
+                stream.write(f"[unprintable subprocess output: {type(exc).__name__}]\n")
+    _safe_write(sys.stdout, p.stdout)
+    _safe_write(sys.stderr, p.stderr)
     # backtest_canaries.py exit code: 0 OK, 1 too many failed
     if p.returncode > max_failures:
         raise RuntimeError(f"canary gate failed (exit={p.returncode})")
@@ -478,15 +492,41 @@ def build_apd_table(stackoff_dir: Path, stackon_dir: Path, qwen_dir: Path) -> No
         errors="replace",
         timeout=300,
     )
-    if p.stdout:
-        sys.stdout.write(p.stdout)
+    def _safe_write2(stream, payload: str) -> None:
+        if not payload:
+            return
+        try:
+            stream.write(payload)
+        except Exception:
+            try:
+                stream.write(payload.encode("utf-8", errors="replace").decode("ascii", errors="replace"))
+            except Exception:
+                pass
+    _safe_write2(sys.stdout, p.stdout)
     if p.returncode != 0:
-        if p.stderr:
-            sys.stderr.write(p.stderr)
+        _safe_write2(sys.stderr, p.stderr)
         log(f"  WARN: build_apd_table.py exit={p.returncode}")
 
 
+def _force_utf8_stdout() -> None:
+    """Reconfigure parent stdout/stderr to UTF-8 with errors='replace'.
+
+    Without this, any subprocess output containing Thai/Chinese bytes (the
+    canary probe transcripts) raises UnicodeEncodeError when we write it
+    back to a redirected stdout — Windows' default cp1252 codec can't
+    encode CJK. Already cost the driver 2 crashes today.
+    """
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is not None and hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception as e:
+                log(f"  WARN: could not reconfigure sys.{stream_name}: {e}")
+
+
 def main() -> int:
+    _force_utf8_stdout()
     ap = argparse.ArgumentParser()
     ap.add_argument("--stackoff-tag", default="gemma_q8_stackoff")
     ap.add_argument("--stackon-tag", default="gemma_q8_stackon")
