@@ -124,20 +124,74 @@ def restore_env_file() -> None:
     ENV_PATH.write_text(body, encoding="utf-8")
 
 
-def docker_compose(*args: str, check: bool = True, capture: bool = False) -> subprocess.CompletedProcess:
+def docker_compose(
+    *args: str,
+    check: bool = True,
+    capture: bool = False,
+    env_overrides: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess:
     cmd = ["docker", "compose", "-f", str(COMPOSE_PATH), *args]
     log(f"$ {' '.join(cmd)}")
+    env = os.environ.copy()
+    if env_overrides:
+        env.update(env_overrides)
     return subprocess.run(
         cmd,
         cwd=str(ROOT),
         check=check,
         text=True,
         capture_output=capture,
+        env=env,
     )
 
 
-def recreate_hotel_api() -> None:
-    docker_compose("up", "-d", "--force-recreate", "--no-deps", "hotel-api")
+def recreate_hotel_api(stack_env: dict[str, str]) -> None:
+    """Force-recreate hotel-api with the given stack overrides actually applied.
+
+    docker compose interpolates ${VAR:-default} from (a) the calling
+    process's environment, (b) the .env file in cwd, (c) the YAML default.
+    Earlier driver versions only mutated .env, but the .env file was being
+    masked by the YAML default substitution in some cases (both stacks
+    ended up with the YAML default values). Injecting via the subprocess
+    environment is the most direct path and guarantees the stack toggles
+    reach the container.
+    """
+    docker_compose(
+        "up", "-d", "--force-recreate", "--no-deps", "hotel-api",
+        env_overrides=stack_env,
+    )
+
+
+def verify_container_env(expected: dict[str, str]) -> None:
+    """Read the actual container env and fail loudly if it doesn't match.
+
+    Catches the failure mode where the stack overrides didn't propagate.
+    """
+    log("  verifying container env actually got stack overrides…")
+    out = subprocess.run(
+        ["docker", "exec", "hotel-api", "env"],
+        capture_output=True, text=True, timeout=15,
+    ).stdout
+    actual = {}
+    for line in out.splitlines():
+        if "=" in line:
+            k, v = line.split("=", 1)
+            actual[k] = v
+    mismatches = []
+    for k, want in expected.items():
+        got = actual.get(k, "<unset>")
+        if got != want:
+            mismatches.append(f"    {k}: want={want!r} got={got!r}")
+        else:
+            log(f"    OK  {k}={got!r}")
+    if mismatches:
+        log("  CONTAINER ENV MISMATCH:")
+        for m in mismatches:
+            log(m)
+        raise RuntimeError(
+            "container env did not match expected stack — aborting before "
+            "polluting eval results with the wrong config"
+        )
 
 
 def wait_for_healthz(timeout_s: int = 180) -> None:
@@ -245,6 +299,15 @@ def run_full_backtest(tag: str, endpoint: str = "http://localhost:8088") -> Path
             "--no-canaries",  # already gated above
             "--abort-canary-failures",
             "16",
+            # CRITICAL for confound isolation: the chat-cache key does NOT
+            # include the stack toggles (HYBRID_RETRIEVAL, RERANKER_BACKEND,
+            # HOTEL_QUERY_REWRITE_ENABLED, HOTEL_PROMPT_PATH), so a cached
+            # response from one stack would be replayed for the other —
+            # making the two runs look identical regardless of the actual
+            # stack configuration. The 2026-06-12 cached run proved this:
+            # Stack-OFF and Stack-ON both scored 2.6% / 2.2% from a stale
+            # cache. Always force fresh chats for the dual backtest.
+            "--no-chat-cache",
         ],
         cwd=str(ROOT),
         # Don't capture — we want streaming progress in the parent log.
@@ -285,11 +348,15 @@ def run_report(run_dir: Path) -> None:
 
 def run_stack(tag: str, stack_env: dict[str, str]) -> Path:
     log(f"=== STACK '{tag}' begin ===")
-    log("  patching .env with stack overrides")
+    log("  patching .env with stack overrides (for documentation / paper trail)")
     patch_env_file(stack_env)
-    log("  recreating hotel-api container")
-    recreate_hotel_api()
+    log("  recreating hotel-api container with stack env injected via subprocess")
+    recreate_hotel_api(stack_env)
     wait_for_healthz()
+    # Verify the container actually picked up the stack env before doing any
+    # eval work. Strip OLLAMA_MODEL because it's confirmed via /settings/llm.
+    expected = {k: v for k, v in stack_env.items() if k != "OLLAMA_MODEL"}
+    verify_container_env(expected)
     log("  setting LLM to gemma4:12b-it-q8_0 via /settings/llm")
     put_llm_settings("gemma4:12b-it-q8_0")
     warm_ollama_model("gemma4:12b-it-q8_0")
