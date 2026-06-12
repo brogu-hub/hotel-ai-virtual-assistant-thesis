@@ -262,9 +262,37 @@ After the iter1–9 plateau, a 4-agent strategic investigation surfaced cloud-LL
 
 The most-cited threat to validity in §6.5.7 is now formally closed.
 
-### Phase F — Variance baseline (overnight)
+### Phase F — Variance baseline (5 runs, completed)
 
-5× rerun of the same Phase A config (gemma4, no reranker, 49 chunks, `seed=42`) via `scripts/eval/backtest_variance.py` to measure σ across runs. Results land here once the unattended run completes; the σ value determines whether the 79.2%–80.2% drift over iter3 → Phase A is signal or noise, and whether Phase B/C's −2/−8 pp regressions are within the noise floor.
+5× rerun of the same Phase A config (gemma4, no reranker, 49 chunks, `seed=42`, 96-case stratified sample) via `scripts/eval/backtest_variance.py`. Identical inputs every run; the only source of variance is the chatbot's sampling (T=0.3, top_p=0.8) — the judge is fixed at T=0.0.
+
+**Headline:**
+
+| Metric | Mean | σ | 95% CI (mean ± 2σ) |
+|---|---:|---:|---|
+| **Strict pass rate** | **80.83%** | **1.58 pp** | **[78.87%, 82.79%]** |
+| Weighted pass rate | 83.23% | 1.45 pp | [81.43%, 85.02%] |
+| Per-run strict | 79.2 / 82.3 / 82.3 / 79.2 / 81.2 % | — | — |
+
+**Statistical re-classification of prior iterations.** With σ = 1.58 pp, the minimum "real signal" threshold is **2σ ≈ 3.2 pp**:
+
+| Change | Δ | abs(Δ) > 2σ | Status |
+|---|---:|---|---|
+| iter4 T=0.1 | −1.1 pp | No | within noise |
+| iter6 T=0.2 | 0.0 pp | No | within noise |
+| Phase B reranker | −2.1 pp | No (1.3σ) | within noise (REVERT decision correct on cost grounds, not statistical) |
+| **Phase A gemma4 swap** | **+1.0 pp** | **No (0.6σ)** | **within noise — see below** |
+| iter8 neg-facts KB | −5.2 pp | Yes (3.3σ) | real regression |
+| iter9 lang lock | −5.2 pp | Yes (3.3σ) | real regression |
+| Phase C breadcrumbs | −8.3 pp | Yes (5.3σ) | real regression |
+| iter7 verbatim prompt | −8.4 pp | Yes (5.3σ) | real regression |
+| iter5 num_docs=8 | −11.0 pp | Yes (7.0σ) | real regression |
+
+**Most important finding for the thesis.** The Gemma 4 12B swap (Phase A) produces a single-run +1.0 pp uplift that is *within 1σ* of the noise floor. The defensible claim is therefore not "gemma4 beats Qwen 9B on this dataset" but rather **"gemma4 ties Qwen 9B in aggregate accuracy with the same iter3 retrieval; we shipped it because the 5-run mean 80.83% is one σ above iter3's single-run 79.2% and the qualitative output is cleaner (no Thai unit fragments in CN responses, no `น.` markers leaking, better politeness markers), but the aggregate pass rate gap is statistically negligible."**
+
+The ship-gate consequence is more favourable: with mean 80.83% and 95% CI [78.87%, 82.79%], **every endpoint of the CI is above the 75% gate**. The system passes the aggregate promotion gate *with statistical confidence* — not "plausibly" as we had to qualify the 261-case strategic backtest result, but definitively.
+
+**Per-defect stochasticity.** Some defect categories are highly reproducible run-to-run (incomplete σ=0.84, over_refuse σ=0.45, tool_not_called σ=0.00 — these depend on retrieval determinism), while `hallucination` σ=1.79 dominates the inter-run variance (the LLM confabulates *differently* per sample). The implication for any further iteration: chasing hallucinations with prompt or sampling tweaks is hostage to this 1.79-count baseline jitter; the leverage is on retrieval categories that already have low σ.
 
 ## C.Z Closing patch list
 

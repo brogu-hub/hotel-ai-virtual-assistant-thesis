@@ -288,7 +288,37 @@ The §6.5.7 threats-to-validity list cited the single judge as the most-impactfu
 
 ### 6.5.5d Variance baseline (Phase F)
 
-The 100-case sample size produces a Wilson 95% CI of approximately ±9 pp at a 75% mean — wide enough that single-iteration deltas of ±5 pp cannot be distinguished from sampling noise. Phase F runs the **same** Phase A config (gemma4, no reranker, 49 chunks, `seed=42`) 5 times with `scripts/eval/backtest_variance.py` and reports the standard deviation of strict pass rate across runs. This converts the "−2.1 pp / −8.3 pp" claims from Phase B/C from "likely real regression" to a defensible "outside the 2σ band" or "within the noise floor" determination. _(Numerical results land in §6.5.5e after the overnight run completes.)_
+The 100-case Wilson interval at a 75% mean is approximately ±9 pp wide — but that captures inter-*case* binomial variance, not inter-*run* stochastic variance. Phase F runs the **same** Phase A config (gemma4, no reranker, 49 chunks, `seed=42`, identical 96-case stratified sample) 5 times via `scripts/eval/backtest_variance.py` and reports the standard deviation of strict pass rate across runs. The only source of variance is the chatbot's own sampling discipline (temperature 0.3, top_p 0.8); the judge is held at temperature 0.0.
+
+**Headline result (5 runs, 96 cases each):**
+
+| Metric | Mean | StdDev | 95% CI (mean ± 2σ) |
+|---|---:|---:|---|
+| Strict pass rate | **80.83%** | **1.58 pp** | [78.87%, 82.79%] |
+| Weighted pass rate (partial=0.5) | 83.23% | 1.45 pp | [81.43%, 85.02%] |
+| Per-run strict | 79.2 / 82.3 / 82.3 / 79.2 / 81.2 % | — | — |
+
+![Figure 6.8 — Phase F variance baseline: 5 reruns of Phase A config (gemma4, no reranker, 49 chunks, seed=42), with mean ±2σ band and the 75% ship gate](figures/Fig_6.8_Variance_Band.png)
+
+**Interpretation.** With σ = 1.58 pp, the minimum delta for a "real signal" is **2σ ≈ 3.2 pp**. Re-classifying the iteration ladder against this threshold:
+
+| Iteration | Δ vs prior | abs(Δ) > 2σ ? | Statistical claim |
+|---|---:|---|---|
+| iter4 (T=0.1) | −1.1 pp | No (0.7σ) | within noise |
+| iter6 (T=0.2) | 0.0 pp | No | within noise |
+| Phase B (reranker) | −2.1 pp | No (1.3σ) | within noise — REVERT correct on principle (no benefit), but not a statistically significant regression |
+| iter9 (lang lock) | −5.2 pp | **Yes (3.3σ)** | real regression |
+| iter8 (neg-facts KB) | −5.2 pp | **Yes (3.3σ)** | real regression |
+| Phase C (breadcrumbs) | −8.3 pp | **Yes (5.3σ)** | real regression |
+| iter7 (verbatim prompt) | −8.4 pp | **Yes (5.3σ)** | real regression |
+| iter5 (num_docs=8) | −11.0 pp | **Yes (7.0σ)** | real regression |
+| **Phase A (gemma4 swap) vs iter3** | **+1.0 pp** | **No (0.6σ)** | **within noise — the gemma4 swap could be noise; 5-run mean 80.83% is statistically indistinguishable from iter3 79.2% at n=100, seed=42** |
+
+This is **the most important finding in the chapter**. The Gemma 4 12B swap — the move we shipped as "new optimum" in Phase A — produces a +1.0 pp single-run delta that is *within 1σ* of the noise floor. The defensible claim is therefore not "gemma4 beats Qwen 9B" but rather "gemma4 ties Qwen 9B on this dataset and judge, with the same iter3 retrieval; we shipped it because it is one Σ above and produces qualitatively cleaner CN/TH output, but the aggregate pass rate is statistically the same."
+
+Equivalently, the gap from the 75% ship gate is now **2σ-defensible**: the mean is 80.83% with 95% CI [78.87%, 82.79%], every endpoint of which is above the 75% threshold. The system passes the aggregate gate with statistical confidence — not "plausibly" as we noted in §6.5.6 of the prior strategic backtest, but **definitively**.
+
+**Per-defect stochasticity.** Some defect categories are highly reproducible run-to-run (incomplete σ=0.84, over_refuse σ=0.45, tool_not_called σ=0.00 — these depend on retrieval determinism), while hallucination σ=1.79 dominates the inter-run variance (the LLM confabulates *differently* per sample). The implication for future iteration: chasing hallucinations with prompt or sampling tweaks is hostage to this 1.79-count baseline jitter; the leverage is on the retrieval categories that have already-low σ.
 
 ### 6.5.6 Post-fix backtest + per-stratum delta
 
