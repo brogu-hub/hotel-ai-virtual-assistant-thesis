@@ -3,14 +3,14 @@
 ## Swimming Pool / สระว่ายน้ำ
 
 **Location:** 5th Floor Rooftop
-**Hours:** 6:00 AM - 9:00 PM daily
+**Hours:** 7:00 AM - 9:00 PM daily
 **Pool Size:** 25 meters x 10 meters
 **Depth:** 1.2 meters - 1.8 meters
 **Temperature:** Heated pool, maintained at 28-30°C year-round
 **Type:** Infinity pool with city views
 
 สถานที่: ดาดฟ้าชั้น 5
-เวลา: 06:00 - 21:00 น. ทุกวัน
+เวลา: 07:00 - 21:00 น. ทุกวัน
 ขนาดสระ: 25 x 10 เมตร
 ความลึก: 1.2 - 1.8 เมตร
 อุณหภูมิ: สระน้ำอุ่น รักษาที่ 28-30°C ตลอดทั้งปี
@@ -42,12 +42,12 @@
 
 ## Fitness Center / ฟิตเนสเซ็นเตอร์
 
-**Location:** 4th Floor
-**Hours:** 24 hours (keycard access)
+**Location:** Level 2
+**Hours:** 6:00 AM - 10:00 PM
 **Access:** Complimentary for all guests
 
-สถานที่: ชั้น 4
-เวลา: 24 ชั่วโมง (เข้าด้วยคีย์การ์ด)
+สถานที่: ชั้น 2
+เวลา: 06:00 - 22:00 น.
 การใช้บริการ: ฟรีสำหรับผู้เข้าพัก
 
 **Equipment:**
@@ -68,11 +68,11 @@
 
 ## Business Center / ศูนย์ธุรกิจ
 
-**Location:** 2nd Floor
-**Hours:** 8:00 AM - 8:00 PM daily
+**Location:** Lobby Level
+**Hours:** 24 Hours daily
 
-สถานที่: ชั้น 2
-เวลา: 08:00 - 20:00 น. ทุกวัน
+สถานที่: ล็อบบี้
+เวลา: 24 ชั่วโมง ทุกวัน
 
 **Services:**
 - Printing: 5 THB per page (B&W), 15 THB (color)

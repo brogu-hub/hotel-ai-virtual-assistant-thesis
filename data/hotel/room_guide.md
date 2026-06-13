@@ -3,12 +3,12 @@
 ## Room Types / ประเภทห้อง
 
 ### Standard Room / ห้องสแตนดาร์ด
-**Size:** 32 sqm
+**Size:** 28 sqm
 **Price:** 2,500 THB per night
 **Max Guests:** 2 adults
 **Bed:** 1 King or 2 Twin beds
 
-ขนาด: 32 ตร.ม.
+ขนาด: 28 ตร.ม.
 ราคา: 2,500 บาท/คืน
 รองรับ: 2 ท่าน
 เตียง: คิงไซส์ 1 เตียง หรือ เตียงเดี่ยว 2 เตียง
@@ -27,14 +27,14 @@
 - Air conditioning
 
 ### Deluxe Room / ห้องดีลักซ์
-**Size:** 45 sqm
+**Size:** 35 sqm
 **Price:** 4,500 THB per night
-**Max Guests:** 2 adults + 1 child
+**Max Guests:** 2 adults
 **Bed:** 1 King bed
 
-ขนาด: 45 ตร.ม.
+ขนาด: 35 ตร.ม.
 ราคา: 4,500 บาท/คืน
-รองรับ: 2 ผู้ใหญ่ + 1 เด็ก
+รองรับ: 2 ท่าน
 เตียง: คิงไซส์ 1 เตียง
 
 **Additional Amenities:**
@@ -46,12 +46,12 @@
 - Turndown service
 
 ### Suite / ห้องสวีท
-**Size:** 72 sqm
+**Size:** 55 sqm
 **Price:** 8,500 THB per night
 **Max Guests:** 4 adults
 **Bed:** 1 King bed + sofa bed
 
-ขนาด: 72 ตร.ม.
+ขนาด: 55 ตร.ม.
 ราคา: 8,500 บาท/คืน
 รองรับ: 4 ท่าน
 เตียง: คิงไซส์ 1 เตียง + โซฟาเบด
@@ -67,12 +67,12 @@
 - Priority restaurant reservations
 
 ### Penthouse / ห้องเพนท์เฮาส์
-**Size:** 150 sqm
+**Size:** 120 sqm
 **Price:** 25,000 THB per night
 **Max Guests:** 6 adults
 **Bed:** 2 King beds
 
-ขนาด: 150 ตร.ม.
+ขนาด: 120 ตร.ม.
 ราคา: 25,000 บาท/คืน
 รองรับ: 6 ท่าน
 เตียง: คิงไซส์ 2 เตียง

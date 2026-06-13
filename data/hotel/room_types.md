@@ -43,7 +43,7 @@ All rooms include:
 ## Deluxe Room / ห้องดีลักซ์
 
 **Size:** 35 sqm / ขนาด: 35 ตร.ม.
-**Max Guests:** 2 adults + 1 child / รองรับ: 2 ผู้ใหญ่ + 1 เด็ก
+**Max Guests:** 2 adults / รองรับ: 2 ท่าน
 **Bed:** 1 King bed / เตียงคิงไซส์ 1 เตียง
 **View:** Partial city view / วิวเมืองบางส่วน
 **Bathroom:** Separate bathtub and rain shower / อ่างอาบน้ำและฝักบัวแยก
@@ -98,7 +98,7 @@ All rooms include:
 | Room Type | Size | Max Guests | Breakfast | WiFi | Minibar |
 |-----------|------|------------|-----------|------|---------|
 | Standard | 28 sqm | 2 | ✓ | ✓ | ✓ |
-| Deluxe | 35 sqm | 3 | ✓ | ✓ | ✓ |
+| Deluxe | 35 sqm | 2 | ✓ | ✓ | ✓ |
 | Suite | 55 sqm | 4 | ✓ | ✓ | ✓ |
 | Penthouse | 120 sqm | 6 | ✓ | ✓ | Free |
 
