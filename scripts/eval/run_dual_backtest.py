@@ -248,6 +248,10 @@ def verify_container_env(expected: dict[str, str]) -> None:
 
 
 def wait_for_healthz(timeout_s: int = 180) -> None:
+    # Give the container a few seconds before the first probe — recreate
+    # returns as soon as the process is spawned, but uvicorn + FastAPI +
+    # the in-process LangGraph init can take 3-8s before /healthz answers.
+    time.sleep(3)
     deadline = time.time() + timeout_s
     while time.time() < deadline:
         try:
@@ -255,7 +259,10 @@ def wait_for_healthz(timeout_s: int = 180) -> None:
                 if r.status == 200:
                     log("  /healthz OK")
                     return
-        except (urllib.error.URLError, urllib.error.HTTPError, ConnectionResetError, TimeoutError):
+        except Exception:
+            # Swallow every flavor of pre-ready error: URLError, HTTPError,
+            # ConnectionRefusedError (Windows shows up here on a fresh
+            # container), BrokenPipeError, OSError, TimeoutError, etc.
             pass
         time.sleep(3)
     raise RuntimeError(f"hotel-api did not become healthy within {timeout_s}s")
@@ -408,6 +415,13 @@ def run_full_backtest(tag: str, endpoint: str = "http://localhost:8088") -> Path
             # Stack-OFF and Stack-ON both scored 2.6% / 2.2% from a stale
             # cache. Always force fresh chats for the dual backtest.
             "--no-chat-cache",
+            # CRITICAL: match GPU concurrency. OLLAMA_NUM_PARALLEL=1 (Q8 needs
+            # serial inference) and MAX_CONCURRENT_LLM_CALLS=1 in the
+            # container; runner default of 2 causes the 2nd concurrent /chat
+            # to queue for 45s and 503 with empty_response. The 2026-06-12
+            # dual backtest had 6.8% / 10% of cases failing this way,
+            # silently contaminating the EN/TH regression analysis.
+            "--max-chat-parallel", "1",
         ],
         cwd=str(ROOT),
         # Don't capture — we want streaming progress in the parent log.

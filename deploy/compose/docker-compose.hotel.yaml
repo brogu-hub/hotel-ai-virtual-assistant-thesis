@@ -232,7 +232,12 @@ services:
 
       # --- Scaling: Chat concurrency (many simultaneous users) ---
       MAX_CONCURRENT_LLM_CALLS: ${MAX_CONCURRENT_LLM_CALLS:-5}
-      LLM_QUEUE_TIMEOUT_SEC: ${LLM_QUEUE_TIMEOUT_SEC:-30}
+      # Defensive default: under heavy serial-GPU load (Q8 + reranker), a
+      # queued chat can wait 60-180s for its turn at the LLM. Old 30s
+      # default caused HTTP 503 storms in the dual backtest 2026-06-12.
+      # Eval drivers now also pin --max-chat-parallel=1 to match GPU
+      # concurrency; this raise is belt-and-braces.
+      LLM_QUEUE_TIMEOUT_SEC: ${LLM_QUEUE_TIMEOUT_SEC:-240}
       MAX_CONCURRENT_STREAMS: ${MAX_CONCURRENT_STREAMS:-20}
       CHAT_RATE_LIMIT_PER_SESSION: ${CHAT_RATE_LIMIT_PER_SESSION:-30}
       KNOWLEDGE_CACHE_SIZE: ${KNOWLEDGE_CACHE_SIZE:-500}
