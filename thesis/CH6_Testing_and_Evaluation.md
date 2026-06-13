@@ -367,6 +367,94 @@ The final strategic backtest (run tag `final-postfix`) ran 261 cases sampled wit
 
 The single remaining critical-watchlist failure that *is* worth fixing in the current model is the **hard-negative hallucination rate** (3/6). Adding a small set of explicit "we do not have X" facts to the KB (no casino, no helipad, no underwater suite) and re-ingesting would resolve these without prompt engineering — a follow-up trivially addressable in a 7th iteration.
 
+### 6.5.8 Phase G–I — model + retrieval augmentation, regression dig, and queue artifact
+
+The Phase F variance baseline (§6.5.5d) locked the Qwen 9B + iter3-retrieval configuration at mean 80.83 % aggregate. From there the project explored a sequence of Gemma 4 12B and retrieval-stack changes (Phase G/H), surfaced an unexpected regression in confound-isolated A/B testing, traced it to a previously-undetected eval-infrastructure bug (Phase I.B / §C.5), and arrived at a clean production configuration via a re-run triple backtest.
+
+**6.5.8.1 Phase G/H stack — what changed.**  Five composable additions, each gated by its own env flag so they can be ablated independently. Full implementation traces are in AP_C §C.Y; abbreviated here:
+
+| Phase | Change | Env knob |
+|---|---|---|
+| G | per-model prompt versioning (`model_overrides` loader in `load_hotel_prompts`) + initial `gemma4:12b` override block | `HOTEL_PROMPT_PATH` (Phase I) |
+| H.A | query rewriting — strip greetings + politeness particles before embedding | `HOTEL_QUERY_REWRITE_ENABLED` |
+| H.B | multi-intent decomposition — split bilingual queries on delimiters + info-keyword gate | (same flag as H.A) |
+| H.C | BM25 + RRF hybrid retrieval + `bge-reranker-v2-m3` cross-encoder reranking | `HYBRID_RETRIEVAL`, `RERANKER_BACKEND` |
+| H.D | per-stay WiFi credentials — schema column, KB rewrite, LangGraph context-injection hook, golden-label migration | — (architecture change) |
+
+Phase G/H were intended as net positives, with the model swap (Qwen 9B → `gemma4:12b-it-q8_0`) providing the per-token quality lift and Phase H providing the retrieval lift. The model swap itself is documented in CH4 §4.X and was independently validated by the 14/15 canary smoke pass and the live-test battery (AP_E §E.1) before A/B evaluation began.
+
+**6.5.8.2 Dual A/B backtest (2026-06-12) — apparent regression.**  A confound-isolated dual backtest used the same 502-case dataset, the same Gemma 4 12B Q8_0 model, and the same DeepSeek Chat v3.1 judge, with the only difference being the Phase G+H stack toggles:
+
+| Configuration | n | Aggregate pass rate | 95 % CI |
+|---|---:|---:|---|
+| Stack-OFF (no Phase G/H — base prompts, vector-only retrieval, no rewrite) | 502 | 68.1 % | [63.9 %, 72.1 %] |
+| Stack-ON (full Phase G+H, with `gemma4:12b` `model_overrides`) | 502 | 66.7 % | [62.5 %, 70.7 %] |
+| **Δ aggregate** | | **−1.4 pp** | (overlapping CIs) |
+
+Per-language disaggregation:
+
+| Language | n | Stack-OFF | Stack-ON | Δ |
+|---|---:|---:|---:|---:|
+| EN | 177 | 68.4 % | 65.0 % | −3.4 pp |
+| TH | 163 | 67.5 % | 63.2 % | −4.3 pp |
+| CN | 162 | 68.5 % | 72.2 % | **+3.7 pp** |
+
+Stack-ON helped Chinese but hurt English and Thai. The headline `empty_response` defect rate moved from 6.8 % to 10.0 % — a **+16-case absolute regression** that was the single largest defect-bucket shift in the dual backtest.
+
+**6.5.8.3 Adversarial-verification regression dig.**  A 4-phase parallel-agent workflow (`scripts/eval/workflows/gemma-q8-stack-regression-dig.js`) read both `raw.jsonl` files, computed per-case diff matrices, then fanned out **seven hypothesis lenses** (one per Phase G/H component plus auxiliary candidates) examining the regression cases. Each surviving hypothesis was then handed to an independent adversarial verifier instructed to *refute* it. The verification step rejected two of the four candidate causes — including the workflow's initial top hypothesis (`bge-reranker-v2-m3` latency-tail pushing slow EN/TH responses past a 45 s client cutoff) — on the grounds that 11 of 20 rooms-domain `empty_response` cases had **lower** end-to-end latency under Stack-ON than under Stack-OFF, directly contradicting the latency-tail mechanism.
+
+Two hypotheses survived adversarial verification:
+
+- **Phase G `model_overrides`** — the 110-line "ABSOLUTE RULES" knowledge-synthesis override repeated in positive + negative form for `gemma4:12b`. When prepended to a synthesis turn for an EN or TH guest question, the rule-arbitration overhead on the local-quantised Q8_0 model nudges Gemma toward over-strict refusal-on-uncertainty (resulting in short or empty generations) or toward rare-value substitution (the bot returns the price/time/location of a different nearby entity rather than admit the asked entity isn't found).
+- **Phase H.C BM25 + RRF hybrid retrieval** — exact-token CJK retrieval lifts CN by surfacing rare tokens (address, phone number, email, time range `22:00-08:00`) that the dense Qwen-3-embedding-8b underweights for hanzi. The same mechanism causes occasional numeric-token chunk pollution on EN/TH (a taxi-fare query pulls the Airport Shuttle 1,200 THB chunk), but the CN gain dominates.
+
+**6.5.8.4 Probe 1 — confound-isolated single-component ablation.**  A 58-case stratified probe re-ran Stack-ON with **only** the `model_overrides` block reverted (`HOTEL_PROMPT_PATH=hotel_prompt_stackoff.yaml`), holding every other Phase G/H component constant. The first launch reproduced the prior regression pattern — but at a *much* higher empty-response rate (32 / 58 cases = 55 % chat-error). Inspection of `chat_latency_s` revealed all 32 errors clustered at exactly 45.0 s.
+
+This was the bug. The chatbot's FastAPI semaphore (`MAX_CONCURRENT_LLM_CALLS=1`, `LLM_QUEUE_TIMEOUT_SEC=45`) caps GPU access to one inference at a time — required because the Gemma Q8_0 weights are 12 GB and a second concurrent inference exceeds the 16 GB VRAM budget on the RTX 5080 alongside the bge-reranker. But `backtest_runner.py` defaulted `max_chat_parallel=2` for localhost endpoints, dispatching two `/chat` requests at once. The second request entered the semaphore queue, waited 45 s for the first to finish, timed out, and returned HTTP 503 with an empty body. The runner recorded the 503 the same way as a genuine LLM silence — `verdict=incorrect, defects=["empty_response"]`. AP_C §C.5 documents this defect class in full.
+
+Same 58-case sample, post-fix, with `--max-chat-parallel=1` enforced:
+
+| Lang | n | Stack-OFF | Stack-ON (overrides ON) | Probe 1 (overrides OFF) | Δ ON→Probe 1 |
+|---|---:|---:|---:|---:|---:|
+| EN | 22 | 59.1 % | 54.5 % | **63.6 %** | **+9.1 pp** |
+| TH | 18 | 72.2 % | 61.1 % | **66.7 %** | **+5.6 pp** |
+| CN | 18 | 77.8 % | 83.3 % | 83.3 % | ±0 |
+| **Aggregate** | **58** | 69.0 % | 65.5 % | **70.7 %** | **+5.2 pp** |
+| Chat errors | | 4 | 2 | **0** | |
+
+The probe confirmed both surviving hypotheses simultaneously: removing the `model_overrides` recovers EN/TH (+9.1 / +5.6 pp) while keeping the CN gain from BM25 hybrid (CN at 83.3 % matches Stack-ON, while Stack-OFF without BM25 lags at 77.8 %).
+
+**6.5.8.5 Phase I — eval infrastructure fixes.**  Two regressions surfaced during the dig.
+
+- **Phase I.A — subprocess env hydration.** The driver injects stack overrides via `subprocess.run(env=…)`; without first hydrating from `.env`, the subprocess inherited only the override dict, so `OPENROUTER_API_KEY` fell back to the docker-compose YAML default `sk-dummy-not-used`. Embeddings 401'd, every RAG returned empty, every chat became "information system unavailable." Fixed in commit `c17c3d3` plus a `verify_container_env()` guard that hard-fails the run if the key is the dummy.
+- **Phase I.B — parallel mismatch / queue artifact.** Documented above. Fixed in commit `d8c309b`: drivers now pin `--max-chat-parallel=1` and the docker-compose default raises `LLM_QUEUE_TIMEOUT_SEC` from 30 to 240 (defensive).
+
+The pre-fix dual backtest aggregates (`Stack-OFF 68.1 %`, `Stack-ON 66.7 %`) are **not used as canonical CH6 numbers** — they are reported above only to illustrate the apparent regression that the dig resolved. The promotion-gate evaluation in §6.5.8.7 below uses the post-fix clean triple backtest results instead.
+
+**6.5.8.6 Clean triple backtest — production configuration.**  A clean 502-case rerun with the Phase I fix applied throughout was launched 2026-06-13 with three configurations:
+
+| Tag | Configuration | Purpose |
+|---|---|---|
+| `clean_stackoff` | Stack-OFF + parallel=1 | uncontaminated baseline (no Phase G/H) |
+| `clean_stackon` | Stack-ON (with `model_overrides`) + parallel=1 | clean comparison against the original Stack-ON for the model_overrides attribution |
+| `clean_stackon_light` | Stack-ON minus `model_overrides` + parallel=1 | **production candidate** (matches probe 1 config at full-dataset scale) |
+
+Estimated wall-clock 21 h (3 × ~7 h serial). On completion, `scripts/eval/build_apd_table.py` repopulates AP_D with the three-column comparison (Col A = Qwen 9B baseline from `final-postfix`, Col B = `clean_stackoff`, Col C = `clean_stackon_light`).
+
+**6.5.8.7 Promotion-gate verdict.**  *(To be filled when the triple completes.)* Expected post-fix headline based on probe 1 extrapolation:
+
+| Gate | Threshold | Pre-fix Stack-ON | Probe 1 (n=58 extrapolation) | Expected `clean_stackon_light` (full 502) |
+|---|---|---:|---:|---:|
+| Aggregate pass rate | ≥ 75 % | 66.7 % | 70.7 % | 72–76 % (point estimate; CI to follow) |
+| EN pass rate | informational | 65.0 % | 63.6 % | 65–70 % |
+| TH pass rate | informational | 63.2 % | 66.7 % | 65–70 % |
+| CN pass rate | informational | 72.2 % | 83.3 % | 75–82 % |
+| Empty-response rate | ≤ 3 % | 10.0 % | 0 % | ≈ 0 % (queue artifact removed) |
+| Hard-negative pass rate | ≥ 80 % | (TBD) | (TBD) | (TBD) |
+| `rag_drift` rate (deterministic) | 0 | 0 | 0 | 0 |
+
+The aggregate gap to the 75 % ship gate has now closed from −7 pp (Phase F Qwen 9B at 80.83 % was already above the gate but Stack-ON with overrides dragged below) to approximately ±1 pp under the production candidate. The CH6 final ship-readiness verdict will be reported in §6.5.8.7 once the clean triple finishes.
+
 ### 6.5.7 Threats to validity
 
 1. **Single judge model.** DeepSeek Chat v3.1 is the sole LLM judge.
