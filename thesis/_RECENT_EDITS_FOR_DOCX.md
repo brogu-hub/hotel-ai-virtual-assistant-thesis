@@ -15,20 +15,40 @@
 - `[x]` merged
 - `[~]` partially merged (e.g. text only, figure still pending)
 
+## Change-type legend
+
+Each row also carries a change type so you know what action to take in the docx:
+
+- **INSERT** — new section / paragraph that doesn't exist in the docx yet → paste in fresh
+- **UPDATE** — existing section needs replacement → delete old + paste new
+- **APPEND** — add to the end of an existing section (e.g. new bullet, new row in a table)
+- **DELETE** — remove from the docx (text was struck or stale; nothing to paste)
+- **MOVE** — same content, different location (e.g. reorder sections)
+- **RENUMBER** — same content, different heading number (just edit the heading in the docx)
+
 ## What landed since 2026-06-12
 
 ### Chapter 3 — Methodology
 
-- [ ] **§3.4.8 Confound-isolated multi-stack backtest with adversarial verification** (~480 w) — commit `26e2868`
+- [ ] **INSERT §3.4.8 Confound-isolated multi-stack backtest with adversarial verification** (~480 w) — commit `26e2868`
   - Triple-backtest rationale (Stack-OFF / Stack-ON / Stack-ON-light)
   - 7-hypothesis lens + adversarial refute-pass pattern
   - Concrete evidence: 2 of 4 hypotheses rejected on refute
-- [ ] **§3.4.9 Eval-infrastructure reliability protocol** (~520 w) — commit `26e2868`
+- [ ] **INSERT §3.4.9 Eval-infrastructure reliability protocol** (~520 w) — commit `26e2868`
   - Queue-artifact motivation
   - 4 protocol elements: env hydration / GPU-concurrency match / checkpoint resume / pre-flight smoke
-- [ ] **§3.4.10 Defect backlog as a living artifact** (~290 w) — commit `26e2868`
+- [ ] **INSERT §3.4.10 Defect backlog as a living artifact** (~290 w) — commit `26e2868`
   - AP_C event-sourced vs AP_F OPEN/PATCHED/DEFERRED ledger
   - Phase J ETL sweep as the worked example
+
+### Chapter 7 — Discussion
+
+- [ ] **INSERT §7.6 Transferable Techniques** (~970 w, 4 subsections) — commit pending
+  - 7.6.1 Adversarial-verification workflow for regression attribution
+  - 7.6.2 Eval-infrastructure reliability protocol (cross-ref CH3 §3.4.9)
+  - 7.6.3 Defect backlog as methodology artifact (cross-ref CH3 §3.4.10)
+  - 7.6.4 KB↔DB ETL-style drift audit as recurring procedure
+- [ ] **MOVE/RENUMBER §7.5 Limitations** — no content change; just sits after §7.4 and before §7.6 now. In the docx: confirm §7.5 already exists and §7.6 (new) sits AFTER it.
 
 ### Chapter 6 — Testing & Evaluation
 
