@@ -28,6 +28,22 @@ Each row also carries a change type so you know what action to take in the docx:
 
 ## What landed since 2026-06-12
 
+### Chapter 6 — Testing & Evaluation (Phase Q)
+
+- [ ] **INSERT §6.5.19 Phase Q — final residuals push (~700 w)** — 2026-06-18, this session — change-type INSERT
+  - 6.5.19.1 Cloud-side `calculate_dynamic_price` synth envelope (mirrors Phase J.4 booking-side pattern, applied post-cloud)
+  - 6.5.19.2 Multi-intent cloud prompt refinement (explicit "do not refuse coherent multi-part" clause + partition checklist)
+  - 6.5.19.3 TH lost-and-found KB extension + Qdrant re-ingest (116 → 117 chunks across 10 KB markdown files)
+  - 6.5.19.4 Golden patches for over-strict rubric edges (tier label, hardneg required-field, language-lock)
+  - 6.5.19.5 6-case smoke outcome (verbatim summary — mt EN PASS, mt TH FAIL, mi EN PASS)
+  - 6.5.19.6 Replay outcome — 1 recovered (`policies_lost_and_found_th_2`) + 2 partial + 6 fail
+  - 6.5.19.7 New official thesis end-state **346/354 = 97.74 %** (+0.28 pp vs Phase O); supersedes §6.5.18.6
+
+### Appendix F — Defect Backlog (Phase Q)
+
+- [ ] **APPEND §F.2.14 Phase Q final residuals push (CLOSED) + per-cluster recovery table** — 2026-06-18, this session — change-type APPEND
+- [ ] **UPDATE F.1 headline + F.5.1 trajectory** — gains Phase Q row; new end-state **346/354 = 97.74 %**; per-language final EN ~96.77 %, TH ~98.81 %
+
 ### Chapter 6 — Testing & Evaluation (Phase N + O)
 
 - [ ] **INSERT §6.5.16 Phase N cloud-backend swap (negative result, ~600 w)** — 2026-06-18, this session — change-type INSERT

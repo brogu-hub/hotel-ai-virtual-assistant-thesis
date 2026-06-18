@@ -78,12 +78,17 @@ Damage charges will be applied to the credit card on file.
 บริการเลี้ยงเด็ก: 400 บาท/ชั่วโมง (แจ้งล่วงหน้า 24 ชั่วโมง)
 Kids Club: สำหรับเด็ก 4-12 ปี เปิด 09:00-17:00 น. ฟรี
 
-## Lost and Found / ของหาย-ของสูญหาย
+## Lost and Found / ของหาย-ของสูญหาย / นโยบายของหาย
 
+**If you have lost an item at the hotel, what should you do?**
+Contact the front desk immediately (reception, ext. 0) or email lostandfound@grandparadise.com with a description of the item, the location, and your room number.
 Items found will be kept for 90 days.
-Contact the front desk or email: lostandfound@grandparadise.com
+Front desk: reception ext. 0 — Email: lostandfound@grandparadise.com
 
+**ถ้าทำของหายที่โรงแรม ควรทำอย่างไร? / ฉันทำของหาย ต้องติดต่อใคร?**
+หากคุณทำของหายภายในโรงแรม กรุณาติดต่อแผนกต้อนรับ (Front Desk / Reception, ต่อ 0) ทันที หรือส่งอีเมลแจ้งที่ lostandfound@grandparadise.com พร้อมระบุลักษณะของสิ่งของ สถานที่ที่คาดว่าทำหาย และหมายเลขห้องพักของคุณ
 ของที่พบจะเก็บรักษาไว้ 90 วัน
+ช่องทางติดต่อ: แผนกต้อนรับ ต่อ 0 — อีเมล lostandfound@grandparadise.com
 ติดต่อแผนกต้อนรับหรืออีเมล lostandfound@grandparadise.com
 
 ## WiFi Access Policy / นโยบายการเข้าใช้ WiFi / WiFi 接入政策

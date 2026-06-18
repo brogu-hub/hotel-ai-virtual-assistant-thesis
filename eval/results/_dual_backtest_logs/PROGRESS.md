@@ -1,62 +1,98 @@
 # Dual Backtest — Live Progress
 
-**Snapshot:** `2026-06-12T16:12:34Z` (UTC)
+**Snapshot:** `2026-06-14T07:39:20Z` (UTC)
 
 ## Driver
 
 | | |
 |---|---|
-| PID | `9518 (by-log-mtime)` |
-| Alive | ✅ running |
-| Phase | **Stack-OFF canary gate** |
-| Log | `eval\results\_dual_backtest_logs\run_20260612T161108Z.log` |
+| PID | `51828` |
+| Alive | 🔴 not running |
+| Phase | **DONE** |
+| Log | `eval\results\_dual_backtest_logs\triple_20260613T132223Z.log` |
 
 ## OpenRouter budget
 
-- Balance: **$11.7037** — status: **OK**
+- Balance: **$11.2438** — status: **OK**
 - Alerts: warn ≤ $1.00 · block ≤ $0.50 · hard-stop at $0
 
 ## Container state
 
 | Var | Value |
 |---|---|
-| `OLLAMA_MODEL` | `gemma4:12b-it-q8_0` |
-| `HYBRID_RETRIEVAL` | `false` |
-| `RERANKER_BACKEND` | `none` |
-| `HOTEL_QUERY_REWRITE_ENABLED` | `false` |
-| `HOTEL_PROMPT_PATH` | `/app/src/agent/hotel_prompt_stackoff.yaml` |
-| `HOTEL_RAG_NUM_DOCS_PER_SUBQ` | `3` |
+| `OLLAMA_MODEL` | `<unset>` |
+| `HYBRID_RETRIEVAL` | `<unset>` |
+| `RERANKER_BACKEND` | `<unset>` |
+| `HOTEL_QUERY_REWRITE_ENABLED` | `<unset>` |
+| `HOTEL_PROMPT_PATH` | `<unset>` |
+| `HOTEL_RAG_NUM_DOCS_PER_SUBQ` | `<unset>` |
 
 **Ollama loaded models:**
 
 ```
-NAME                  ID              SIZE     PROCESSOR    CONTEXT    UNTIL               
-gemma4:12b-it-q8_0    41c402fdddc2    13 GB    100% GPU     4096       14 minutes from now
+(error: Command '['docker', 'exec', 'hotel-ollama', 'ollama', 'ps']' timed out after 10 seconds)
 ```
 
-## Backtest #1 — Stack-OFF (`gemma_q8_stackoff`)
+## Phase I clean triple (current canonical)
+
+### Run #1 — clean Stack-OFF (baseline, no Phase G/H) (`clean_stackoff`)
+
+- Run dir: `eval\results\clean_stackoff\20260613T133026`
+- Cases complete: **274** / 502
+- Verdicts: correct=210 partial=8 incorrect=56
+- Last id: `transportation_car_rental_th_1` @ `2026-06-13T16:34:50+00:00`
+  - **en**: correct=122 partial=5 incorrect=32
+  - **th**: correct=88 partial=3 incorrect=24
+
+### Run #2 — clean Stack-ON (Phase G+H WITH overrides) (`clean_stackon`)
+
+- Run dir: `eval\results\clean_stackon\20260613T164702`
+- Cases complete: **159** / 502
+- Verdicts: incorrect=159
+- Last id: `pricing_penthouse_last_minute_en` @ `2026-06-14T00:44:04+00:00`
+  - **en**: incorrect=159
+
+### Run #3 — clean Stack-ON-light (Phase G+H minus overrides) — PRODUCTION CANDIDATE (`clean_stackon_light`)
 
 _Not started yet._
 
-## Backtest #2 — Stack-ON (`gemma_q8_stackon`)
+## Legacy 2026-06-12 dual (queue-contaminated, not used in thesis)
 
-_Not started yet._
+### Backtest #1 — Stack-OFF (`gemma_q8_stackoff`)
+
+- Run dir: `eval\results\gemma_q8_stackoff\20260612T171021`
+- Cases complete: **502** / 517 (golden 477 + canaries 15 + adv 6 + hard_neg 6 + multi-intent 10 + wifi_checkedin 3)
+- Verdicts: correct=342 partial=23 incorrect=137
+- Last id: `wifi_checkedin_cn` @ `2026-06-12T21:34:46+00:00`
+  - **cn**: correct=111 partial=8 incorrect=43
+  - **en**: correct=121 partial=7 incorrect=49
+  - **th**: correct=110 partial=8 incorrect=45
+
+### Backtest #2 — Stack-ON (`gemma_q8_stackon`)
+
+- Run dir: `eval\results\gemma_q8_stackon\20260612T215522`
+- Cases complete: **502** / 517
+- Verdicts: correct=335 partial=22 incorrect=145
+- Last id: `wifi_checkedin_cn` @ `2026-06-13T02:24:42+00:00`
+  - **cn**: correct=117 partial=8 incorrect=37
+  - **en**: correct=115 partial=6 incorrect=56
+  - **th**: correct=103 partial=8 incorrect=52
 
 ## Last driver log lines
 
 ```
-[2026-06-12T16:11:19Z]   verifying container env actually got stack overrides�
-[2026-06-12T16:11:19Z]     OK  HYBRID_RETRIEVAL='false'
-[2026-06-12T16:11:19Z]     OK  RERANKER_BACKEND='none'
-[2026-06-12T16:11:19Z]     OK  HOTEL_QUERY_REWRITE_ENABLED='false'
-[2026-06-12T16:11:19Z]     OK  HOTEL_PROMPT_PATH='/app/src/agent/hotel_prompt_stackoff.yaml'
-[2026-06-12T16:11:19Z]     OK  HOTEL_RAG_NUM_DOCS_PER_SUBQ='3'
-[2026-06-12T16:11:19Z]     OK  OPENROUTER_API_KEY is real (sk-or-v1-6c919�)
-[2026-06-12T16:11:19Z]   setting LLM to gemma4:12b-it-q8_0 via /settings/llm
-[2026-06-12T16:11:19Z]   /settings/llm SKIP � admin_token failed (HTTPError: HTTP Error 401: Unauthorized); trusting OLLAMA_MODEL env default
-[2026-06-12T16:11:19Z]   warming gemma4:12b-it-q8_0 into VRAM�
-[2026-06-12T16:11:27Z]   balance: OpenRouter balance: $11.7037 available  (used $308.30 of total)  [OK]
-[2026-06-12T16:11:27Z]   canary gate (15 sentinels)�
+    ^
+  File "C:\Python313\Lib\subprocess.py", line 577, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+subprocess.CalledProcessError: Command '['docker', 'compose', '-f', 'Z:\\Dev_Drive\\hote-ai-virtual-assistant-thesis\\deploy\\compose\\docker-compose.hotel.yaml', 'up', '-d', '--force-recreate', '--no-deps', 'hotel-api']' returned non-zero exit status 1.
+[2026-06-14T00:47:20Z] === TRIPLE: 'clean_stackon_light' done (exit=1, dur=0.6 min) ===
+[2026-06-14T00:47:20Z]   WARN: non-zero exit; raw.jsonl is still preserved at run dir
+[2026-06-14T00:47:20Z] === TRIPLE: summary ===
+[2026-06-14T00:47:20Z]   clean_stackoff: Z:\Dev_Drive\hote-ai-virtual-assistant-thesis\eval\results\clean_stackoff\20260613T133026
+[2026-06-14T00:47:20Z]   clean_stackon: Z:\Dev_Drive\hote-ai-virtual-assistant-thesis\eval\results\clean_stackon\20260613T164702
+[2026-06-14T00:47:20Z]   clean_stackon_light: None
+[2026-06-14T00:47:20Z] === TRIPLE CLEAN BACKTEST DONE  2026-06-14T00:47:20+00:00  total_dur=11.4h ===
 ```
 
 ## How to read this
