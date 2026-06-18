@@ -119,6 +119,16 @@ class ChatResponse(BaseModel):
         description="Query complexity classification: 'simple', 'moderate', or 'complex'",
         examples=["simple", "moderate", "complex"],
     )
+    escalation: Optional[Dict[str, Any]] = Field(
+        None,
+        description=(
+            "Adaptive-escalation metadata. When the local Gemma 12B Q8 hits "
+            "a detected hard-case pattern, the request is escalated to cloud "
+            "Gemma 4 31B via OpenRouter (side-channel, NOT a backend swap). "
+            "Fields: {escalated: bool, flags: list[str], cloud_latency_ms?: int, "
+            "cloud_cost_usd?: float}. See src/hotel_guardrails/escalation.py."
+        ),
+    )
 
 
 class BookingRequest(BaseModel):

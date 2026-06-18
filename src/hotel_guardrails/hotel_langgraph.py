@@ -2862,6 +2862,113 @@ async def invoke_hotel_agent(
                     "retries": attempt,
                 }
 
+    # ------------------------------------------------------------------
+    # Phase O — adaptive escalation hook (2026-06-18)
+    # ------------------------------------------------------------------
+    # After the local Gemma 12B Q8 has produced its best answer, run the
+    # post-inference quality flags. If any signal fires (deferral, empty,
+    # tool-not-called, etc.), escalate to cloud Gemma 4 31B via the
+    # side-channel in src/hotel_guardrails/escalation.py and replace the
+    # response. Cost: ~$0.0001-$0.005 per escalated turn; 97 % of turns
+    # never escalate so steady-state cost is ~$0.
+    #
+    # The side-channel uses a per-model prompt (hotel_prompt_gemma4_31b_cloud.yaml)
+    # because Phase N (2026-06-18) proved that the local-tuned prompt
+    # passed verbatim to a different model family returns empty content.
+    # See CH6 §6.5.17 + AP_F §F.2.13 for the design.
+    escalation_meta: Dict[str, Any] = {"escalated": False, "flags": []}
+    # Try escalation even when local response is empty — the post-check's
+    # `empty` flag will route to cloud, recovering cases where local Gemma
+    # exhausted its retry budget without producing content.
+    if True:
+        try:
+            from src.hotel_guardrails.escalation import maybe_escalate, precheck_hard_case
+            # Build the prior-context block: last 1-2 HumanMessage texts before
+            # the current turn, for cross-turn anaphora resolution.
+            prior_human: List[str] = []
+            final_msgs = result.get("messages", []) if isinstance(result, dict) else []
+            seen_current = False
+            for m in reversed(final_msgs):
+                if isinstance(m, HumanMessage):
+                    if not seen_current:
+                        seen_current = True
+                        continue
+                    if m.content:
+                        prior_human.append(m.content)
+                    if len(prior_human) >= 2:
+                        break
+            prior_ctx = "\n".join(reversed(prior_human)) if prior_human else ""
+            logger.info(
+                "Escalation hook: session=%s n_msgs=%d prior_human_count=%d prior_excerpts=%s",
+                session_id, len(final_msgs), len(prior_human),
+                [p[:60] for p in prior_human],
+            )
+            # Build kb_digest: pass cloud the DB snapshot facts + today's date.
+            # Do NOT pass the local bot's draft — empirically (2026-06-18) cloud
+            # anchors on the local draft even when told it can improve it,
+            # parroting wrong pricing tiers. Cloud computes from facts alone.
+            try:
+                snap_block = _get_hotel_snapshot_cached() if "_get_hotel_snapshot_cached" in globals() else ""
+            except Exception:
+                snap_block = ""
+            try:
+                from datetime import datetime
+                today_str = datetime.now().strftime("%Y-%m-%d (%A, %B %d, %Y)")
+            except Exception:
+                today_str = ""
+            kb_digest_parts = [f"TODAY'S DATE: {today_str}"] if today_str else []
+            if snap_block:
+                kb_digest_parts.append(f"HOTEL SNAPSHOT (from PMS DB — authoritative):\n{snap_block[:2500]}")
+            kb_digest_parts.append(
+                "DYNAMIC PRICING TIER RULES (exact cutoffs from calculate_dynamic_price):\n"
+                "Compute days_ahead = (check_in_date − today).date_difference, then:\n"
+                "- days_ahead == 0       : Same-Day +30%       (x1.30)\n"
+                "- days_ahead 1 to 6     : Last-Minute +20%    (x1.20)\n"
+                "- days_ahead 7 to 13    : Standard Rate       (x1.00)  ← base price\n"
+                "- days_ahead 14 to 29   : Advance Booking 10% off (x0.90)\n"
+                "- days_ahead >= 30      : Early Bird 15% off  (x0.85)\n"
+                "Per-night = base_price × multiplier. Total = per-night × nights.\n"
+                "DO THE DATE ARITHMETIC EXPLICITLY. Quote the exact tier label by name."
+            )
+            kb_digest = "\n\n".join(kb_digest_parts)
+            escalation_state = {
+                "session_id": session_id,
+                "current_intent": intent,
+                "cloud_kb_digest": kb_digest,
+                "cloud_prior_context": prior_ctx,
+            }
+            # Pre-check: detect known hard-case patterns the post-check can't
+            # see (e.g. multi-turn anaphora where the wrong-tier answer reads
+            # as coherent prose). Force escalation if any pattern matches.
+            # Note: precheck_hard_case() returns {"escalate": bool, "flags": [...], "evidence": {...}}
+            precheck = precheck_hard_case(message, prior_human)
+            if precheck.get("escalate"):
+                escalation_state["force_escalate"] = True
+                escalation_state["precheck_patterns"] = precheck.get("flags", [])
+                logger.info(
+                    "Pre-check matched hard-case patterns for session=%s: %s evidence=%s",
+                    session_id, precheck.get("flags"), precheck.get("evidence"),
+                )
+            new_response, flags, e_meta = await maybe_escalate(
+                state=escalation_state,
+                user_text=message,
+                response_text=response_text,
+                tool_calls=tool_calls,
+            )
+            escalation_meta["flags"] = flags
+            if e_meta.get("source") == "cloud":
+                logger.info(
+                    "Adaptive escalation fired for session=%s flags=%s cloud_ms=%s cost=$%.6f",
+                    session_id, flags, e_meta.get("cloud_latency_ms"), e_meta.get("cloud_cost_usd", 0),
+                )
+                response_text = new_response
+                escalation_meta["escalated"] = True
+                escalation_meta["cloud_latency_ms"] = e_meta.get("cloud_latency_ms")
+                escalation_meta["cloud_cost_usd"] = e_meta.get("cloud_cost_usd")
+        except Exception as e:
+            # Escalation is best-effort; never block the response on it.
+            logger.warning("Adaptive escalation hook error (non-fatal): %s", e)
+
     return {
         "success": True,
         "response": response_text,
@@ -2873,4 +2980,5 @@ async def invoke_hotel_agent(
         "had_leak": had_leak,
         "had_lang_leak": had_lang_leak,
         "expected_language": detect_input_language(message),
+        "escalation": escalation_meta,
     }

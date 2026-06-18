@@ -28,6 +28,38 @@ Each row also carries a change type so you know what action to take in the docx:
 
 ## What landed since 2026-06-12
 
+### Chapter 6 — Testing & Evaluation (Phase N + O)
+
+- [ ] **INSERT §6.5.16 Phase N cloud-backend swap (negative result, ~600 w)** — 2026-06-18, this session — change-type INSERT
+  - 6.5.16.1 Motivation (escalate residual 10 to cloud)
+  - 6.5.16.2 Hot-swap protocol
+  - 6.5.16.3 Empty-response result on all 10 + 3 partial-to-incorrect regressions; reverted
+  - 6.5.16.4 Diagnosis: one-prompt-fits-all fails
+  - 6.5.16.5 Recovery (raw.jsonl reverted from backup)
+  - 6.5.16.6 Architectural lesson → motivates Phase O
+
+- [ ] **INSERT §6.5.17 Phase O adaptive escalation + per-model prompt registry (~1100 w)** — 2026-06-18, this session — change-type INSERT
+  - 6.5.17.1 Side-channel design (local stays primary, cloud is sidecar)
+  - 6.5.17.2 escalation.py module (993 lines, 5 pre + 7 post detectors + cheap-judge + PG instrumentation)
+  - 6.5.17.3 Per-model prompt registry (_CLOUD_PROMPT_REGISTRY + _load_prompt_for_model + _build_cloud_system_prompt)
+  - 6.5.17.4 kb_digest design (no local draft — empirically cloud anchors on wrong draft)
+  - 6.5.17.5 Integration in invoke_hotel_agent
+  - 6.5.17.6 Quality control (31/31 unit tests)
+  - 6.5.17.7 Cost model ($30/month projected on 100K queries)
+
+- [ ] **INSERT §6.5.18 Phase O integration validation + Replay #6 (~600 w)** — 2026-06-18, this session — change-type INSERT
+  - 6.5.18.1 Live smoke (mt EN turn 2 → correct 4500/9000 Standard Rate)
+  - 6.5.18.2 Replay #6 aggregate 345/354 = 97.46 %
+  - 6.5.18.3 Per-cluster outcome
+  - 6.5.18.4 Cost summary
+  - 6.5.18.5 Production-strategy implication; Phase P backlog
+  - 6.5.18.6 Final aggregate as new official thesis end-state
+
+### Appendix F — Defect Backlog (Phase N + O)
+
+- [ ] **APPEND §F.2.12 Phase N (REVERTED) + §F.2.13 Phase O adaptive escalation (CLOSED partial)** — 2026-06-18, this session — change-type APPEND
+- [ ] **UPDATE F.1 headline + F.5.1 trajectory** — gains Phase N and Phase O rows; new end-state 345/354 = 97.46 %
+
 ### Chapter 4 — System Design (Phase J production swap)
 
 - [ ] **INSERT §4.9 Production LLM transition — Qwen3.5-Opus-9B → Gemma 4 12B Q8_0** (~1,000 w) — 2026-06-17, this session

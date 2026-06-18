@@ -1097,6 +1097,12 @@ async def _process_chat_locked(
                 content = result["response"]
                 tool_calls = result.get("tool_calls")
                 routing_path = "langgraph"
+                # Adaptive escalation metadata (Phase O, 2026-06-18) — when
+                # local Gemma 12B Q8 hits a detected hard-case pattern, the
+                # response was already overridden inside invoke_hotel_agent
+                # with cloud Gemma 4 31B output. This field exposes the
+                # decision metadata for observability + the eval harness.
+                escalation_payload = result.get("escalation")
             else:
                 logger.warning(f"LangGraph failed: {result.get('error')}")
                 routing_reason = f"LangGraph failed: {result.get('error', 'unknown')[:50]}"
@@ -1244,6 +1250,7 @@ Greeting examples:
         routing_path=routing_path,
         routing_reason=routing_reason,
         complexity=complexity,
+        escalation=locals().get("escalation_payload"),
     )
 
 
