@@ -1017,10 +1017,23 @@ def _maybe_compute_pricing_context(message: str) -> Tuple[str, Optional[Dict[str
         return "", None
 
     # Cheap intent gate — only trigger on messages that mention price/cost
+    # OR signal a date/booking *change* (which implicitly requires a new price
+    # calculation against the changed dates — defect mt_th_change_dates,
+    # 2026-06-18: turn 2 "ขอเปลี่ยนเป็น 18-20 กรกฎาคม" carried the new dates
+    # but no price word, so the helper bailed and calculate_dynamic_price was
+    # never invoked even though the rubric requires it).
     low = message.lower()
     price_signals = (
+        # Pricing words
         "price", "cost", "how much", "rate", "ราคา", "เท่าไหร่", "เท่าไร", "กี่บาท",
-        "价格", "多少钱", "多少", "费用",
+        "价格", "总价", "多少钱", "多少", "费用",
+        # Change-signal tokens: a date/booking change implies "recompute price
+        # for the new dates". EN: change to / instead / rebook / reschedule.
+        # TH: เปลี่ยน (change) / เปลี่ยนเป็น (change to) / เลื่อน (postpone/shift).
+        # ZH: 改 / 改成 / 改为 (change / change to).
+        "change to", "instead", "rebook", "reschedule",
+        "เปลี่ยน", "เปลี่ยนเป็น", "เลื่อน",
+        "改", "改成", "改为",
     )
     if not any(s in low or s in message for s in price_signals):
         return "", None

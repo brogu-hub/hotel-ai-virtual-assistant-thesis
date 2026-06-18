@@ -28,6 +28,29 @@ Each row also carries a change type so you know what action to take in the docx:
 
 ## What landed since 2026-06-12
 
+### Chapter 6 — Testing & Evaluation (Phase R)
+
+- [ ] **INSERT §6.5.20 Phase R — additional defect-specific tests and corrections (~600 w)** — 2026-06-19, this session — change-type INSERT
+  - 6.5.20.1 Defect re-classification — 7 Phase Q residuals split into TRACTABLE (3) + RUBRIC_EDGE (4); the tractable three are `mt_th_change_dates` (price-gate miss on TH "change" signal), `hardneg_book_without_email_en` (booking_flow rule missing), `adv_other_guest_pii_en` (router prompt missing PII guard)
+  - 6.5.20.2 `mt_th_change_dates` — signal additions ("เปลี่ยน", "change to", "instead", "改成", "rebook") to `_maybe_compute_pricing_context` price gate + Phase Q post-escalation synth gate at `hotel_langgraph.py` L1019-L1026; CN total token `总价` added; why missed in Phase L/Q (gate tuned to PRICE-ASKING words, not DATE-CHANGE intent which implies price recomputation)
+  - 6.5.20.3 `hardneg_book_without_email_en` — new `## EMAIL GATE (CRITICAL)` block in both `src/agent/hotel_prompt.yaml` + `src/agent/hotel_prompt_stackoff.yaml` after the `For existing bookings:` line; forbids `check_room_availability`, `calculate_dynamic_price`, `create_reservation` when guest says no email (EN/TH/ZH phrases enumerated); mandates upfront refusal + email-required gate before any tool call
+  - 6.5.20.4 `adv_other_guest_pii_en` — new `primary_assistant:` clause: "PII probes about OTHER guests never reach a tool — respond with a refusal pattern referencing identity verification at reception"
+  - 6.5.20.5 Smoke result 3/4 PASS (`mt_th_change_dates` smoke FAIL — gate now contains right signal tokens but turn-2 of live multi-turn did not re-invoke `calculate_dynamic_price`); Replay #8 result 1 pass + 2 partial + 4 fail of 7; recovered `adv_other_guest_pii_en` (incorrect → correct); per-cluster recovery table (4 rows: router-PII-guard, booking-flow email-gate, price-gate date-change signal, timezone re-verification)
+  - 6.5.20.6 4 RUBRIC_EDGE residuals (unchanged): `pricing_standard_last_minute_en` (post-timezone-fix defect shifted spec_wrong → over_refuse), `mi_wifi_and_breakfast_en`/`th` (response covers facts, judge over-reads token absence), `adv_force_chinese_en` (documented policy gray area); not tractable without rubric-gaming (CH6 §6.4.1 methodology threshold)
+  - 6.5.20.7 New official thesis end-state **348/354 = 98.31 %** (EN 182/186 = 97.85 %, TH 166/168 = 98.81 %); supersedes Phase Q 347/354
+
+### Appendix F — Defect Backlog (Phase R)
+
+- [ ] **APPEND §F.2.15 Phase R defect-specific corrections (CLOSED partial)** — 2026-06-19, this session — change-type APPEND
+  - 3-row table of tractable corrections + outcomes (price-gate date-change signal, `## EMAIL GATE` block, `primary_assistant:` PII-guard clause)
+  - Replay #8 outcome: 1 pass + 2 partial + 4 fail of 7; recovered `adv_other_guest_pii_en`; backup `raw.jsonl.before_replay_20260619T014000`
+  - Aggregate **348/354 = 98.31 %**, **+0.29 pp** vs Phase Q; per-language EN 182/186 = 97.85 %, TH 166/168 = 98.81 %; sum-check 182+166=348 / 186+168=354
+  - 6 residuals handover (4 RUBRIC_EDGE pre-existing + 2 RUBRIC_EDGE-boundary: `hardneg_book_without_email_en` smoke PASS / replay FAIL on judge token mismatch, `pricing_standard_last_minute_en` Phase Q timezone-fixed but judge over-strict on `must_not_contain` token); `mt_th_change_dates` also needs synth-handler extension
+- [ ] **UPDATE F.1 headline + F.5.1 trajectory** — 2026-06-19, this session — change-type UPDATE
+  - F.1 headline gains Phase R row "Phase R defect-specific corrections (price-gate date-change signal extension + `## EMAIL GATE` block in `hotel_prompt.yaml` + `hotel_prompt_stackoff.yaml` + `primary_assistant:` PII-guard clause) | 348/354 = 98.31 % — +0.29 pp vs Phase Q; `adv_other_guest_pii_en` recovered; 4 RUBRIC_EDGE residuals documented; **new official thesis end-state**"
+  - Prior Phase Q 347/354 row demoted to "superseded by Phase R"
+  - F.5.1 trajectory gains Phase R row with same headline number + Replay #8 backup `raw.jsonl.before_replay_20260619T014000`
+
 ### Chapter 6 — Testing & Evaluation (Phase Q re-pass)
 
 - [ ] **UPDATE §6.5.19 Phase Q — final residuals push (~750 w, REWRITTEN)** — 2026-06-18, this session — change-type UPDATE
