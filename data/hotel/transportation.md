@@ -126,7 +126,7 @@
 **Location:** Basement B1, B2, B3
 **Hours:** 24 hours
 **Price:** Free for hotel guests / ฟรีสำหรับแขก
-**Valet Service:** 200 THB / บริการรับฝากรถ: 200 บาท
+**Valet Service:** 500 THB / บริการรับฝากรถ: 500 บาท
 **Electric Vehicle Charging:** Available on B1 / ชาร์จรถไฟฟ้าชั้น B1
 
 ## Booking Tours / การจองทัวร์

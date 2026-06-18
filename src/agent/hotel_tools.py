@@ -9,7 +9,7 @@ Provides LangChain tools for:
 - Managing service requests
 - Guest check-in/check-out operations
 
-All tools connect to the Railway PostgreSQL database.
+All tools connect to the PostgreSQL database on localhost docker image.
 """
 
 import os
@@ -281,6 +281,68 @@ def get_hotel_services() -> str:
 
     except Exception as e:
         logger.error(f"Error getting hotel services: {e}")
+        return f"เกิดข้อผิดพลาด / Error: {str(e)}"
+
+
+@tool
+def get_room_inventory() -> str:
+    """
+    Get LIVE total room counts per room_type from the rooms table.
+
+    Use this for any 'how many X rooms do you have', 'จำนวนห้อง', '多少间客房'
+    style question — the answer must come from the live PMS DB, never from
+    KB markdown or memory, because admin add/remove rooms regularly.
+
+    Excludes rooms with status='out_of_order' so the count reflects bookable
+    inventory, not paper inventory.
+
+    Returns:
+        Human-readable breakdown: per-type counts + total.
+    """
+    try:
+        query = """
+        SELECT
+            rt.name,
+            rt.name_th,
+            MIN(rt.base_price) AS base_price,
+            COUNT(r.room_id) FILTER (
+                WHERE r.status IS NULL OR r.status <> 'out_of_order'
+            ) AS bookable_count,
+            COUNT(r.room_id) AS total_count
+        FROM room_types rt
+        LEFT JOIN rooms r ON r.room_type_id = rt.room_type_id
+        GROUP BY rt.name, rt.name_th
+        ORDER BY MIN(rt.base_price);
+        """
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute(query)
+                rows = cur.fetchall()
+
+        if not rows:
+            return "ไม่พบข้อมูลห้องพัก / No room inventory found"
+
+        lines = ["LIVE ROOM INVENTORY (queried from PMS DB):"]
+        total_bookable = 0
+        total = 0
+        for row in rows:
+            name = row["name"]
+            name_th = row["name_th"]
+            bookable = int(row["bookable_count"] or 0)
+            total_count = int(row["total_count"] or 0)
+            total_bookable += bookable
+            total += total_count
+            label = f"{name} / {name_th}" if name_th else name
+            if bookable == total_count:
+                lines.append(f"- {label}: {bookable} rooms")
+            else:
+                lines.append(f"- {label}: {bookable} bookable ({total_count} total, "
+                             f"{total_count - bookable} out of order)")
+        lines.append(f"TOTAL: {total_bookable} bookable rooms ({total} total)")
+        return "\n".join(lines)
+
+    except Exception as e:
+        logger.error(f"Error getting room inventory: {e}")
         return f"เกิดข้อผิดพลาด / Error: {str(e)}"
 
 

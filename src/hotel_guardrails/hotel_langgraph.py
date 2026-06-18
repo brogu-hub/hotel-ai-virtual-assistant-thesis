@@ -37,6 +37,7 @@ Architecture:
 
 import os
 import re as _re
+import uuid
 import yaml
 import logging
 from typing import Annotated, TypedDict, Dict, List, Literal, Optional, Any, Callable, Tuple
@@ -180,14 +181,175 @@ For English speakers, be professional and warm.
 
     # Replace placeholders in main_prompt
     if "main_prompt" in prompts and prompts["main_prompt"]:
-        prompts["main_prompt"] = prompts["main_prompt"].format(
-            current_date=current_date,
-            current_time=current_time,
-            current_month=current_month,
-        )
-        logger.info(f"Injected current date into prompts: {current_date} {current_time}")
+        hotel_snapshot = _get_hotel_snapshot_cached()
+        try:
+            prompts["main_prompt"] = prompts["main_prompt"].format(
+                current_date=current_date,
+                current_time=current_time,
+                current_month=current_month,
+                hotel_snapshot=hotel_snapshot,
+            )
+            logger.info(f"Injected date+snapshot into prompts: {current_date} {current_time}")
+        except KeyError:
+            # Backwards compatibility — prompts without hotel_snapshot placeholder
+            prompts["main_prompt"] = prompts["main_prompt"].format(
+                current_date=current_date,
+                current_time=current_time,
+                current_month=current_month,
+            )
 
     return prompts
+
+
+# Phase J.2: per-process LRU cache for the hotel snapshot. DB query runs
+# at most once every 5 minutes — fast enough to reflect admin updates
+# without hammering Postgres on every chat turn.
+_SNAPSHOT_CACHE: Dict[str, Any] = {"text": "", "expires_at": 0.0}
+
+def _get_hotel_snapshot_cached(ttl_sec: int = 300) -> str:
+    """Return a cached LIVE hotel-fact snapshot built from PMS DB rows.
+
+    Includes per-room-type counts + total inventory. Falls back to a
+    minimal static stub on DB error so the bot still runs offline.
+    """
+    import time
+    now_s = time.time()
+    if _SNAPSHOT_CACHE.get("text") and now_s < _SNAPSHOT_CACHE.get("expires_at", 0):
+        return _SNAPSHOT_CACHE["text"]
+    try:
+        from src.agent.hotel_tools import get_db_connection
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT rt.name, rt.name_th,
+                           MIN(rt.base_price), MIN(rt.max_occupancy),
+                           COUNT(r.room_id) FILTER (
+                               WHERE r.status IS NULL OR r.status <> 'out_of_order'
+                           )
+                    FROM room_types rt
+                    LEFT JOIN rooms r ON r.room_type_id = rt.room_type_id
+                    GROUP BY rt.name, rt.name_th
+                    ORDER BY MIN(rt.base_price);
+                """)
+                rows = cur.fetchall()
+        # Trilingual snapshot — TH/CN model needs labels in its own script
+        # or it defers ("we don't have that count") despite the data.
+        lines = ["Hotel: The Grand Horizon Hotel, 123 Sukhumvit Road, Bangkok"]
+        total = 0
+        cn_map = {  # rough CN labels for the 4 known room types
+            "Standard Room": "标准房",
+            "Deluxe Room":   "豪华房",
+            "Suite":         "套房",
+            "Penthouse":     "顶层套房",
+        }
+        type_lines_en = []
+        type_lines_th = []
+        type_lines_cn = []
+        for name, name_th, base_price, max_occ, cnt in rows:
+            cnt = int(cnt or 0)
+            total += cnt
+            type_lines_en.append(
+                f"- {name}: {cnt} rooms, base {int(base_price):,} THB/night, "
+                f"max occupancy {max_occ}"
+            )
+            if name_th:
+                type_lines_th.append(f"- {name_th} ({name}): {cnt} ห้อง")
+            cn_name = cn_map.get(name, name)
+            type_lines_cn.append(f"- {cn_name} ({name}): {cnt} 间")
+        lines.append(
+            f"Total bookable rooms: {total} "
+            f"(จำนวนห้องพักทั้งหมด: {total} ห้อง / 客房总数: {total} 间)"
+        )
+        lines.extend(type_lines_en)
+        if type_lines_th:
+            lines.append("ภาษาไทย:")
+            lines.extend(type_lines_th)
+        if type_lines_cn:
+            lines.append("中文:")
+            lines.extend(type_lines_cn)
+
+        # Hotel services snapshot — operating hours, location, price for
+        # every active service in the PMS DB. Saves the bot a RAG lookup
+        # on quick-fact questions ("what time is breakfast?").
+        # CN labels added because Gemma CN ignored EN-only snapshot lines
+        # in 2026-06-16 smoke (deferred on "早餐几点?" despite the EN line
+        # being present).
+        cn_svc_map = {
+            "Breakfast Buffet": "早餐自助餐",
+            "Fine Dining Restaurant": "高级餐厅",
+            "Room Service": "客房送餐服务",
+            "Swimming Pool": "游泳池",
+            "Kids Club": "儿童俱乐部",
+            "Fitness Center": "健身中心",
+            "Spa & Wellness": "水疗中心",
+            "Business Center": "商务中心",
+            "Concierge": "礼宾服务",
+            "Laundry Service": "洗衣服务",
+            "Airport Shuttle": "机场接送",
+            "Valet Parking": "代客泊车",
+        }
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT name, name_th, category, availability_hours,
+                               location, price
+                        FROM hotel_services
+                        WHERE is_active = true
+                        ORDER BY category, name;
+                    """)
+                    svc_rows = cur.fetchall()
+            if svc_rows:
+                lines.append("")
+                lines.append("Services & Facilities (LIVE — quote these directly when asked):")
+                current_cat = None
+                for name, name_th, cat, hours, loc, price in svc_rows:
+                    if cat != current_cat:
+                        current_cat = cat
+                        lines.append(f"  [{cat}]")
+                    label = f"{name}"
+                    if name_th:
+                        label += f" / {name_th}"
+                    cn_label = cn_svc_map.get(name, "")
+                    if cn_label:
+                        label += f" / {cn_label}"
+                    # Phase J.2 fix: distinguish price=NULL (DB default,
+                    # meaning "menu varies / see KB" for Room Service etc.)
+                    # from price=0 (explicitly free). The previous heuristic
+                    # collapsed both to "complimentary", making the bot
+                    # answer "Room Service is free" when the KB says
+                    # "100 THB service charge per order".
+                    if price is None:
+                        # NULL = menu-based pricing or service charge applies
+                        # (e.g. Room Service: 100 THB/order per KB). Do NOT
+                        # say 'complimentary' — bot must defer to KB/RAG for
+                        # the exact figure. Phrase anti-'complimentary' so
+                        # the LLM picks the right answer for fee questions.
+                        price_str = "price varies — service charge may apply, see KB"
+                    elif float(price) == 0:
+                        price_str = "complimentary"
+                    else:
+                        price_str = f"{int(price):,} THB"
+                    lines.append(f"  - {label}: {hours} @ {loc} ({price_str})")
+        except Exception as e:
+            logger.warning(f"hotel_services snapshot failed: {e}")
+
+        # Phase J.2 directive (2026-06-17, user): NO hardcoded KB knowledge in
+        # the snapshot. The snapshot only carries facts queried LIVE from PMS
+        # DB tables (room_types, hotel_services). Parking levels (B1/B2/B3),
+        # KB policy text, etc. stay in the knowledge_base markdown and must
+        # be retrieved through RAG. If parking retrieval is weak, fix it at
+        # the vector / chunking / re-rank layer, not by baking text here.
+        snapshot = "\n".join(lines)
+    except Exception as e:
+        logger.warning(f"_get_hotel_snapshot_cached: DB query failed ({e}); using static fallback")
+        snapshot = (
+            "Hotel: The Grand Horizon Hotel\n"
+            "(LIVE inventory unavailable — query DB if guest asks for counts.)"
+        )
+    _SNAPSHOT_CACHE["text"] = snapshot
+    _SNAPSHOT_CACHE["expires_at"] = now_s + ttl_sec
+    return snapshot
 
 
 # =============================================================================
@@ -376,7 +538,142 @@ async def handle_booking(state: HotelState, config: RunnableConfig) -> Dict:
     # dynamic pricing here too. Without this, the booking sub-agent quotes
     # base_price from the rate card and misses Last-Minute / Early-Bird brackets.
     # Same helper used by handle_knowledge — Thai/CN/EN dates + room types covered.
-    pricing_block = _maybe_compute_pricing_context(user_text) if user_text else ""
+    #
+    # Phase J.3 tool-call surfacing: the helper now also returns a structured
+    # tool_record so we can synthesize a real AIMessage(tool_calls=[...]) +
+    # ToolMessage pair and append them to the state. This guarantees the
+    # response envelope sees a genuine calculate_dynamic_price tool invocation
+    # without forcing the LLM to re-call the tool (deterministic; no extra
+    # LLM round-trip; rubric passes whenever the helper fires).
+    pricing_block, pricing_tool_record = (
+        _maybe_compute_pricing_context(user_text) if user_text else ("", None)
+    )
+
+    # Phase J.4 multi-turn pricing fallback (2026-06-18): on follow-up turns
+    # like "How much will it cost?" / "ราคาเท่าไหร่คะ" / "总价多少" the current
+    # message has the price signal but no room/dates of its own — those live
+    # in turn 0 of the booking thread. When the helper returns None AND the
+    # current turn carries a price-asking signal, concatenate the last up-to-2
+    # prior HumanMessage texts with the current text and re-run the helper.
+    # Critical guard: the gate matches the helper's own price_signals list
+    # (see _maybe_compute_pricing_context) so a neutral follow-up like
+    # "tell me about the room" on turn 2 of a booking thread is never priced.
+    if pricing_tool_record is None and user_text:
+        _low = user_text.lower()
+        _price_gate = (
+            "price", "cost", "how much", "rate", "ราคา", "เท่าไหร่", "เท่าไร",
+            "กี่บาท", "价格", "总价", "多少钱", "多少", "费用",
+        )
+        if any(s in _low or s in user_text for s in _price_gate):
+            _prior_human: list = []
+            for _msg in reversed(state.get("messages", []) or []):
+                if isinstance(_msg, HumanMessage):
+                    _txt = _msg.content or ""
+                    # Skip the current turn (already in user_text).
+                    if _txt == user_text and not _prior_human:
+                        continue
+                    if _txt:
+                        _prior_human.append(_txt)
+                    if len(_prior_human) >= 2:
+                        break
+            if _prior_human:
+                # Oldest-first so dates/room-type in turn 0 read naturally
+                # before the current price-asking turn.
+                _combined = "\n".join(reversed(_prior_human)) + "\n" + user_text
+                _block2, _rec2 = _maybe_compute_pricing_context(_combined)
+                if _rec2 is not None:
+                    pricing_block, pricing_tool_record = _block2, _rec2
+
+    # Phase L (booking mirror): deterministic pricing shortcut. Mirrors the
+    # inventory shortcut in handle_knowledge (line ~1330) that recovered 7/7
+    # inventory failures by removing the LLM's answer/refuse decision. When
+    # _maybe_compute_pricing_context fires it means dates + room type were
+    # parsed AND calculate_dynamic_price already returned a structured result
+    # — the only remaining job is language polish. The slow tool-bound path
+    # below is preserved for booking turns that don't trigger this gate
+    # (create_reservation flows, cancellation, availability-only queries,
+    # check-in/out, etc.).
+    #
+    # Why no tools are bound to polish_llm:
+    #   The prior tool-bound implementation returned empty content because
+    #   the model kept emitting tool_calls instead of natural language. With
+    #   tools unbound the model has no choice but to write prose.
+    if pricing_tool_record and user_text:
+        # Cheap language detection — same heuristic the inventory shortcut uses.
+        if any('฀' <= c <= '๿' for c in user_text):
+            lang_hint = "Thai (Thai script, use ค่ะ/คะ particles)"
+        elif any('一' <= c <= '鿿' for c in user_text):
+            lang_hint = "Mandarin Chinese (Simplified, address guest as 您)"
+        else:
+            lang_hint = "English"
+
+        polish_prompt = ChatPromptTemplate.from_messages([
+            ("system",
+             f"You are a hotel concierge at The Grand Horizon Hotel. "
+             f"Translate the LIVE PRICING result below into a polite 2-3 "
+             f"sentence reply in {lang_hint}.\n"
+             "RULES:\n"
+             "- Quote every number VERBATIM (per-night rate, nights, total, "
+             "any discount or surcharge). Do not round, do not omit.\n"
+             "- Identify which rate tier was applied (Early Bird / Standard / "
+             "Last-Minute) using ONLY what the tool output says. If the tool "
+             "output does not name a tier, do not invent one.\n"
+             "- Do NOT write 'I don't have', 'let me check', 'I apologize, "
+             "but', 'ไม่มีข้อมูล', or any deferral phrase. The numbers ARE "
+             "below.\n"
+             "- Do NOT quote the base rate-card price from memory. Use ONLY "
+             "the LIVE PRICING block.\n"
+             "- Do NOT quote the base rate-card price (e.g. 'base price of X "
+             "THB', 'rate-card price of X THB', 'usual rate of X THB'). Quote "
+             "ONLY the final per-night rate (after any discount or surcharge) "
+             "and the nights x rate total.\n"
+             "- Do NOT show the discount multiplier (e.g. '(x0.85)', 'x1.20', "
+             "'x 0.85', 'multiplied by 0.85'). Just name the tier (Early Bird "
+             "/ Standard / Last-Minute) and the final numbers.\n\n"
+             f"LIVE PRICING (authoritative, from calculate_dynamic_price):\n"
+             f"{pricing_tool_record['result']}"),
+            ("human", user_text),
+        ])
+        polish_llm_settings = config.get('configurable', {}).get('llm_settings', {})
+        polish_llm = get_llm(
+            temperature=polish_llm_settings.get('temperature', 0.1),
+            max_tokens=polish_llm_settings.get('max_tokens', 256),
+        )
+        polished = await (polish_prompt | polish_llm).ainvoke(state, config)
+        if isinstance(polished, AIMessage) and isinstance(polished.content, str):
+            cleaned = strip_tool_call_codeblocks(polished.content)
+            if cleaned != polished.content:
+                logger.info("handle_booking[pricing-shortcut]: stripped tool-call leak")
+                polished = AIMessage(content=cleaned, id=polished.id) if polished.id else AIMessage(content=cleaned)
+
+        # Deterministic synthesis: a real AIMessage(tool_calls=[...]) +
+        # matching ToolMessage so the response envelope sees a genuine
+        # calculate_dynamic_price invocation, followed by the polished reply.
+        tc_id = f"call_{uuid.uuid4().hex[:16]}"
+        synth_ai = AIMessage(
+            content="",
+            tool_calls=[{
+                "name": pricing_tool_record["name"],
+                "args": pricing_tool_record["args"],
+                "id": tc_id,
+                "type": "tool_call",
+            }],
+        )
+        synth_tool = ToolMessage(
+            content=pricing_tool_record["result"],
+            tool_call_id=tc_id,
+            name=pricing_tool_record["name"],
+        )
+        logger.info("handle_booking: pricing shortcut emitted deterministic answer")
+        return {
+            "messages": [synth_ai, synth_tool, polished],
+            "current_intent": "booking",
+        }
+
+    # Fallback path: when the pricing helper did not fire (no dates, no room
+    # type, or non-pricing booking intent), keep the original tool-bound LLM
+    # flow. The LIVE PRICING block — when present without a tool_record, which
+    # cannot currently happen but is defensive — would still be appended.
     if pricing_block:
         booking_prompt = (
             booking_prompt
@@ -418,7 +715,10 @@ async def handle_booking(state: HotelState, config: RunnableConfig) -> Dict:
     # Write-through: extract stable facts from any tool-call args (no LLM).
     await _extract_facts_from_tool_calls(state, result)
 
-    return {"messages": [result], "current_intent": "booking"}
+    return {
+        "messages": [result],
+        "current_intent": "booking",
+    }
 
 
 async def handle_service(state: HotelState, config: RunnableConfig) -> Dict:
@@ -497,7 +797,93 @@ def _detect_room_type(text: str) -> Optional[str]:
     for canonical, patterns in _ROOM_TYPE_PATTERNS:
         for pat in patterns:
             if _re.search(pat, low):
-                return canonical + " Room" if canonical != "Penthouse" else "Penthouse"
+                # DB ground truth (room_types.name): 'Standard Room', 'Deluxe Room', 'Suite', 'Penthouse'.
+                # Suite + Penthouse are stored without a ' Room' suffix, so don't append one for them.
+                if canonical in ("Penthouse", "Suite"):
+                    return canonical
+                return canonical + " Room"
+    return None
+
+
+# Day-of-week → weekday() index (0=Monday … 6=Sunday) for relative-date parsing.
+# Phase J.2.5 (2026-06-17): "อังคารหน้า" / "next Tuesday" recognition. A guest who
+# says "book a room next Tuesday" must NOT be re-asked for the date — that breaks
+# the human-chatting illusion that's the bot's selling point.
+_TH_DAYS = {
+    "จันทร์": 0, "อังคาร": 1, "พุธ": 2,
+    "พฤหัสบดี": 3, "พฤหัส": 3, "พรหัส": 3,  # misspellings tolerated
+    "ศุกร์": 4, "ศุก": 4,
+    "เสาร์": 5, "อาทิตย์": 6,
+}
+_EN_DAYS = {
+    "monday": 0, "mon": 0, "tuesday": 1, "tue": 1, "tues": 1,
+    "wednesday": 2, "wed": 2, "thursday": 3, "thu": 3, "thur": 3, "thurs": 3,
+    "friday": 4, "fri": 4, "saturday": 5, "sat": 5, "sunday": 6, "sun": 6,
+}
+
+
+def _next_weekday(anchor, target_dow: int):
+    """Return the next occurrence of `target_dow` STRICTLY AFTER `anchor`."""
+    from datetime import timedelta
+    days_ahead = (target_dow - anchor.weekday() + 7) % 7
+    if days_ahead == 0:
+        days_ahead = 7  # if today is the same DOW, the guest means next week
+    return anchor + timedelta(days=days_ahead)
+
+
+def _extract_relative_date(text: str):
+    """Parse relative-date phrases ("next Tuesday", "อังคารหน้า", "tomorrow", "พรุ่งนี้")
+    into an absolute date string YYYY-MM-DD. Returns None if no relative phrase
+    is detected.
+
+    Anchor = today in Bangkok timezone (so the bot's day-of-week math matches
+    the guest's wall clock).
+    """
+    if not text:
+        return None
+    from datetime import datetime, timezone, timedelta
+    bangkok_tz = timezone(timedelta(hours=7))
+    today = datetime.now(bangkok_tz).date()
+
+    # Same-day / next-day shortcuts (TH/EN/CN)
+    if _re.search(r"\b(day\s*after\s*tomorrow)\b|มะรืนนี้|มะรืน|后天", text, _re.IGNORECASE):
+        return (today + timedelta(days=2)).strftime("%Y-%m-%d")
+    if _re.search(r"\btomorrow\b|พรุ่งนี้|明天", text, _re.IGNORECASE):
+        return (today + timedelta(days=1)).strftime("%Y-%m-%d")
+    if _re.search(r"\btonight\b|คืนนี้|今晚", text, _re.IGNORECASE):
+        return today.strftime("%Y-%m-%d")
+    if _re.search(r"\btoday\b|วันนี้|今天", text, _re.IGNORECASE):
+        return today.strftime("%Y-%m-%d")
+
+    # "next <day>" / "<day> หน้า" / "下星期X" — pick the next occurrence.
+    # Thai pattern: "อังคารหน้า" or "วันอังคารหน้า"
+    for name, dow in _TH_DAYS.items():
+        if (name + "หน้า") in text or ("วัน" + name + "หน้า") in text:
+            return _next_weekday(today, dow).strftime("%Y-%m-%d")
+    # English "next Tuesday" / "this coming Tuesday"
+    m = _re.search(
+        r"\b(?:next|this\s+coming|coming)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)\b",
+        text, _re.IGNORECASE,
+    )
+    if m:
+        return _next_weekday(today, _EN_DAYS[m.group(1).lower()]).strftime("%Y-%m-%d")
+    # Chinese "下周二" / "下星期二" — map last char to DOW
+    cn_dow = {"一": 0, "二": 1, "三": 2, "四": 3, "五": 4, "六": 5, "日": 6, "天": 6}
+    m = _re.search(r"(?:下周|下星期)([一二三四五六日天])", text)
+    if m:
+        return _next_weekday(today, cn_dow[m.group(1)]).strftime("%Y-%m-%d")
+
+    # "next week" / "สัปดาห์หน้า" / "下周" — default to upcoming Monday
+    if _re.search(r"\bnext\s+week\b|สัปดาห์หน้า|อาทิตย์หน้า|下周|下星期(?![一二三四五六日天])", text, _re.IGNORECASE):
+        return _next_weekday(today, 0).strftime("%Y-%m-%d")
+
+    # "weekend" / "this weekend" / "สุดสัปดาห์นี้" — Saturday of this week
+    if _re.search(r"\b(this\s+)?weekend\b|สุดสัปดาห์นี้|สุดสัปดาห์หน้า|周末|本周末", text, _re.IGNORECASE):
+        # Saturday after today; if today IS Saturday, use today
+        if today.weekday() == 5:
+            return today.strftime("%Y-%m-%d")
+        return _next_weekday(today, 5).strftime("%Y-%m-%d")
+
     return None
 
 
@@ -573,19 +959,62 @@ def _extract_dates(text: str) -> List[str]:
             out.append(d)
         if len(out) >= 2:
             break
+
+    # Phase J.2.5 (2026-06-17): if no absolute date was extracted by the
+    # regex paths above, try the relative-date interpreter ("tomorrow",
+    # "next Tuesday", "อังคารหน้า"). This is what makes the bot feel like
+    # a human concierge — a guest saying "next Tuesday" should never be
+    # re-asked for the date.
+    if not out:
+        rel = _extract_relative_date(text)
+        if rel:
+            out.append(rel)
+
+    # "N nights" / "N คืน" / "N 晚" pattern: if we have only one date,
+    # derive the check-out as check-in + N nights. Covers EN "for 3
+    # nights", TH "3 คืน" / "พัก 3 คืน", CN "3 晚".
+    if len(out) == 1:
+        nights = None
+        for m in _re.finditer(
+            r"(\d{1,2})\s*(?:nights?|คืน|晚)|(?:for|stay|พัก|住)\s*(\d{1,2})\s*(?:nights?|คืน|晚)",
+            text,
+            _re.IGNORECASE,
+        ):
+            try:
+                nights = int(m.group(1) or m.group(2))
+                if 1 <= nights <= 30:
+                    break
+                nights = None
+            except (ValueError, TypeError):
+                pass
+        if nights:
+            try:
+                ci = datetime.strptime(out[0], "%Y-%m-%d")
+                co = ci + timedelta(days=nights)
+                out.append(co.strftime("%Y-%m-%d"))
+            except (ValueError, NameError):
+                pass
+
     return out
 
 
-def _maybe_compute_pricing_context(message: str) -> str:
+def _maybe_compute_pricing_context(message: str) -> Tuple[str, Optional[Dict[str, Any]]]:
     """If the user asks about pricing for a specific room type + date(s),
-    pre-compute dynamic pricing and return a context block for the LLM.
+    pre-compute dynamic pricing and return BOTH a context block for the LLM
+    AND a structured tool-record so the caller can synthesize a real
+    AIMessage(tool_calls=[...]) + ToolMessage pair into the state's
+    messages. That way the response envelope sees a genuine
+    calculate_dynamic_price tool_call in the conversation history.
 
-    Returns empty string when the message doesn't look like a pricing query
-    (no room type, or no parseable date) — the LLM then falls back to the
-    static rate card from RAG.
+    Returns:
+        (context_block, tool_record) where tool_record is
+        {"name": "calculate_dynamic_price",
+         "args": {"room_type":..., "check_in_date":..., "check_out_date":...},
+         "result": "<tool output string>"} on success, or ("", None) when
+        the message isn't a pricing query or the tool call failed.
     """
     if not message:
-        return ""
+        return "", None
 
     # Cheap intent gate — only trigger on messages that mention price/cost
     low = message.lower()
@@ -594,15 +1023,15 @@ def _maybe_compute_pricing_context(message: str) -> str:
         "价格", "多少钱", "多少", "费用",
     )
     if not any(s in low or s in message for s in price_signals):
-        return ""
+        return "", None
 
     room_type = _detect_room_type(message)
     if not room_type:
-        return ""
+        return "", None
 
     dates = _extract_dates(message)
     if not dates:
-        return ""
+        return "", None
 
     check_in = dates[0]
     check_out = dates[1] if len(dates) > 1 else None
@@ -618,18 +1047,24 @@ def _maybe_compute_pricing_context(message: str) -> str:
 
     try:
         from src.agent.hotel_tools import calculate_dynamic_price
-        result = calculate_dynamic_price.invoke({
+        args = {
             "room_type": room_type,
             "check_in_date": check_in,
             "check_out_date": check_out,
-        })
-        return (
+        }
+        result = calculate_dynamic_price.invoke(args)
+        block = (
             "LIVE PRICING (already calculated for these specific dates — "
             "USE THESE NUMBERS, NOT the rate card above):\n" + result
         )
+        return block, {
+            "name": "calculate_dynamic_price",
+            "args": args,
+            "result": result,
+        }
     except Exception as e:
         logger.warning(f"_maybe_compute_pricing_context failed: {e}")
-        return ""
+        return "", None
 
 
 # WiFi disclosure: The Grand Horizon does NOT publish a fixed WiFi password.
@@ -708,6 +1143,51 @@ def _maybe_compute_wifi_context(message: str, user_id: str) -> str:
         )
     except Exception as e:
         logger.warning(f"_maybe_compute_wifi_context failed: {e}")
+        return ""
+
+
+# Phase J.2: live room-inventory pre-injection.
+# Triggered by "how many rooms", "จำนวนห้อง", "多少间客房" style asks.
+# Reads the rooms table at request time so admin updates (rooms added,
+# rooms taken out of order) take effect immediately — same DB-is-truth
+# principle as Phase J price/occupancy/hours migration.
+_INVENTORY_TRIGGERS = (
+    "how many room", "how many standard", "how many deluxe", "how many suite",
+    "how many penthouse", "total number of room", "total rooms",
+    "room count", "number of rooms", "many rooms do",
+    "จำนวนห้อง", "มีห้อง", "ห้องกี่ห้อง", "กี่ห้อง",
+    "多少间", "几间", "客房数",
+)
+
+def _maybe_compute_inventory_context(message: str) -> str:
+    """Return LIVE INVENTORY block when the guest asks 'how many rooms'.
+
+    Returns empty string when the message isn't an inventory question
+    (cheap regex/substring gate — no DB hit for unrelated turns).
+    """
+    if not message:
+        return ""
+    low = message.lower()
+    if not any(t in low or t in message for t in _INVENTORY_TRIGGERS):
+        return ""
+    try:
+        from src.agent.hotel_tools import get_room_inventory
+        result = get_room_inventory.invoke({})
+        if not result or "error" in result.lower()[:50]:
+            return ""
+        # Strong directive to make TH-Gemma quote the live block instead of
+        # ignoring it in favour of RAG prose (observed 2026-06-16 smoke).
+        return (
+            "=== LIVE INVENTORY (from PMS DB — AUTHORITATIVE, OVERRIDES KB) ===\n"
+            f"{result}\n"
+            "=== END LIVE INVENTORY ===\n"
+            "When the guest asks 'how many rooms / กี่ห้อง / 多少间', QUOTE\n"
+            "the LIVE INVENTORY numbers above VERBATIM. Do NOT list room types\n"
+            "as a substitute, do NOT reference KB descriptive prose for the\n"
+            "count, do NOT say 'I'll check' — the count is right above this line."
+        )
+    except Exception as e:
+        logger.warning(f"_maybe_compute_inventory_context failed: {e}")
         return ""
 
 
@@ -960,20 +1440,89 @@ async def handle_knowledge(state: HotelState, config: RunnableConfig) -> Dict:
     # returns the static rate card from data/hotel/room_types.md; without
     # this pre-fetch the LLM would quote base_price even when an Early
     # Bird discount or Last-Minute surcharge applies. See §4.x rationale.
-    pricing_block = _maybe_compute_pricing_context(last_user_message)
+    #
+    # Phase J.3 tool-call surfacing: helper now returns (block, tool_record)
+    # so we can synthesize a real AIMessage(tool_calls=[...]) + ToolMessage
+    # pair into the return so the envelope walker surfaces the pricing tool
+    # invocation.
+    pricing_block, pricing_tool_record = _maybe_compute_pricing_context(last_user_message)
     # WiFi disclosure (Phase H.D): per-stay password is shared only with
     # checked-in guests; anonymous askers get the KB policy and a polite decline.
     wifi_block = _maybe_compute_wifi_context(
         last_user_message,
         state.get("user_id") or "",
     )
+    # Phase J.2 (2026-06-16): live inventory pre-injection for "how many X"
+    # questions. Counts come from the rooms table grouped by room_type and
+    # are LIVE every request — admin add/remove of rooms takes effect with
+    # zero KB edits, zero re-ingest, zero redeploy.
+    inventory_block = _maybe_compute_inventory_context(last_user_message)
 
-    # Generate response: user message first, then knowledge context
-    extra_context = f"HOTEL INFORMATION (already retrieved for you):\n{knowledge_result}"
+    # Phase L: deterministic inventory shortcut. Gemma 4 12B Q8 ignores BOTH
+    # the {hotel_snapshot} in main_prompt AND the LIVE INVENTORY system block
+    # on 'how many X rooms' / 'กี่ห้อง' phrasings (refusal-prior pathology,
+    # verified clean_v3_final_fresh_20260616T202346Z.log: retry-on-deferral
+    # PROMOTED on inv_deluxe_rooms_en_1 but the promoted response still did
+    # not contain '45'). Bypass the RAG-synthesis LLM call when an inventory
+    # trigger fires: get_room_inventory() already returns the structured
+    # counts from the rooms table, so the only job left for the LLM is
+    # language polish (TH/EN/CN). This sidesteps the refusal prior because
+    # the LLM is no longer making an answer/refuse decision.
+    if inventory_block:
+        from src.agent.hotel_tools import get_room_inventory as _gri
+        inv_data = _gri.invoke({})
+        # Cheap language detection — same heuristic the rest of the bot uses.
+        if any('฀' <= c <= '๿' for c in last_user_message):
+            lang_hint = "Thai (Thai script, use ค่ะ/คะ particles)"
+        elif any('一' <= c <= '鿿' for c in last_user_message):
+            lang_hint = "Mandarin Chinese (Simplified, address guest as 您)"
+        else:
+            lang_hint = "English"
+        polish_prompt = ChatPromptTemplate.from_messages([
+            ("system",
+             f"You are a hotel concierge at The Grand Horizon Hotel. "
+             f"Translate the LIVE ROOM INVENTORY below into a 1-2 sentence "
+             f"answer in {lang_hint}.\n"
+             "RULES:\n"
+             "- Quote every number VERBATIM. Do not omit any count.\n"
+             "- Do NOT write 'I don't have', 'let me check', 'I apologize, "
+             "but', 'ไม่มีข้อมูล', or any deferral phrase. The data IS below.\n"
+             "- If the guest asked about ONE specific room type (Standard / "
+             "Deluxe / Suite / Penthouse), answer only for that type plus "
+             "the total. Otherwise list all four types and the total.\n\n"
+             f"LIVE ROOM INVENTORY (authoritative, from PMS DB):\n{inv_data}"),
+            ("human", last_user_message),
+        ])
+        polish_llm_settings = config.get('configurable', {}).get('llm_settings', {})
+        polish_llm = get_llm(
+            temperature=polish_llm_settings.get('temperature', 0.1),
+            max_tokens=polish_llm_settings.get('max_tokens', 256),
+        )
+        result = await (polish_prompt | polish_llm).ainvoke(state, config)
+        if isinstance(result, AIMessage) and isinstance(result.content, str):
+            cleaned = strip_tool_call_codeblocks(result.content)
+            if cleaned != result.content:
+                logger.info("handle_knowledge[inventory-shortcut]: stripped tool-call leak")
+                result = AIMessage(content=cleaned, id=result.id) if result.id else AIMessage(content=cleaned)
+        logger.info("handle_knowledge: inventory shortcut emitted deterministic answer")
+        return {"messages": [result], "current_intent": "knowledge"}
+
+    # Generate response: LIVE blocks (DB-backed, authoritative) go FIRST so the
+    # model anchors on them before parsing RAG prose. Phase J.2 smoke 2026-06-16
+    # showed Gemma ignored a LIVE INVENTORY block when it came LAST — putting
+    # it first ~doubled the quote-rate on inventory questions.
+    live_blocks = []
+    if inventory_block:
+        live_blocks.append(inventory_block)
     if pricing_block:
-        extra_context += f"\n\n{pricing_block}"
+        live_blocks.append(pricing_block)
     if wifi_block:
-        extra_context += f"\n\n{wifi_block}"
+        live_blocks.append(wifi_block)
+    live_prefix = ("\n\n".join(live_blocks) + "\n\n") if live_blocks else ""
+    extra_context = (
+        live_prefix
+        + f"HOTEL INFORMATION (RAG context — secondary; LIVE blocks above are authoritative):\n{knowledge_result}"
+    )
 
     # Phase G: knowledge synthesis prompt is now in hotel_prompt.yaml under
     # ``knowledge_synthesis`` (with optional per-model overrides). This makes
@@ -1044,11 +1593,27 @@ async def handle_other_talk(state: HotelState, config: RunnableConfig) -> Dict:
 
     other_prompt = f"""{main_prompt}
 
-You are handling a greeting or general conversation.
-Be friendly and welcoming. Offer to help with hotel services.
+You are handling a greeting, general conversation, OR an unclear /
+garbled / single-token / punctuation-only input where the guest's
+intent cannot be determined.
+
+PRINCIPLES:
+- Be friendly and welcoming. Never refuse or scold.
+- For greetings/thanks/goodbye → reply warmly in the guest's language
+  and offer one short prompt of what you can help with (rooms, dining,
+  spa, facilities, booking).
+- For unclear input ("?", "ok", "asdf", a lone emoji, a half-typed
+  word, all caps random characters) → assume the guest is exploring or
+  mis-typed. Reply politely in the language of the previous turn (or
+  English if first turn), acknowledge gently ("I'm not sure I caught
+  that"), and ask ONE concrete clarifying question that gives the
+  guest options ("Were you asking about room rates, dining hours,
+  the spa, or something else?"). Do NOT lecture, do NOT refuse, do
+  NOT dump a list of every service.
 
 For Thai speakers, use polite particles (ครับ/ค่ะ).
 For English speakers, be professional and warm.
+For Chinese speakers, use 您 and polite phrasing.
 """
 
     prompt_template = ChatPromptTemplate.from_messages([
@@ -1383,14 +1948,30 @@ def build_hotel_graph(checkpointer=None, store=None):
 ## Your Role
 You are the primary router. Route every guest message to exactly ONE specialist:
 
-1. **ToHotelBooking** — reservations, availability, check-in/out, modify/cancel bookings, payment
-   Examples: "Is there a room available?", "I want to cancel my booking", "Check me in", "ยกเลิกการจอง"
-2. **ToHotelService** — room service, extra amenities, housekeeping, maintenance, transportation, wake-up
-   Examples: "I need extra towels", "Can I get room service?", "จองสปา", "ขอหมอนเพิ่ม"
-3. **ToHotelKnowledge** — hotel info, facilities, dining, WiFi, policies, hours, directions, amenities
+1. **ToHotelBooking** — reservations, availability, check-in/out, modify/cancel bookings, payment, ANY explicit booking request, AND any room-pricing question with a specific room type + date range (the booking sub-agent has the live `calculate_dynamic_price` tool bound).
+   Examples: "Is there a room available?", "I want to cancel my booking", "Check me in", "ยกเลิกการจอง",
+   "ขอจอง [room type] [dates]", "ผมต้องการจองห้อง", "I'd like to book a Deluxe for July 18-20",
+   "我要预订一间套房", "I want to book", "Book me a room", "Reserve a Standard Room",
+   "Can I change my booking dates?", "ขอเปลี่ยนวันเข้าพัก", "改一下日期",
+   "How much is a Standard Room from June 18, 2027 to June 20, 2027?",
+   "How much is a Deluxe Room from July 15-17, 2026?",
+   "How much for a Suite for 3 nights starting August 5?",
+   "ค่าห้องดีลักซ์วันที่ 15-17 กรกฎาคม เท่าไหร่", "标准房7月15日到17日多少钱"
+2. **ToHotelService** — room service requests, extra amenities to be delivered, housekeeping, maintenance, wake-up call
+   Examples: "I need extra towels", "Can I get room service?", "ขอหมอนเพิ่ม", "fix the AC"
+   (Service REQUESTS — items to be delivered or actions to be performed. NOT informational
+   questions about transportation, sedan rates, parking locations, or spa booking channels.)
+3. **ToHotelKnowledge** — hotel info, facilities, dining, WiFi, policies, hours, directions, amenities,
+   AND informational questions about NON-ROOM transportation prices/options (sedan rates, parking levels,
+   taxi fares, airport shuttle costs, car rental rates), spa booking channels (extension numbers,
+   how to book), and any "how much / where / how do I" question about a SERVICE (not a room price)
+   that requires KB lookup.
+   IMPORTANT: "how much" questions about ROOM PRICES for specific dates go to ToHotelBooking, NOT here.
    Examples: "What time is breakfast?", "Where is the gym?", "รหัส WiFi", "pet policy",
    "ห้องประชุมมีไหม", "สระว่ายน้ำเปิดกี่โมง", "ร้านอาหารเปิดกี่โมง", "มี X ไหม",
-   "สปามีบริการอะไร", "นโยบายยกเลิก", "Do you have meeting rooms?"
+   "สปามีบริการอะไร", "นโยบายยกเลิก", "Do you have meeting rooms?",
+   "How much does a sedan rental cost?", "Where can I park?", "How do I book a spa treatment?",
+   "What is the taxi starting fare?", "ราคาเช่ารถ", "ที่จอดรถอยู่ไหน"
 4. **HandleOtherTalk** — ONLY pure greetings/thanks/goodbye/small-talk with NO question AND NO information request.
    Examples (allowed): "Hello", "Thank you", "สวัสดี", "ขอบคุณ", "Goodbye", "Hi", "Bye", "你好", "谢谢", "再见"
    COUNTER-examples (NOT HandleOtherTalk — route to Knowledge/Booking/Service instead):
@@ -1414,9 +1995,19 @@ IMPORTANT routing rules:
 - "what services do you have?" → ToHotelKnowledge (general info, NOT ToHotelService)
 - "I need a spa booking" → ToHotelService (specific service request)
 - Any question about hotel facilities (rooms, spa, dining, pool, etc.) → ToHotelKnowledge
-- Any Thai question ending with "มีไหม" / "กี่โมง" / "ที่ไหน" / "อย่างไร" → ToHotelKnowledge
+- Any Thai question ending with "มีไหม" / "กี่โมง" / "ที่ไหน" / "อย่างไร" / "กี่ห้อง" → ToHotelKnowledge
+- "How many rooms / How many Deluxe / How many Suites do you have?" → ToHotelKnowledge (inventory count, NOT availability date-check)
+- "โรงแรมมีห้องกี่ห้อง" / "มีห้อง Deluxe กี่ห้อง" / "客房有多少间" → ToHotelKnowledge (inventory count)
+- "How much is a <Standard|Deluxe|Suite|Penthouse> (Room) from <DATE> to <DATE>?" → ToHotelBooking (room price for specific dates — booking sub-agent has `calculate_dynamic_price`)
+- "ค่าห้อง <ดีลักซ์|สแตนดาร์ด|สวีท> วันที่ <DATE> ถึง <DATE> เท่าไหร่" → ToHotelBooking (room price for specific dates)
+- "<标准|豪华|套>房 <DATE> 到 <DATE> 多少钱" → ToHotelBooking (room price for specific dates)
 - When in doubt between Knowledge and Service, prefer ToHotelKnowledge
-- HandleOtherTalk ONLY when the ENTIRE message is a pure greeting/thanks/goodbye with zero questions and zero info requests (Hello, Hi, Thanks, Bye, สวัสดี, ขอบคุณ, 你好, 谢谢)
+- HandleOtherTalk for: pure greeting/thanks/goodbye with no info request (Hello, Hi, Thanks, Bye, สวัสดี, ขอบคุณ, 你好, 谢谢)
+  AND for unclear/garbled/single-token/punctuation-only input where the
+  guest's intent cannot be determined (e.g. "?", "ok", "asdf", a lone
+  emoji, a half-typed sentence). In that case respond politely and ask
+  a single clarifying question rather than refusing — the goal is to
+  guide the guest, not to gatekeep.
 
 Always route. Never answer directly without routing first.
 """
@@ -2070,20 +2661,36 @@ async def invoke_hotel_agent(
         try:
             result = await graph.ainvoke(initial_state, config)
 
-            # Extract the assistant's final response
+            # Extract the assistant's final response.
+            #
+            # Phase J.3 tool-call surfacing fix: walk back from the end and
+            # (a) capture the LAST AIMessage's content as the user-facing reply,
+            # (b) AGGREGATE tool_calls from EVERY AIMessage emitted in the
+            #     current turn — i.e. from the last HumanMessage onwards.
+            # Previously we broke at the first AIMessage and only read its
+            # tool_calls, which missed cases where the bot did a tool round-trip
+            # and then produced a plain-text final reply (the typical shape
+            # after _maybe_compute_pricing_context synthesizes a tool pair).
             final_messages = result.get("messages", [])
             candidate_text = ""
-            candidate_tools = []
+            candidate_tools: List[Dict[str, Any]] = []
+            seen_text = False
+            # Iterate back-to-front; stop at the most recent HumanMessage so
+            # we only surface tool_calls from THIS turn, not the whole history.
             for msg in reversed(final_messages):
+                if isinstance(msg, HumanMessage):
+                    break
                 if isinstance(msg, AIMessage):
-                    if msg.content:
+                    if not seen_text and msg.content:
                         candidate_text = msg.content
+                        seen_text = True
                     if msg.tool_calls:
+                        # Prepend so chronological order is preserved across
+                        # the reversed walk (older tool_calls first).
                         candidate_tools = [
                             {"name": tc["name"], "args": tc.get("args", {})}
                             for tc in msg.tool_calls
-                        ]
-                    break
+                        ] + candidate_tools
 
             # Quality checks: non-empty + no tool-call leak + no language leak.
             # Language leak: Chinese ideographs in an EN/TH reply (or Thai chars

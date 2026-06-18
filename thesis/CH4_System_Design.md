@@ -187,17 +187,96 @@ The PostgreSQL schema (`deploy/compose/init-scripts/init-hotel.sql`) defines 10 
 
 ### 4.6.2 Access Control Matrix
 
-[Figure 3.6: Access control matrix]
+[Figure 3.6: Access control matrix — every endpoint × role, mapped from the live `src/hotel_guardrails/server.py` route declarations and the `require_admin` / `get_current_user` FastAPI dependencies]
 
-| Endpoint Category | No Token | User Token | Admin Token |
-|-------------------|----------|------------|-------------|
-| `/chat`, `/rooms`, `/health` | 200 | 200 | 200 |
-| `/auth/me` | 401 | 200 | 200 |
-| `/admin/*` (11 endpoints) | 401 | 403 | 200 |
-| `/dashboard/*` (5 endpoints) | 401 | 403 | 200 |
-| `PUT /settings/llm` | 401 | 403 | 200 |
+The system exposes **51 endpoints** across 13 tag groups. Each endpoint is classified into one of three authorization tiers based on the FastAPI dependency declared in its handler signature:
 
-This design ensures that **guest chat flow requires no authentication** (email-only identification), while all hotel staff operations are protected behind admin JWT.
+- **Public** (no dependency): 26 endpoints — guest-facing chat, browse, and self-service booking flows
+- **Logged-in user** (`Depends(get_current_user)`): 3 endpoints — registered-account self-management
+- **Admin** (`Depends(require_admin)`): 22 endpoints — all `/admin/*`, all `/dashboard/*`, plus 3 control endpoints
+
+Each cell shows the HTTP status returned for that role × endpoint combination. `200` means access granted; `401` means the request was rejected for missing/invalid token; `403` means the token was valid but the role was insufficient.
+
+**Tier 1 — Public endpoints (26)** — accessible to anonymous guests; no `Authorization` header required:
+
+| Method | Endpoint | No Token | User Token | Admin Token |
+|--------|----------|:--------:|:----------:|:-----------:|
+| GET | `/` | 200 | 200 | 200 |
+| GET | `/healthz` | 200 | 200 | 200 |
+| GET | `/health` | 200 | 200 | 200 |
+| POST | `/chat` | 200 | 200 | 200 |
+| POST | `/chat/stream` | 200 | 200 | 200 |
+| POST | `/tools/book` | 200 | 200 | 200 |
+| GET | `/rooms` | 200 | 200 | 200 |
+| GET | `/rooms/availability` | 200 | 200 | 200 |
+| GET | `/rooms/{room_id}` | 200 | 200 | 200 |
+| GET | `/bookings` | 200 | 200 | 200 |
+| GET | `/bookings/{reservation_id}` | 200 | 200 | 200 |
+| PATCH | `/bookings/{reservation_id}` | 200 | 200 | 200 |
+| POST | `/guests` | 200 | 200 | 200 |
+| GET | `/guests/{email}` | 200 | 200 | 200 |
+| PATCH | `/guests/{guest_id}` | 200 | 200 | 200 |
+| POST | `/sessions` | 200 | 200 | 200 |
+| GET | `/sessions/{session_id}` | 200 | 200 | 200 |
+| DELETE | `/sessions/{session_id}` | 200 | 200 | 200 |
+| POST | `/feedback` | 200 | 200 | 200 |
+| GET | `/feedback/stats` | 200 | 200 | 200 |
+| GET | `/payment/{token}` | 200 | 200 | 200 |
+| POST | `/payment/{token}/complete` | 200 | 200 | 200 |
+| GET | `/settings/llm` | 200 | 200 | 200 |
+| GET | `/settings/models` | 200 | 200 | 200 |
+| POST | `/auth/register` | 200 | 200 | 200 |
+| POST | `/auth/login` | 200 | 200 | 200 |
+
+**Tier 2 — Logged-in user endpoints (3)** — require a valid JWT of any role:
+
+| Method | Endpoint | No Token | User Token | Admin Token |
+|--------|----------|:--------:|:----------:|:-----------:|
+| GET | `/auth/me` | 401 | 200 | 200 |
+| PATCH | `/auth/me/password` | 401 | 200 | 200 |
+| POST | `/auth/logout` | 401 | 200 | 200 |
+
+**Tier 3 — Admin-only endpoints (22)** — require JWT with `role='admin'`:
+
+| Method | Endpoint | No Token | User Token | Admin Token |
+|--------|----------|:--------:|:----------:|:-----------:|
+| GET | `/auth/users` | 401 | 403 | 200 |
+| POST | `/auth/admin/register` | 401 | 403 | 200 |
+| PUT | `/settings/llm` | 401 | 403 | 200 |
+| PUT | `/admin/rooms/{room_id}/status` | 401 | 403 | 200 |
+| PUT | `/admin/bookings/{reservation_id}/status` | 401 | 403 | 200 |
+| POST | `/admin/chat/override` | 401 | 403 | 200 |
+| POST | `/admin/sessions/{session_id}/takeover` | 401 | 403 | 200 |
+| POST | `/admin/sessions/{session_id}/release` | 401 | 403 | 200 |
+| GET | `/admin/sessions` | 401 | 403 | 200 |
+| GET | `/admin/sessions/{session_id}/messages` | 401 | 403 | 200 |
+| GET | `/admin/sessions/{session_id}/states` | 401 | 403 | 200 |
+| POST | `/admin/sessions/{session_id}/rollback` | 401 | 403 | 200 |
+| POST | `/admin/sessions/{session_id}/replay` | 401 | 403 | 200 |
+| GET | `/admin/audit` | 401 | 403 | 200 |
+| GET | `/admin/audit/stats` | 401 | 403 | 200 |
+| GET | `/admin/escalations` | 401 | 403 | 200 |
+| GET | `/admin/metrics/chat` | 401 | 403 | 200 |
+| GET | `/dashboard/stats` | 401 | 403 | 200 |
+| GET | `/dashboard/bookings/recent` | 401 | 403 | 200 |
+| GET | `/dashboard/sessions` | 401 | 403 | 200 |
+| GET | `/dashboard/rooms` | 401 | 403 | 200 |
+| GET | `/dashboard/revenue` | 401 | 403 | 200 |
+
+**Design rationale.** Authentication is intentionally **decoupled from identification**. The guest-facing chat path uses *email* as the primary identifier (provided inline through natural-language booking, e.g. *"my email is `alice@example.com`"*), allowing first-time guests to reserve a room without creating an account. Account creation via `/auth/register` is optional and unlocks Tier 2 self-management (`/auth/me`, change password, logout-with-token-revocation) but does **not** unlock any booking capability the anonymous path doesn't already provide.
+
+All 22 staff-side operations — including the privacy-sensitive ones (`/admin/sessions/{id}/messages` reading guest conversation history, `/admin/audit` viewing every system mutation, `/admin/sessions/{id}/takeover` interrupting a live conversation) — are uniformly gated by `Depends(require_admin)`, which: (1) verifies the JWT signature, (2) checks the `jti` against the in-memory token blocklist, (3) validates `iat ≥ password_changed_at` to invalidate stale tokens after password change, and (4) asserts `role='admin'` from the token claims. A user-role JWT presenting any admin endpoint receives `403 Forbidden` rather than `401 Unauthorized` — making it observable in audit logs that the credential was valid but insufficient (e.g. compromised user account being used to probe admin surfaces).
+
+**Coverage summary**:
+
+| Tier | Count | % of total | Validation method |
+|------|------:|----------:|-------------------|
+| Public (no auth) | 26 | 51% | — |
+| User (any logged-in) | 3 | 6% | `Depends(get_current_user)` |
+| Admin only | 22 | 43% | `Depends(require_admin)` |
+| **Total** | **51** | **100%** | — |
+
+This matrix is verified by the 21-case integration test suite documented in Appendix A (`AP_A_Test_Results.md`), which probes every admin/dashboard endpoint with each of the three role classes and asserts the expected HTTP status.
 
 ## 4.7 Frontend Design
 
@@ -231,3 +310,69 @@ services:
   hotel-qdrant:   # Vector store, hotel_knowledge collection
   hotel-api:      # FastAPI, all env vars, depends_on all above
 ```
+
+## 4.9 Production LLM transition — Qwen3.5-Opus-9B → Gemma 4 12B Q8_0
+
+### 4.9.1 Original choice and what it delivered
+
+The first production-ready local backend was `fredrezones55/qwen3.5-opus:9b` (Q5_K_M, 6.5 GB weights) served through Ollama. The 9B was selected because: (a) it is Apache-2.0, (b) Qwen's trilingual training data delivered usable EN / TH / CN coverage out-of-the-box, (c) at Q5_K_M it fits two concurrent inference slots on the RTX 5080 (16 GB) alongside the `bge-reranker-v2-m3` cross-encoder (~1.3 GB), (d) it scored 23/25 = 92 % on the original 25-case golden eval (§6.2.1) against 25/25 = 100 % for cloud Qwen3-max, and (e) warm latency held around 9 s per chat. The 9B carried the project through Phase G (per-model prompt versioning), the dual-plane memory rollout (PostgresSaver + PostgresStore, 27/27 memory test pass), and the trilingual-policy + Chinese-leak guard work that closed §5.14.7.
+
+### 4.9.2 Why the swap
+
+Three convergent pressures emerged during Phase H pre-production stress testing on the strategic backtest dataset (313–502 cases per language stratum, §6.5.4):
+
+1. **TH politeness-particle discipline.** Roughly 20–25 % of TH replies under the 9B mixed the masculine ครับ and feminine ค่ะ particles within a single response. The bot's persona policy fixes the speaker as female (ค่ะ/คะ), so any ครับ leak is a defect under the `particle_mismatch` defect class.
+2. **Multi-intent collapse.** On Thai turns combining two sub-questions in one utterance — typically "WiFi password + breakfast time" or "pool hours + gym floor" — the 9B dropped the second sub-question ~30 % of the time, even with explicit Phase H.B multi-intent decomposition enabled.
+3. **Pronoun resolution across booking turns.** On the multi-turn comparison case `mt_en_room_type_pivot` ("Tell me about the Deluxe Room." → "How is it different from the Suite?") the 9B lost the Suite anaphora roughly 40 % of the time and asked the guest to clarify which room they meant.
+
+Gemma 4 12B IT was Google's freshly released open-weight instruction-tuned model at that point. The internal hypothesis: the 12B parameter count plus Google's instruction-tuning recipe would close the multi-intent and pronoun-resolution gaps without a corresponding loss of TH/CN politeness. Q8_0 was selected over the Q5/Q4 alternatives because Thai instruction-following degraded measurably at lower quants — a controlled 5-case TH-particle smoke at Q5 showed 4/5 replies mixing ครับ/ค่ะ, while the same prompts at Q8 showed 0/5 mixing.
+
+### 4.9.3 The architectural compromise
+
+Q8_0 at 12 B parameters occupies ~12 GB on disk. With the KV cache loaded, peak VRAM consumption is ~15.8 GB — leaving ~200 MB of headroom on the 16 GB RTX 5080 alongside `bge-reranker-v2-m3`. Two consequences fall out of this budget:
+
+- **`OLLAMA_NUM_PARALLEL` drops from 2 to 1.** The 9B Q5 had supported two concurrent inference slots (~5 s warm each, alone; ~10 s each, with both busy). Under the 12B Q8 a second concurrent inference exceeds the VRAM budget and forces layer offloading to CPU, slowing every active request by an order of magnitude. The compromise is to serialise: one inference at a time, longer per-request latency.
+- **Eval driver concurrency pins to 1.** The `backtest_runner.py --max-chat-parallel` flag was previously defaulted to 2 for localhost endpoints. Phase I.B (§6.5.8.5) documented the queue-artifact regression this caused once the model swap forced `MAX_CONCURRENT_LLM_CALLS=1`: every second concurrent eval `/chat` waited 45 s on the FastAPI semaphore, timed out, and was recorded as `empty_response`. The fix pinned `--max-chat-parallel=1` for the local stack and raised `LLM_QUEUE_TIMEOUT_SEC` from 30 to 240 defensively.
+- **`OLLAMA_FLASH_ATTENTION=1` stays on but Q8 KV-cache quantisation stays off.** Flash attention itself accelerates attention compute losslessly. KV-cache quantisation at q8_0 was tested but triggered the same CPU-offload path as a second concurrent inference, slowing the model ~10× — disabled (`OLLAMA_KV_CACHE_TYPE` unset).
+
+### 4.9.4 Canary smoke verification
+
+The model swap landed on 2026-06-12 with a 14-question canary smoke that exercised the highest-traffic intents — bilingual greeting, room availability, dynamic pricing, EN/TH/CN language match, refusal patterns, and basic memory recall. The result was **14/14 effective pass** on `gemma4:12b-it-q8_0` (one item required a one-line prompt tweak; the underlying behaviour was correct). The 14/14 figure is recorded verbatim in `.env` lines 11-16 and gated promotion of the swap to the production `OLLAMA_MODEL` env value.
+
+### 4.9.5 Quantitative comparison
+
+| Metric                                                           | Qwen3.5-Opus-9B (Q5_K_M)                  | Gemma 4 12B IT (Q8_0)                   |
+| ---------------------------------------------------------------- | ----------------------------------------- | --------------------------------------- |
+| Weights size on disk                                             | ~6.5 GB                                   | ~12 GB                                  |
+| Peak VRAM (incl. KV cache + bge-reranker)                        | ~10 GB                                    | ~15.8 GB                                |
+| `OLLAMA_NUM_PARALLEL` viable                                   | 2                                         | 1                                       |
+| Warm latency (per-chat, EN single-intent)                        | ~5 s alone, ~10 s under 2-way concurrency | ~7–15 s (single slot)                  |
+| Eval aggregate, 25-case golden (CH6 §6.2)                       | 92 % (23/25)                             | not re-run (suite superseded)           |
+| Eval aggregate, 354-case Phase-J-aligned suite                   | not back-ported                           | **89.83 %** (post-J.3 replay)     |
+| TH particle discipline (ครับ/ค่ะ mixing rate, manual sample) | ~20–25 % of TH replies                   | 0 % in 70-turn validation                |
+| Multi-intent (WiFi+breakfast) drop rate                          | ~30 %                                     | ~12 % (still imperfect, Gemma floor)     |
+| Tool-call discipline (`calculate_dynamic_price`)               | high false-emission (calls when not asked)| high false-omission (skips when needed) |
+
+### 4.9.6 Why "better" is nuanced
+
+Gemma 4 12B Q8_0 is decisively better on TH/CN politeness, instruction-following depth, multi-intent retention, and adversarial refusal phrasing. It is decisively worse on tool-call discipline: where the 9B over-invoked `calculate_dynamic_price` (a "false emission" defect class) the 12B sometimes computes the right per-night and total prices entirely in natural language without emitting the tool call at all — a "false omission" the eval rubric counts as `tool_not_called`. Phase J.4 (§6.5.11) is the engineering response to this regression: a deterministic pricing shortcut that synthesises the missing tool envelope outside the LLM, so the bot's natural-language answer surfaces alongside a real `calculate_dynamic_price` invocation.
+
+The net aggregate is still well above the Phase F variance baseline (80.83 % on the 9B + iter3 retrieval, §6.5.5d) because the politeness and multi-intent gains dominate the tool-call regression in the case mix. Where the 9B was strong (single-intent EN factuals), the 12B is equally strong. Where the 9B was weak (TH multi-intent, pronoun resolution, refusal phrasing), the 12B is substantially better.
+
+### 4.9.7 Production migration steps
+
+The cutover required no application code changes — only environment knobs and one operational change in the eval driver:
+
+```bash
+# .env (production)
+OLLAMA_MODEL=gemma4:12b-it-q8_0
+OLLAMA_NUM_PARALLEL=1            # was 2 under the 9B
+OLLAMA_MAX_LOADED_MODELS=1
+OLLAMA_KEEP_ALIVE=15m
+OLLAMA_FLASH_ATTENTION=1         # losslessly accelerates attention
+# KV cache q8 quantisation NOT set (causes layer offload to CPU)
+MAX_CONCURRENT_LLM_CALLS=1       # must equal OLLAMA_NUM_PARALLEL
+LLM_QUEUE_TIMEOUT_SEC=240        # was 30; raised after Phase I.B
+```
+
+Runtime hot-swap remains available — operators can switch back to the 9B Q5_K_M (or to cloud Qwen3-max via OpenRouter) through `PUT /settings/llm` without restarting the container. The 9B image stays in the Ollama cache for emergency rollback. The `bge-reranker-v2-m3` reranker is preserved across both models; its CPU-side fallback path is exercised under load testing in §6.4.3.

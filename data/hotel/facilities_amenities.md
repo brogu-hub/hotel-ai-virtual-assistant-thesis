@@ -133,14 +133,7 @@ WiFi ความเร็วสูงพรีเมียม: 500 Mbps รา�
 
 บริการ: จองทัวร์ จองร้านอาหาร รถรับส่งสนามบิน ซื้อตั๋ว ส่งดอกไม้ ซักรีด แลกเงิน ไปรษณีย์
 
-## Parking / ที่จอดรถ
-
-**Location:** Basement Level 1-3
-**Hours:** 24 hours
-**Price:** 100 THB per entry for non-guests, complimentary for in-house guests
-**Valet Parking:** Available, 200 THB
-
-ที่ตั้ง: ชั้นใต้ดิน 1-3
-เวลา: 24 ชั่วโมง
-ราคา: 100 บาท/ครั้ง สำหรับบุคคลภายนอก, ฟรีสำหรับผู้เข้าพัก
-Valet: 200 บาท
+<!-- Parking section removed 2026-06-17: was duplicating transportation.md
+     with conflicting numbers (Basement Level 1-3 vs B1/B2/B3, 100 THB
+     non-guest fee here vs Free for guests there, 200 vs 500 THB valet).
+     Canonical parking info lives in transportation.md, DB-aligned. -->

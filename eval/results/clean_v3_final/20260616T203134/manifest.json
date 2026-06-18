@@ -1,0 +1,24 @@
+{
+  "tag": "clean_v3_final",
+  "ts": "20260616T203134",
+  "endpoint": "http://localhost:8088",
+  "judge_model": "deepseek/deepseek-chat-v3.1",
+  "chat_cache": {
+    "enabled": false,
+    "chat_sha": "001f995cc4ce",
+    "corpus_sha": "cf18cabddf49",
+    "version": ""
+  },
+  "max_chat_parallel": 1,
+  "started_at": "2026-06-16T20:31:34+00:00",
+  "workflow_sha": "52d86b7",
+  "corpus_version": "qdrant_hotel_knowledge_unknown_20260616T203134",
+  "embedding_model": "qwen/qwen3-embedding-8b",
+  "llm_model": "gemma4:12b-it-q8_0",
+  "dataset_version": "sha256_92761385c579",
+  "stack_query_rewrite": "true",
+  "stack_hybrid": "true",
+  "stack_reranker": "qwen",
+  "stack_prompt_path": "",
+  "stack_num_docs_per_subq": "5"
+}
