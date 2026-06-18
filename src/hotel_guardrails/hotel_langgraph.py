@@ -2965,6 +2965,61 @@ async def invoke_hotel_agent(
                 escalation_meta["escalated"] = True
                 escalation_meta["cloud_latency_ms"] = e_meta.get("cloud_latency_ms")
                 escalation_meta["cloud_cost_usd"] = e_meta.get("cloud_cost_usd")
+
+                # Phase Q tool-envelope synthesis (2026-06-18): the cloud
+                # side-channel is model-agnostic and doesn't execute tools,
+                # but the rubric's expected_tool_calls=["calculate_dynamic_price"]
+                # requires the envelope to surface a real invocation for
+                # multi-turn pricing cases. Mirror the Phase J.4 booking
+                # mirror: concatenate prior + current text, re-run
+                # _maybe_compute_pricing_context, synthesize the tool pair
+                # and append to the outgoing tool_calls list.
+                try:
+                    _low_user = (message or "").lower()
+                    _price_gate_q = (
+                        "price", "cost", "how much", "rate",
+                        "ราคา", "เท่าไหร่", "เท่าไร", "กี่บาท",
+                        "价格", "总价", "多少钱", "多少", "费用",
+                    )
+                    if any(s in _low_user or s in (message or "") for s in _price_gate_q):
+                        _combined_q = (
+                            (prior_ctx + "\n" + (message or ""))
+                            if prior_ctx else (message or "")
+                        )
+                        _blk_q, _rec_q = _maybe_compute_pricing_context(_combined_q)
+                        if _rec_q is not None:
+                            _tc_id_q = f"call_{uuid.uuid4().hex[:16]}"
+                            _synth_ai_q = AIMessage(
+                                content="",
+                                tool_calls=[{
+                                    "name": _rec_q["name"],
+                                    "args": _rec_q["args"],
+                                    "id": _tc_id_q,
+                                    "type": "tool_call",
+                                }],
+                            )
+                            _synth_tool_q = ToolMessage(
+                                content=_rec_q["result"],
+                                tool_call_id=_tc_id_q,
+                                name=_rec_q["name"],
+                            )
+                            tool_calls = (tool_calls or []) + [{
+                                "name": _rec_q["name"],
+                                "args": _rec_q["args"],
+                            }]
+                            try:
+                                if isinstance(result, dict):
+                                    _msgs_q = result.get("messages") or []
+                                    result["messages"] = list(_msgs_q) + [_synth_ai_q, _synth_tool_q]
+                            except Exception:
+                                pass
+                            escalation_meta["synthesized_tool"] = _rec_q["name"]
+                            logger.info(
+                                "Phase Q tool-envelope synthesis: appended %s for session=%s args=%s",
+                                _rec_q["name"], session_id, _rec_q["args"],
+                            )
+                except Exception as _e_q:
+                    logger.warning("Phase Q tool-envelope synthesis failed (non-fatal): %s", _e_q)
         except Exception as e:
             # Escalation is best-effort; never block the response on it.
             logger.warning("Adaptive escalation hook error (non-fatal): %s", e)

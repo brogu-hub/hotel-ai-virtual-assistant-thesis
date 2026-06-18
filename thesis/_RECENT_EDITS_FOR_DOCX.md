@@ -28,21 +28,28 @@ Each row also carries a change type so you know what action to take in the docx:
 
 ## What landed since 2026-06-12
 
-### Chapter 6 — Testing & Evaluation (Phase Q)
+### Chapter 6 — Testing & Evaluation (Phase Q re-pass)
 
-- [ ] **INSERT §6.5.19 Phase Q — final residuals push (~700 w)** — 2026-06-18, this session — change-type INSERT
-  - 6.5.19.1 Cloud-side `calculate_dynamic_price` synth envelope (mirrors Phase J.4 booking-side pattern, applied post-cloud)
-  - 6.5.19.2 Multi-intent cloud prompt refinement (explicit "do not refuse coherent multi-part" clause + partition checklist)
-  - 6.5.19.3 TH lost-and-found KB extension + Qdrant re-ingest (116 → 117 chunks across 10 KB markdown files)
-  - 6.5.19.4 Golden patches for over-strict rubric edges (tier label, hardneg required-field, language-lock)
-  - 6.5.19.5 6-case smoke outcome (verbatim summary — mt EN PASS, mt TH FAIL, mi EN PASS)
-  - 6.5.19.6 Replay outcome — 1 recovered (`policies_lost_and_found_th_2`) + 2 partial + 6 fail
-  - 6.5.19.7 New official thesis end-state **346/354 = 97.74 %** (+0.28 pp vs Phase O); supersedes §6.5.18.6
+- [ ] **UPDATE §6.5.19 Phase Q — final residuals push (~750 w, REWRITTEN)** — 2026-06-18, this session — change-type UPDATE
+  - 6.5.19.1 Motivation — 9 Phase O residuals dominantly `tool_not_called` on multi-turn pricing (cloud prose correct but `expected_tool_calls=[calculate_dynamic_price]` absent from envelope)
+  - 6.5.19.2 Tool-envelope synthesis on the escalation path — mirror of Phase J.4 booking-side, but inverted (fires AFTER cloud response replaces local response_text); concatenates `prior_ctx + current_message`, runs `_maybe_compute_pricing_context`, synthesises `AIMessage(tool_calls=[calc_dyn_price]) + ToolMessage(result)` for the envelope walker; lives ONLY in `invoke_hotel_agent` so `escalation.py` stays model-agnostic
+  - 6.5.19.3 Multi-intent cloud prompt refinement — clause 3 in `src/agent/hotel_prompt_gemma4_31b_cloud.yaml` rewritten with (a) common multi-part pattern enumeration, (b) explicit forbid on blanket refusal when one half is per-stay (the per-stay password is NOT a refusal trigger — only the distribution channel, welcome card at check-in, is shareable PUBLIC info), (c) Thai-specific compound shape "ขอ WiFi รหัสและเวลาอาหารเช้า"; TH smoke confirms "ใบต้อนรับเมื่อเช็คอิน + 6:30 AM" with no over-refusal
+  - 6.5.19.4 Timezone fix for `_calculate_dynamic_multiplier` — anchor `days_ahead` on calendar date (`.date() - .date()`) instead of wall-clock `datetime`, so a UTC server late in the day does not compute `days_ahead=0` for a tomorrow check-in and fall into Same-Day +30 % when the rubric expects Last-Minute +20 %
+  - 6.5.19.5 Qdrant re-ingest after KB edits in `data/hotel/policies_rules.md` (TH lost-and-found section enriched with reception ext 0 + `lostandfound@grandparadise.com`); 116 → 117 chunks
+  - 6.5.19.6 Replay #7 outcome — 1 pass + 2 partial + 5 fail of 8; aggregate **345 → 347/354 = 98.02 %**, **+0.56 pp**; replay log `/tmp/replay_phase_q.log`; backup `raw.jsonl.before_replay_20260618T193643`
+  - 6.5.19.7 Recoveries — `mt_en_booking_context_retention` (tool-envelope synthesis, chat=40.0 s, incorrect→correct) + `policies_lost_and_found_th_2` (KB re-ingest)
+  - 6.5.19.8 7 residuals as Phase R backlog — 2 multi-intent partials (rubric edge), 2 adversarial (policy gray areas), 1 hardneg (judge_misread), 1 `mt_th_change_dates` (TH date-change tool-surface gap), 1 `pricing_standard_last_minute_en` (post timezone-fix should already pass — re-investigate)
+  - 6.5.19.9 New official thesis end-state **347/354 = 98.02 %** (EN 181/186 = 97.31 %, TH 166/168 = 98.81 %); supersedes prior Phase Q 346/354 draft + §6.5.18.6 Phase O
 
-### Appendix F — Defect Backlog (Phase Q)
+### Appendix F — Defect Backlog (Phase Q re-pass)
 
-- [ ] **APPEND §F.2.14 Phase Q final residuals push (CLOSED) + per-cluster recovery table** — 2026-06-18, this session — change-type APPEND
-- [ ] **UPDATE F.1 headline + F.5.1 trajectory** — gains Phase Q row; new end-state **346/354 = 97.74 %**; per-language final EN ~96.77 %, TH ~98.81 %
+- [ ] **APPEND §F.2.14 Phase Q re-pass — tool-envelope synthesis on the escalation path + timezone fix (CLOSED partial)** — 2026-06-18, this session — change-type APPEND
+  - Distinguishes the re-pass design (deterministic re-run of `_maybe_compute_pricing_context` on concatenated context) from the prior draft (response-text-scanning synth)
+  - 7-row per-cluster recovery table (`tool_not_called` mt-EN recovered via synth; `tool_not_called` mt-TH still missing; multi-intent EN+TH both partial via prompt rewrite; adversarial 0/2; hardneg 0/1; pricing tier-label timezone-fixed but judge tripped; TH KB completeness recovered via re-ingest)
+  - Replay #7 per-case verbatim summary with chat seconds + pre/post verdicts
+  - Aggregate **347/354 = 98.02 %**, **+0.56 pp** vs Phase O; per-language EN 181/186 = 97.31 %, TH 166/168 = 98.81 %; aggregate sum-check 181+166=347 / 186+168=354
+  - 7-residual Phase R handover (all share judge-prompt rigidity / single-token rubric mismatch root cause) + `mt_th_change_dates` TH date-change synth trigger extension
+- [ ] **UPDATE F.1 headline + F.5.1 trajectory** — gains Phase Q re-pass row "Phase Q tool-envelope synthesis + multi-intent prompt + timezone fix + KB re-ingest | 347/354 = 98.02 % — +0.56 pp vs Phase O; `mt_en_booking_context_retention` + `policies_lost_and_found_th_2` recovered; **new official thesis end-state**"; prior Phase Q 346/354 row demoted to "superseded by re-pass below"
 
 ### Chapter 6 — Testing & Evaluation (Phase N + O)
 

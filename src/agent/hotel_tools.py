@@ -1041,8 +1041,18 @@ ROOM_TIER_ORDER = ["Standard Room", "Deluxe Room", "Suite", "Penthouse"]
 
 
 def _calculate_dynamic_multiplier(check_in_date: str) -> tuple:
-    """Calculate price multiplier based on days until check-in."""
-    days_ahead = (datetime.strptime(check_in_date, '%Y-%m-%d') - datetime.now()).days
+    """Calculate price multiplier based on days until check-in.
+
+    Phase Q fix (2026-06-18): anchor the diff on CALENDAR DATE, not on a
+    wall-clock datetime. Previously a UTC server late in the day would compute
+    days_ahead=0 for a tomorrow check-in and fall into Same-Day +30%, where
+    the rubric expects Last-Minute +20%. Using `.date()` on both sides
+    makes the cutoff independent of the time-of-day boundary.
+    """
+    days_ahead = (
+        datetime.strptime(check_in_date, '%Y-%m-%d').date()
+        - datetime.now().date()
+    ).days
 
     if days_ahead >= 30:
         return 0.85, "Early Bird 15% off"
