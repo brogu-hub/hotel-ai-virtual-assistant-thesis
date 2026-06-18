@@ -1446,6 +1446,44 @@ async def handle_knowledge(state: HotelState, config: RunnableConfig) -> Dict:
     # pair into the return so the envelope walker surfaces the pricing tool
     # invocation.
     pricing_block, pricing_tool_record = _maybe_compute_pricing_context(last_user_message)
+
+    # Phase M multi-turn pricing fallback (2026-06-18) — port of the
+    # handle_booking Phase J.4 fallback (L561-585). The router sends a bare
+    # context-free follow-up like "How much will it cost?" / "ราคาเท่าไหร่คะ" /
+    # "总价多少" to ToHotelKnowledge (rule at L2004 "When in doubt between
+    # Knowledge and Service, prefer ToHotelKnowledge"), so handle_booking's
+    # multi-turn fallback never fires for these. The room type + dates live
+    # in turn 0 of the thread; concatenate the last up-to-2 prior HumanMessage
+    # texts with the current text and re-run the helper. The price-signal
+    # gate matches _maybe_compute_pricing_context's own list so a neutral
+    # follow-up ("tell me about the room") is never priced.
+    if pricing_tool_record is None and last_user_message:
+        _low = last_user_message.lower()
+        _price_gate = (
+            "price", "cost", "how much", "rate", "ราคา", "เท่าไหร่", "เท่าไร",
+            "กี่บาท", "价格", "总价", "多少钱", "多少", "费用",
+        )
+        if any(s in _low or s in last_user_message for s in _price_gate):
+            _prior_human: list = []
+            for _msg in reversed(state.get("messages", []) or []):
+                if isinstance(_msg, HumanMessage):
+                    _txt = _msg.content or ""
+                    if _txt == last_user_message and not _prior_human:
+                        continue
+                    if _txt:
+                        _prior_human.append(_txt)
+                    if len(_prior_human) >= 2:
+                        break
+            if _prior_human:
+                _combined = "\n".join(reversed(_prior_human)) + "\n" + last_user_message
+                _block2, _rec2 = _maybe_compute_pricing_context(_combined)
+                if _rec2 is not None:
+                    pricing_block, pricing_tool_record = _block2, _rec2
+                    logger.info(
+                        "handle_knowledge: Phase M multi-turn pricing fallback fired "
+                        f"(combined {len(_prior_human)} prior human turn(s))"
+                    )
+
     # WiFi disclosure (Phase H.D): per-stay password is shared only with
     # checked-in guests; anonymous askers get the KB policy and a polite decline.
     wifi_block = _maybe_compute_wifi_context(
@@ -1506,6 +1544,83 @@ async def handle_knowledge(state: HotelState, config: RunnableConfig) -> Dict:
                 result = AIMessage(content=cleaned, id=result.id) if result.id else AIMessage(content=cleaned)
         logger.info("handle_knowledge: inventory shortcut emitted deterministic answer")
         return {"messages": [result], "current_intent": "knowledge"}
+
+    # Phase M (knowledge mirror): deterministic pricing shortcut. Mirrors the
+    # Phase L booking shortcut (handle_booking L601-671). When the multi-turn
+    # fallback above promotes pricing_tool_record from None to a real record,
+    # the RAG LLM still won't synthesize a calculate_dynamic_price tool_call
+    # (it's a knowledge synthesis path, not tool-bound). Emit a deterministic
+    # AIMessage(tool_calls=[...]) + ToolMessage pair so actual_tool_calls
+    # is non-empty in the envelope, then a polished language reply. This
+    # fixes the mt_en_booking_context_retention class of failures where the
+    # router sends "How much will it cost?" to handle_knowledge.
+    if pricing_tool_record and last_user_message:
+        if any('฀' <= c <= '๿' for c in last_user_message):
+            lang_hint = "Thai (Thai script, use ค่ะ/คะ particles)"
+        elif any('一' <= c <= '鿿' for c in last_user_message):
+            lang_hint = "Mandarin Chinese (Simplified, address guest as 您)"
+        else:
+            lang_hint = "English"
+
+        polish_prompt = ChatPromptTemplate.from_messages([
+            ("system",
+             f"You are a hotel concierge at The Grand Horizon Hotel. "
+             f"Translate the LIVE PRICING result below into a polite 2-3 "
+             f"sentence reply in {lang_hint}.\n"
+             "RULES:\n"
+             "- Quote every number VERBATIM (per-night rate, nights, total, "
+             "any discount or surcharge). Do not round, do not omit.\n"
+             "- Identify which rate tier was applied (Early Bird / Standard / "
+             "Last-Minute) using ONLY what the tool output says. If the tool "
+             "output does not name a tier, do not invent one.\n"
+             "- Do NOT write 'I don't have', 'let me check', 'I apologize, "
+             "but', 'ไม่มีข้อมูล', or any deferral phrase. The numbers ARE "
+             "below.\n"
+             "- Do NOT quote the base rate-card price from memory. Use ONLY "
+             "the LIVE PRICING block.\n"
+             "- Do NOT quote the base rate-card price (e.g. 'base price of X "
+             "THB', 'rate-card price of X THB', 'usual rate of X THB'). Quote "
+             "ONLY the final per-night rate (after any discount or surcharge) "
+             "and the nights x rate total.\n"
+             "- Do NOT show the discount multiplier (e.g. '(x0.85)', 'x1.20', "
+             "'x 0.85', 'multiplied by 0.85'). Just name the tier (Early Bird "
+             "/ Standard / Last-Minute) and the final numbers.\n\n"
+             f"LIVE PRICING (authoritative, from calculate_dynamic_price):\n"
+             f"{pricing_tool_record['result']}"),
+            ("human", last_user_message),
+        ])
+        polish_llm_settings = config.get('configurable', {}).get('llm_settings', {})
+        polish_llm = get_llm(
+            temperature=polish_llm_settings.get('temperature', 0.1),
+            max_tokens=polish_llm_settings.get('max_tokens', 256),
+        )
+        polished = await (polish_prompt | polish_llm).ainvoke(state, config)
+        if isinstance(polished, AIMessage) and isinstance(polished.content, str):
+            cleaned = strip_tool_call_codeblocks(polished.content)
+            if cleaned != polished.content:
+                logger.info("handle_knowledge[pricing-shortcut]: stripped tool-call leak")
+                polished = AIMessage(content=cleaned, id=polished.id) if polished.id else AIMessage(content=cleaned)
+
+        tc_id = f"call_{uuid.uuid4().hex[:16]}"
+        synth_ai = AIMessage(
+            content="",
+            tool_calls=[{
+                "name": pricing_tool_record["name"],
+                "args": pricing_tool_record["args"],
+                "id": tc_id,
+                "type": "tool_call",
+            }],
+        )
+        synth_tool = ToolMessage(
+            content=pricing_tool_record["result"],
+            tool_call_id=tc_id,
+            name=pricing_tool_record["name"],
+        )
+        logger.info("handle_knowledge: Phase M pricing shortcut emitted deterministic answer")
+        return {
+            "messages": [synth_ai, synth_tool, polished],
+            "current_intent": "knowledge",
+        }
 
     # Generate response: LIVE blocks (DB-backed, authoritative) go FIRST so the
     # model anchors on them before parsing RAG prose. Phase J.2 smoke 2026-06-16
