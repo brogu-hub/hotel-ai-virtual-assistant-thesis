@@ -28,6 +28,47 @@ Each row also carries a change type so you know what action to take in the docx:
 
 ## What landed since 2026-06-12
 
+### Chapter 6 — Testing & Evaluation (ROOT REWRITE Phase S)
+
+- [ ] **REPLACE §6.1 Evaluation Approach (~500 w)** — 2026-06-19 — change-type REPLACE — was old 25-case Evaluation Methodology
+  - Why a strategic backtest vs unit/integration tests
+  - LLM-as-judge selection (DeepSeek Chat v3.1, vendor-different from chatbot)
+  - What the bot is judged on per case (6 dimensions)
+  - What changed from earlier 25-case Cohen's-kappa evaluation (no longer canonical)
+- [ ] **REPLACE §6.2 Golden Dataset (~700 w)** — 2026-06-19 — change-type REPLACE — was old 25-case Golden Dataset description + Model Evaluation Results
+  - Coverage matrix 354-case (10 domains × 2 langs × 6 complexities)
+  - Stratified sampling protocol
+  - Special categories (hard_neg, canaries, adversarial, multi_intent, multi_turn, quantity_inventory)
+  - Contamination tagging
+  - Versioning (6 required pins)
+- [ ] **REPLACE §6.3 Rubric Design (~600 w)** — 2026-06-19 — change-type REPLACE
+  - 8 rubric types
+  - Judge prompt skeleton
+  - Pre-judge short-circuit (deterministic gates)
+  - 15-tag defect taxonomy
+  - Verdict thresholds
+  - Rubric stability gate
+- [ ] **REPLACE §6.4 Eval Pipeline (~600 w)** — 2026-06-19 — change-type REPLACE
+  - Architecture (runner → /chat → judge → per-stratum aggregator)
+  - Replay protocol (targeted vs full)
+  - Per-stratum reporting + Wilson CI
+  - Promotion gates
+  - Adaptive escalation in eval loop
+  - Infrastructure reliability protocol (cross-ref CH3 §3.4.9)
+- [ ] **INSERT §6.6 Results (~800 w)** — 2026-06-19 — change-type INSERT (new section)
+  - Trajectory table Phase F → R with 15 rows
+  - Per-language final
+  - Per-defect histogram comparison (initial vs final)
+  - Adaptive escalation effectiveness (honest take)
+  - Cost analysis ($30-40/mo projected)
+  - The 6 residuals classified
+- [ ] **RENUMBER §6.3 Infrastructure Test Results → §6.7** — 2026-06-19 — change-type RENUMBER (just heading)
+- [ ] **RENUMBER §6.4 Performance Optimization → §6.8** — change-type RENUMBER
+- [ ] **RENUMBER §6.5.7 Threats to Validity → §6.9** — change-type RENUMBER
+- [ ] **INSERT §6.10 Limitations + Future Work** — change-type INSERT (new section)
+- [ ] **DELETE old §6.2 Cohen's Kappa Inter-Model Agreement** — change-type DELETE — was κ=0.000 analysis no longer relevant
+- [ ] **DELETE old §6.2.5 Failure Analysis G03/E03** — change-type DELETE — specific to old 25-case methodology
+
 ### Chapter 6 — Testing & Evaluation (Phase R)
 
 - [ ] **INSERT §6.5.20 Phase R — additional defect-specific tests and corrections (~600 w)** — 2026-06-19, this session — change-type INSERT

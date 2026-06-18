@@ -1,125 +1,170 @@
 # Chapter 6: Testing and Evaluation
 
-## 6.1 Evaluation Approach
+## 6.1 Evaluation Methodology
 
-The evaluation regime reported in this chapter is a strategic, per-case rubric-graded backtest against a curated golden dataset, scored by an LLM-as-judge. This section sets out the approach in three pieces: (i) the per-case rubric, (ii) the LLM-as-judge configuration, and (iii) the dataset structure and language stratification.
+### 6.1.1 Test Design
 
-**Per-case rubric.** Every case in the dataset carries a rubric block describing the canonical answer. The rubric is not a single regex but a structured object with `expected_facts` (tokens or fact-fragments that must appear), `must_contain_any` (at least one of these must appear), `must_not_contain` (none of these may appear), `expected_tool_calls` (tool invocations the bot is expected to make), `rubric_type` (`exact_match`, `semantic_match`, or `fact_match`), and an optional `judge_hint` that prompts the judge with the case's policy intent. A response is graded `correct`, `partial`, or `incorrect` against this block.
+The evaluation strategy uses two complementary approaches:
 
-**LLM-as-judge.** The grader is `deepseek/deepseek-chat-v3.1` invoked at `temperature=0.0` with `response_format=json_object`. For each case the judge receives the question, the bot's response text, the bot's `tool_calls` envelope, the rubric block, and a fixed system prompt that defines the 15-tag defect taxonomy (§6.3) and the verdict-decision protocol. The judge emits a strict-JSON object with `verdict`, a `defects` list, and a short rationale. Two infrastructure safeguards bound judge variance: a pre-judge deterministic short-circuit runs cheap regex checks (empty response, tool-call leak, `must_not_contain` match) before any LLM call (catching ~10–15 % of cases without a judge invocation), and a calibration-set stability gate (§6.5.5c) was run once to confirm `FPR < 10 %` and `FNR < 10 %` against 30 known-correct + 30 known-incorrect triples.
+1. **Model evaluation** — 25 test cases covering hotel-domain tasks, scored for accuracy against expected behaviors
+2. **Infrastructure testing** — 193 automated assertions verifying auth, security, scaling, and API correctness
 
-**Dataset structure.** The canonical evaluation dataset is `clean_v3_final`: 354 cases across EN + TH (CN excluded per §6.5.9.6, deferred to Phase S+). The dataset is union of nine JSONL files: `golden_en.jsonl` (186), `golden_th.jsonl` (168), plus the supplementary files (`canaries`, `adversarial`, `hard_negatives`, `multi_intent_and_out_of_kb`, `multi_turn`, `quantity_inventory`, `rubric_calibration`). Cases are stratified across domains (rooms, dining, facilities, policies, pricing, multi-intent, multi-turn, hard-negative, adversarial) and across language for the trilingual paths.
+### 6.1.2 Golden Dataset (25 Test Cases)
 
-**Promotion-gate thresholds.** Throughout the iteration ladder the chapter applies a four-gate ship test: aggregate strict pass ≥ 75 %, worst per-domain ≥ 65 %, canaries = 100 %, hard-negatives ≥ 80 %. The final Phase R end-state (§6.5.20.7) clears the aggregate gate with margin (98.31 %) and clears canaries and per-domain; the hard-negative gate is the last to close and is discussed in §6.6.
+The golden dataset covers five categories representing the full range of hotel chatbot interactions:
 
-## 6.2 Dataset
+| Category              | Cases | Coverage                                                                                 |
+| --------------------- | ----- | ---------------------------------------------------------------------------------------- |
+| Knowledge (K01–K08)  | 8     | Breakfast, WiFi, pool, pets, cancellation policy, spa, check-in/out, airport transfer    |
+| Booking (B01–B06)    | 6     | Availability check, pricing, cancellation, Thai dates, full booking flow, booking lookup |
+| Greeting (G01–G04)   | 4     | English/Thai greeting, thank you, off-topic (weather)                                    |
+| Language (L01–L03)   | 3     | English-only response, Thai-only response, gym location                                  |
+| Edge Cases (E01–E04) | 4     | Service request (towels), holiday booking, multi-room group, empty message               |
 
-The 354-case canonical dataset (`clean_v3_final`, EN 186 + TH 168) is the product of seven progressive curation passes from a 504-case multilingual seed. This section documents what the dataset actually contains at the run-time snapshot used for the final replay.
+Each test case defines:
 
-**Composition by source file (final snapshot).**
+- **Input message** (Thai or English)
+- **Expected keywords** that must appear in the response
+- **Expected behavior** description
+- **Language check** (optional — verify response is in the correct language)
 
-| File | Cases | Source |
-| --- | ---: | --- |
-| `golden_en.jsonl` | 186 | Source-grounded EN Q&A generated from `data/hotel/*.md` sections via `google/gemini-2.5-flash` (3 EN per section) plus programmatic pricing templates and the EN slices of multi-intent / multi-turn |
-| `golden_th.jsonl` | 168 | TH companion to `golden_en.jsonl`, generated and pruned alongside |
-| `canaries_{en,th}.jsonl` | 8 | Hand-curated stability sentinels — runner aborts downstream if >2 fail |
-| `adversarial.jsonl` | 6 | Hand-curated SQL drop, jailbreak, PII probe, force-language probes |
-| `hard_negatives.jsonl` | 6 | Hand-curated refusal-correct cases (no source in KB) |
-| `multi_intent_and_out_of_kb.jsonl` | 8 | Multi-part questions ("WiFi password and breakfast time?") plus out-of-KB shapes |
-| `multi_turn.jsonl` | 4 | 2-turn sessions testing context retention |
-| `quantity_inventory.jsonl` | 7 | Inventory-question shape ("how many Standard rooms?" in three languages, deferred to LLM under Gemma — see §6.5.9.4) |
-| `rubric_calibration.jsonl` | ~30 | Known-correct + known-incorrect triples used by `judge_stability.py` (not in the 354 main aggregate) |
+### 6.1.3 Scoring Criteria
 
-CN was excluded from the canonical aggregate per a project directive (no CN-speaking reviewers, minority audience), with CN deferred to a future iteration; the language is still smoke-tested via the §5.14.7 Chinese-leak suite. The `EVAL_SKIP_CN=true` runner flag drops `golden_cn.jsonl` and filters CN rows out of mixed-language files.
+A response **passes** if all three conditions are met:
 
-**Per-domain stratification (EN + TH).** The 354 main cases distribute across domains as follows (each language file is independently stratified so EN and TH carry the same domain shapes at proportionally similar counts):
+1. **Keyword score ≥ 50%** — at least half of expected keywords appear in the response
+2. **Language correct** — if a language check is specified, the response must be in that language (< 20% Thai characters for English, > 10 Thai characters for Thai)
+3. **Has response** — the response is non-empty and no error occurred
 
-| Domain | Cases | Coverage |
-| --- | ---: | --- |
-| Rooms (types, sizes, amenities) | ~80 | Standard / Deluxe / Suite / Penthouse specs from `room_types.md` and `room_guide.md` |
-| Pricing (per-night, totals, tiers) | ~36 | 4 rooms × 3 tiers × 2 languages × ~1.5 phrasings, all anchored to current calendar dates |
-| Dining (breakfast, restaurants, hours) | ~30 | `dining_services.md` + breakfast time / room service hours |
-| Facilities (pool, gym, spa, business centre) | ~40 | `facilities_amenities.md` opening hours, locations, charges |
-| Policies (check-in/out, cancellation, pets) | ~40 | `policies_rules.md` text |
-| Transportation (parking, airport, taxis) | ~25 | `transportation.md` with the Phase J.2 valet-rate and parking-level realignment |
-| FAQ / negative facts (no casino, no helipad) | ~20 | `hotel_faq.md` + hard-negative facts |
-| Spa & wellness | ~15 | `spa_wellness.md` |
-| Local attractions | ~15 | `local_attractions.md` |
-| Multi-intent + multi-turn | ~12 | As above |
-| Adversarial + hard-negative + canaries | ~20 | As above |
-| Rubric calibration | ~30 | Held out from aggregate |
+## 6.2 Model Evaluation Results
 
-Each case has a rubric block (§6.1) and a language-stratification label (`en` or `th`). The `data/hotel/*.md` sources were normalised in Phase J.2 (§6.5.9.1) so that any KB↔PMS-DB drift (Parking levels, valet rate, room sizes, fitness hours, spa last-booking time, FAQ check-in/out) was closed at the data layer before goldens were authored against them. Dates in pricing cases were re-pointed in Phase J.5 (§6.5.12.3) and Phase K (§6.5.13.2) so each case lands on the tier its ID names regardless of when the eval is run.
+### 6.2.1 Overall Accuracy
 
-**Why this dataset and not the original 25.** The 25-case dataset in the prior CH6 draft covered canonical happy paths but is too small to surface the long-tail defects that affect production quality: stale knowledge, retrieval misses on buried facts, tool-call omissions, multi-turn context loss, adversarial gray-zones. The 354-case dataset is large enough to give Wilson 95 % CI half-widths under ±5 pp on aggregate and large enough to stratify per-language and per-domain. It is *also* small enough to run end-to-end in ~7 h on a single RTX 5080 + Ollama + DeepSeek judge, which is what made the seven-iteration ladder of Phases J–R economically feasible.
+| Metric                     | Qwen3.5 Opus 9B (Local) | Qwen3 Max (Cloud)      |
+| -------------------------- | ----------------------- | ---------------------- |
+| **Overall accuracy** | **23/25 (92%)**   | **25/25 (100%)** |
+| Keyword accuracy           | 81%                     | 89%                    |
+| Language accuracy          | 100%                    | 100%                   |
+| Errors / timeouts          | 0                       | 0                      |
 
-## 6.3 Rubric Design
+[Figure 5.1: Model accuracy comparison bar chart — Local 92% vs Cloud 100%. Both models achieve 100% on knowledge and booking categories. Differences are in greeting (75% vs 100%) and edge cases (75% vs 100%).]
 
-The evaluation grader combines deterministic per-case checks with a structured-JSON LLM judge. Each case in `eval/dataset/golden_*.jsonl` carries a rubric block; the runner walks every case through the same protocol.
+### 6.2.2 Per-Category Breakdown
 
-**6.3.1 Per-case rubric block.** Every rubric is a JSON object with the following fields (defaults shown in parentheses):
+| Category             | Local 9B             | Cloud                | Agreement |
+| -------------------- | -------------------- | -------------------- | --------- |
+| Knowledge (8 cases)  | **8/8 (100%)** | **8/8 (100%)** | Perfect   |
+| Booking (6 cases)    | **6/6 (100%)** | **6/6 (100%)** | Perfect   |
+| Greeting (4 cases)   | **3/4 (75%)**  | **4/4 (100%)** | 3/4 agree |
+| Language (3 cases)   | **3/3 (100%)** | **3/3 (100%)** | Perfect   |
+| Edge Cases (4 cases) | **3/4 (75%)**  | **4/4 (100%)** | 3/4 agree |
 
-| Field | Type | Role |
-| --- | --- | --- |
-| `expected_facts` | `list[str]` | Tokens / fact-fragments that must appear verbatim in the response |
-| `must_contain_any` | `list[str]` ([]) | At least one of these tokens must appear (used for paraphrase tolerance) |
-| `must_not_contain` | `list[str]` ([]) | None of these tokens may appear (used for refusal-correct and leak-prevention cases) |
-| `expected_tool_calls` | `list[str]` ([]) | Tool invocations the bot is expected to make (matched against the response envelope's `tool_calls` field) |
-| `rubric_type` | `exact_match` \| `semantic_match` \| `fact_match` | Controls how the LLM judge weights the above checks |
-| `judge_hint` | `str` (optional) | Free-text prompt the judge sees alongside the rubric, used to communicate case-specific policy intent (e.g. "this is a hard-negative; the canonical answer is a polite refusal") |
-| `source_section` | `str` (optional) | The `data/hotel/*.md` section the case was derived from |
-| `tags` | `list[str]` (optional) | Free-form labels (`dynamic_pricing`, `multi_intent`, etc.) used for per-tag reporting |
+[Figure 5.2: Per-category accuracy heatmap — rows are categories, columns are models. Color intensity represents accuracy (green = 100%, yellow = 75%). Knowledge, Booking, and Language are fully green for both models.]
 
-The runner enforces all five primary checks before the LLM judge sees the case. `expected_facts` is the most-used field: in `exact_match` rubrics, *every* listed fact must appear; in `fact_match` rubrics, the LLM judge is allowed to accept paraphrases as long as the underlying claim is preserved.
+### 6.2.3 Latency Analysis
 
-**6.3.2 Deterministic pre-judge short-circuit (Phase D, §6.5.5b).** Before any LLM judge call, the runner runs three cheap regex checks: (a) empty / whitespace-only response → `verdict=incorrect, defects=['empty_response']`; (b) raw tool envelope leaked into response text (`tool_call_leak` regex) → `verdict=incorrect, defects=['tool_call_leak']`; (c) any token in `must_not_contain` appears → `verdict=incorrect, defects=['rubric_violation']`. On any hit the row is annotated `judge_source='precheck_shortcircuit'` and the LLM is skipped. This saves ~10–15 % of judge calls on the typical run.
+| Metric       | Local 9B  | Cloud     |
+| ------------ | --------- | --------- |
+| Average      | 9,879 ms  | 8,921 ms  |
+| Median (p50) | 9,049 ms  | 6,703 ms  |
+| p95          | 18,360 ms | 37,955 ms |
 
-**6.3.3 LLM judge configuration.** The judge is `deepseek/deepseek-chat-v3.1` via OpenRouter at `temperature=0.0`, `response_format=json_object`, retry-on-`ConnectionResetError/ConnectionError/ConnectionAbortedError/OSError` with exponential backoff. The judge system prompt has three parts: (i) a definition of the 15-tag defect taxonomy (`rag_miss`, `rag_drift`, `room_conflation`, `spec_wrong`, `incomplete`, `tool_not_called`, `tool_error`, `hallucination`, `language_leak`, `tool_call_leak`, `particle_mismatch`, `wrong_routing`, `empty_response`, `format_error`, `over_refuse`); (ii) a verdict-decision protocol (`correct` if every expected_fact is satisfied AND no defect is detected; `partial` if some expected_facts are satisfied but others are missing AND no must_not_contain violation; `incorrect` otherwise); (iii) a JSON output schema specifying `verdict`, `defects[]`, and a one-sentence rationale.
+[Figure 5.3: Latency distribution box plot — Local 9B shows tighter distribution (most requests 6–12s) with lower p95. Cloud shows lower median but higher p95 variance due to network latency and API queue times.]
 
-**6.3.4 Why a 15-tag taxonomy and not a single pass/fail.** The taxonomy is structural: the first three tags (`rag_miss`, `rag_drift`, `room_conflation`) are retrieval-side; the next four (`spec_wrong`, `incomplete`, `tool_not_called`, `tool_error`) are synthesis-side; the next two (`hallucination`, `wrong_routing`) are LLM-side; and the remaining six (`language_leak`, `tool_call_leak`, `particle_mismatch`, `empty_response`, `format_error`, `over_refuse`) are surface-form gates. Aggregating to per-tag counts lets the iteration ladder localise which layer to patch: a drop in `rag_miss` after a chunking change is unambiguous evidence that retrieval improved, separable from any prompt-side gain. Five of the fifteen tags (`rag_miss`, `incomplete`, `hallucination`, `over_refuse`, `tool_not_called`) dominate the defect distribution at every phase and are the chapter's primary leverage points.
+The local model has **more consistent latency** (lower p95) despite similar average — a key advantage for user experience, since the worst-case response time is more predictable.
 
-**6.3.5 Judge stability gate (Phase E, §6.5.5c).** A 60-triple calibration set (30 known-correct + 30 known-incorrect, bootstrapped from past `raw.jsonl` rows where deterministic checks unambiguously confirm the judge verdict) was run once through `scripts/eval/judge_stability.py`. The result was `FPR = 0.0 % [0.0, 11.4]` and `FNR = 0.0 % [0.0, 11.4]` on Wilson 95 % CI. The gate (FPR < 10 % AND FNR < 10 %) passes with margin, confirming the judge prompt is stable at the reported headline numbers; the FPR/FNR margins are the threats-to-validity ceiling cited in §6.9.
+### 6.2.4 Cohen's Kappa Inter-Model Agreement
 
-**6.3.6 Why this is not "rubric gaming".** Two protocol clauses keep the rubric honest. First, the rubric is authored against the `data/hotel/*.md` source-of-truth, not against any bot's observed output: a case's `expected_facts` matches what the KB says, not what the bot said. Second, no rubric is ever loosened to make a failing case pass — the Phase J–R iteration ladder relaxes only the cases where a rubric self-contradicts (e.g. `mi_*_wifi_and_breakfast`, where `must_not_contain` banned the KB's own canonical phrasing — §6.5.13.4) or where the rubric was authored against stale data (date-rot pricing cases — §6.5.12.3). All rubric edits are logged with backup files (`.before_*` suffix) so the rectification trail is auditable. The four `RUBRIC_EDGE` residuals carried forward into §6.6 are explicitly *not* rectified, on the grounds that closing them would cross the rubric-gaming threshold this clause forbids.
+$$
+\kappa = 0.000
+$$
 
-## 6.4 Eval Pipeline
+Interpretation: κ = 0.000 does **not** mean the models disagree. It indicates that the observed agreement (92% — both models agree on 23/25 cases) is close to what would be expected by chance given that both models pass almost everything. This is a known behavior of κ when both raters have high accuracy — the denominator $(1 - p_e)$ approaches zero, making κ unstable.
 
-The evaluation pipeline is a four-script chain under `scripts/eval/` plus a deterministic complement that runs as a CI gate.
+In practical terms: **both models produce the same pass/fail verdict on 23 of 25 test cases** (92% agreement).
 
-**6.4.1 Pipeline stages.**
+[Figure 5.6: Cohen's Kappa 2×2 confusion matrix — Both Pass: 23, Local Pass/Cloud Fail: 0, Local Fail/Cloud Pass: 2, Both Fail: 0. The two disagreements are G03 (thank you) and E03 (multi-room group booking).]
 
-| Script | Role |
-| --- | --- |
-| `backtest_generate.py` | Source-grounded Q&A generation via `google/gemini-2.5-flash` (OpenRouter). One pass per `data/hotel/*.md` section produces 3 EN + 3 TH + 3 CN pairs with strict-JSON schema |
-| `backtest_canaries.py` | 15 hand-curated stability sentinels; pattern-based pass/fail; aborts downstream eval if >2 fail |
-| `backtest_runner.py` | Hits `POST /chat` for each case, captures response + `tool_calls` + retries + `had_leak` flags; sends to `deepseek/deepseek-chat-v3.1` judge with the rubric prompt of §6.3; resumable, persists to `eval/results/<tag>/raw.jsonl` |
-| `backtest_report.py` | Aggregates raw rows into per-stratum CSV (with Wilson CI), per-defect table, watchlist JSON, and a Markdown report. Supports `--compare-to <previous_run>` for delta tables |
-| `audit_data_db_drift.py` | Deterministic complement to the LLM judge — regex-grep on `data/hotel/*.md` vs `room_types.base_price` DB column. Non-LLM, exit-code 0/1 for CI gating; catches the §6.5.9.1 KB↔DB drift class without an LLM call |
+### 6.2.5 Failure Analysis
 
-**6.4.2 Runner hardening (Phase J.2 → R).** Six orthogonal fixes hardened `backtest_runner.py` against eval artefacts that had been costing real pass-rate, each addressing a class of false-failure the earlier runs had surfaced:
+**G03 (Thank you response)** — The local 9B model responded politely but did not include enough of the expected keywords ("thank", "welcome", "help", "pleasure"). The response was still appropriate but scored below the 50% keyword threshold. This is a **scoring artifact**, not a capability gap.
 
-| Fix | Phase | Behaviour |
-| --- | --- | --- |
-| `--chat-timeout` default 180 → 300 s, raised again to 420 s for cold-cache Gemma 12B Q8 turns | J.2 → K | Sits above `LLM_QUEUE_TIMEOUT_SEC=240` so the server queue gates first |
-| Retry-on-deferral (`_looks_like_deferral` matches 17 EN + 7 TH phrases) | J.2 | Same `session_id` is re-hit once; replaces the first reply if the second is non-deferral |
-| `--max-chat-parallel=1` default for localhost | I.B | Closes the §6.5.8 queue-artifact bug where parallel chat requests timed out at the FastAPI semaphore |
-| `EVAL_SKIP_CN=true` default | J.2 | Drops `golden_cn.jsonl` and filters CN rows out of mixed-language files |
-| Judge retry catches `ConnectionResetError`/`ConnectionError`/`ConnectionAbortedError`/`OSError` alongside HTTP errors | J.2 | OpenRouter mid-stream connection resets had killed two prior runs |
-| Chat-response cache keyed by `(case_id, chat_sha, corpus_sha, [version])` | D | Stored under `eval/cache/chat_responses/`; cold runs hit live, warm reruns 5/5 cache hit with `chat_latency_s=0.00` — −95 % wallclock on judge-prompt-tuning iterations |
-| Parallel chat + async judge via `concurrent.futures.ThreadPoolExecutor` | D | Auto-picks 2 workers for `localhost`, 8 for cloud endpoints; thread-safe canary-abort state lock |
-| Pre-judge deterministic short-circuit | D | See §6.3.2 |
+**E03 (Multi-room group booking)** — The local model failed to route "I want to book 3 rooms for 10 people" to the booking handler. The cloud model correctly identified the booking intent and responded with availability. This represents a genuine **routing capability gap** in the 9B model for complex multi-entity requests.
 
-**6.4.3 Resumability and side-effect discipline.** Every runner writes to `raw.jsonl` in append-only mode and writes a `.before_replay_<timestamp>` backup before any targeted replay. Replays are case-id-scoped: `scripts/eval/_replay_<N>_fails.py` re-runs only the cases whose prior verdict was `incorrect` or `partial`, preserves the rest, and merges back into `raw.jsonl`. This made the Phase J → R iteration ladder feasible: the cost of testing a single-line patch is ~5 min of replay, not 7 h of full re-eval.
+## 6.3 Infrastructure Test Results (193/193)
 
-**6.4.4 Reporting and CI gates.** `backtest_report.py` produces five artefacts per run: a Markdown headline with aggregate + per-language + per-domain pass rates and Wilson 95 % CIs, a per-defect counts table (15 tag rows × pre/post columns when `--compare-to` is set), a per-tag rates table (the rubric tag-cloud), a watchlist JSON (`watchlist.json`) listing any case whose verdict regressed since the comparison run, and a per-row CSV used downstream by the thesis figures. `audit_data_db_drift.py` runs in CI alongside the unit tests; a non-zero exit code (any KB↔DB price mismatch) blocks the merge.
+### 6.3.1 Test Suite Summary
 
-## 6.5 Iteration Narrative
+| Suite              | Tests | Passed | Coverage                                                                        |
+| ------------------ | ----- | ------ | ------------------------------------------------------------------------------- |
+| Auth Baseline      | 72    | 72     | Login, register, JWT validation, role separation, public endpoints              |
+| Auth Hardening     | 38    | 38     | Rate limiting, account lockout, token blocklist, password change, logout        |
+| Audit + DB Scaling | 46    | 46     | Audit log CRUD, filters, pagination, DB pool, user cache, concurrent queries    |
+| Chat Scaling       | 37    | 37     | LLM semaphore, session locks, chat rate limit, SSE stream cap, metrics endpoint |
 
-Sections 6.1–6.4 set out the evaluation approach, the canonical 354-case dataset, the rubric design, and the pipeline that scores it. This section narrates the iteration ladder that took the system from the pre-fix baseline (54.3 % strict pass on a 138-row pre-Phase-J sample) to the final Phase R end-state (98.31 % on the 354-case `clean_v3_final`). The narrative is structured per-phase (F → R) so each lever can be attributed to the specific change that produced it; §6.6 then consolidates the trajectory into a single Results view.
+[Figure 5.5: Infrastructure test coverage pie chart — Auth Baseline 37%, Hardening 20%, Audit+Scaling 24%, Chat Scaling 19%. Total: 193 tests covering authentication, security, database, and concurrent-user scaling.]
 
-The pipeline architecture summary below is intentionally short — the full per-script breakdown is in §6.4.1, and the methodology framing is in CH3 §3.4.
+### 6.3.2 Key Verifications
 
-### 6.5.1 Pipeline architecture (summary)
+- **Access control**: Every admin/dashboard endpoint verified with 3 scenarios (no token → 401, user token → 403, admin token → 200)
+- **Rate limiting**: Per-IP and per-username login limits trigger 429 with Retry-After header
+- **Token revocation**: Logged-out tokens are rejected on subsequent requests; old tokens stay blocked after new login
+- **Password-change invalidation**: Changing password invalidates ALL prior tokens (persistent via `password_changed_at`, survives server restart)
+- **Concurrent chat**: 5 parallel `/chat` requests to different sessions complete in 3 seconds (not serialized)
+
+## 6.4 Performance Optimization Results
+
+### 6.4.1 Before/After Benchmarks
+
+| Optimization             | Before                     | After                            | Impact                           |
+| ------------------------ | -------------------------- | -------------------------------- | -------------------------------- |
+| Reranker removal         | 18s per /chat              | **5s** per /chat           | **3.6× faster**           |
+| Prompt trimming          | 5,500 chars                | **2,800 chars**            | -50% tokens per request          |
+| Ollama NUM_PARALLEL=4→2 | 30–50s per chat           | **4–9s** per chat         | Full GPU throughput per request  |
+| Flash attention          | —                         | Enabled                          | Faster attention compute         |
+| Q8_0 KV cache            | Tested                     | **Removed**                | Caused CPU offload, 10× slower  |
+| Knowledge cache          | No caching                 | **500 entries, 5-min TTL** | ~1ms vs ~500ms per cached query  |
+| DB connection pool       | New connection per request | **Pool (min=2, max=20)**         | Eliminated connection setup cost |
+
+[Figure 5.4: Before/after optimization chart — warm chat latency dropped from 18s to 5s. Concurrent 5-session test improved from serialized (~90s total) to parallel (~3s total).]
+
+### 6.4.2 Ollama GPU Tuning (RTX 5080, 16 GB)
+
+| Config                   | VRAM Used        | GPU %                       | Per-Request Latency |
+| ------------------------ | ---------------- | --------------------------- | ------------------- |
+| NUM_PARALLEL=4           | 9.9 GB           | 100%                        | 30–50s             |
+| **NUM_PARALLEL=2** | **9.9 GB** | **100%**              | **4–9s**     |
+| NUM_PARALLEL=2 + Q8_0 KV | 7.9 GB           | **37% GPU / 63% CPU** | >120s (broken)      |
+
+The key insight: `OLLAMA_NUM_PARALLEL` divides the GPU's fixed token/sec throughput across active sequences. Reducing from 4 to 2 halved throughput per slot but **doubled per-request speed** — the better trade-off for interactive hotel chat.
+
+### 6.4.3 Scaling Metrics Under Load
+
+| Benchmark                                 | Result                                   |
+| ----------------------------------------- | ---------------------------------------- |
+| 30 concurrent `GET /auth/me`            | total**0.06s**, p95 **20ms** |
+| 50 sequential `GET /admin/audit`        | **50/50** success                  |
+| 20 concurrent `GET /admin/audit`        | total**0.16s**, all 200            |
+| 2 concurrent `/chat` (within GPU slots) | **14.5s** wall time                |
+| 4 concurrent `/chat` (2 queued)         | **19.7s** wall time, 0 failures    |
+
+---
+
+## 6.5 Strategic Backtest — LLM-as-Judge Pipeline
+
+The 25-case golden dataset in §6.1.2 covers the canonical happy paths
+but is too small to surface the long-tail defects that affect production
+quality (stale knowledge, retrieval misses on buried facts, tool-call
+omissions, etc). To address this we built a second, larger evaluation
+pipeline based on the *strategic backtest* framework: a 504-case golden
+dataset, an LLM-as-judge scoring stage, and per-stratum reporting with
+Wilson confidence intervals and a regression watchlist.
+
+This section presents the pre-fix baseline numbers, the patches applied,
+and the post-fix delta. The full methodology is in Chapter 3 §3.x; the
+defect inventory and patch evidence is in Appendix C.
+
+### 6.5.1 Pipeline architecture
 
 [Figure 6.x: Eval Pipeline Architecture — golden generation (Gemini 2.5
 Flash) → 504-case dataset → live chatbot /chat → DeepSeek Chat v3.1 judge
@@ -149,7 +194,7 @@ The pipeline has four pieces, each in its own script under `scripts/eval/`:
 ### 6.5.3 Defect taxonomy
 
 Every judged response carries 0 or more tags from this fixed 15-tag
-taxonomy (full definition and rubric integration in §6.3.3–§6.3.4):
+taxonomy (rationale in §3.x.3):
 
 `rag_miss` · `rag_drift` · `room_conflation` · `spec_wrong` ·
 `incomplete` · `tool_not_called` · `tool_error` · `hallucination` ·
@@ -241,7 +286,7 @@ These do not affect any pass-rate number — they only change wallclock and cost
 
 ### 6.5.5c Rubric stability gate (Phase E)
 
-The §6.9 threats-to-validity list cited the single judge as the most-impactful gap. Phase E built `scripts/eval/judge_stability.py` to bootstrap a 60-triple calibration set (30 known-correct + 30 known-incorrect) from past `raw.jsonl` rows where deterministic checks unambiguously confirmed the judge's verdict, then re-runs theeepSeek Chat v3.1 judge against those triples and reports binary FPR/FNR with Wilson 95% CIs.
+The §6.5.7 threats-to-validity list cited the single judge as the most-impactful gap. Phase E built `scripts/eval/judge_stability.py` to bootstrap a 60-triple calibration set (30 known-correct + 30 known-incorrect) from past `raw.jsonl` rows where deterministic checks unambiguously confirmed the judge's verdict, then re-runs theeepSeek Chat v3.1 judge against those triples and reports binary FPR/FNR with Wilson 95% CIs.
 
 **Result:** `FPR = 0.0% [0.0%, 11.4%]` and `FNR = 0.0% [0.0%, 11.4%]` on a 30+30 calibration set, with one minor `incorrect→partial` re-classification that does not affect the binary axis. The gate (FPR < 10% AND FNR < 10%) **passes with margin**. The judge prompt is therefore stable; the 72.4% strategic-backtest headline is not an artifact of judge noise.
 
@@ -322,7 +367,7 @@ The final strategic backtest (run tag `final-postfix`) ran 261 cases sampled wit
 
 **Drift audit (deterministic, non-LLM):** went from **6 room-price mismatches** (Deluxe −22%, Suite −35%, Penthouse −40%, each appearing in both the section heading and the comparison table) to **0** after the iter3 KB strip + re-ingest. The watchlist treats `rag_drift>0` as auto-no-ship; this hard gate now passes.
 
-**What the gap means.** The aggregate is 3.9 pp below the 75% ship bar. With the larger 261-case Wilson CI of [65.2%, 76.4%], 75% is inside the CI — i.e. statistically we cannot say with 95% confidence whether the true population pass rate is above or below the 75% threshold. The system is *plausibly* ship-ready but the available evidence is not yet conclusive. The iteration loop hit a plateau (iter4 T=0.1, iter5 num_docs=8, iter6 T=0.2 all flat or regressed). Further gains require either a stronger base LLM (cloud Qwen3-max parity rerun, §6.10 follow-up) or human-eval comparison to confirm the judge isn't over-penalising paraphrased but semantically correct responses.
+**What the gap means.** The aggregate is 3.9 pp below the 75% ship bar. With the larger 261-case Wilson CI of [65.2%, 76.4%], 75% is inside the CI — i.e. statistically we cannot say with 95% confidence whether the true population pass rate is above or below the 75% threshold. The system is *plausibly* ship-ready but the available evidence is not yet conclusive. The iteration loop hit a plateau (iter4 T=0.1, iter5 num_docs=8, iter6 T=0.2 all flat or regressed). Further gains require either a stronger base LLM (cloud Qwen3-max parity rerun, §6.5.7 follow-up #6) or human-eval comparison to confirm the judge isn't over-penalising paraphrased but semantically correct responses.
 
 The single remaining critical-watchlist failure that *is* worth fixing in the current model is the **hard-negative hallucination rate** (3/6). Adding a small set of explicit "we do not have X" facts to the KB (no casino, no helipad, no underwater suite) and re-ingesting would resolve these without prompt engineering — a follow-up trivially addressable in a 7th iteration.
 
@@ -413,6 +458,38 @@ Estimated wall-clock 21 h (3 × ~7 h serial). On completion, `scripts/eval/build
 | `rag_drift` rate (deterministic) | 0             |                0 |                            0 |                                           0 |
 
 The aggregate gap to the 75 % ship gate has now closed from −7 pp (Phase F Qwen 9B at 80.83 % was already above the gate but Stack-ON with overrides dragged below) to approximately ±1 pp under the production candidate. The CH6 final ship-readiness verdict will be reported in §6.5.8.7 once the clean triple finishes.
+
+### 6.5.7 Threats to validity
+
+1. **Single judge model.** DeepSeek Chat v3.1 is the sole LLM judge.
+   We mitigated by enforcing strict-JSON output (response_format) and
+   running a small spot-check on the first 10 judgments (§3.x.x), but
+   did not run the full FPR/FNR rubric stability gate the strategy
+   defined. Future work: run 30 known-correct + 30 known-incorrect
+   triples through the judge and confirm FPR < 10% AND FNR < 10%.
+2. **Judge-system overlap.** The chatbot uses Qwen3.5 Opus 9B locally
+   (or Qwen3-max on the cloud path). DeepSeek Chat v3.1 is a different
+   vendor family (DeepSeek, not Qwen), which reduces judge-bias risk
+   from "model judges itself." But both are LLMs; a human-judge
+   comparison would be stronger.
+3. **Dataset contamination.** The 405 generated cases were produced
+   from the same `.md` files the chatbot's RAG indexes. Cases that
+   probe exactly the chunks RAG already retrieves will pass trivially.
+   We mitigated this with the hand-curated hard negatives (refusal
+   cases that have NO source in the KB) and pricing templates (whose
+   ground truth comes from the DB, not the markdown). But a portion of
+   the 75-80% pass rate we expect is "trivially correct" — interpret
+   the absolute number cautiously and weight the per-defect deltas
+   higher.
+4. **Stratified sample, not full dataset, for baseline.** The
+   pre-fix baseline run sampled 200 stratified cases (not all 504).
+   The 95% Wilson CIs for per-domain pass rates are ±5–10pp wide at
+   that sample size. Aggregate trends are reliable; small per-domain
+   shifts are not. The post-fix run uses the full 504 (CIs ±3pp).
+5. **Cold-start latency variance.** The Ollama backend takes ~24s
+   on the first call to load the 6 GB Q4_K_M model into VRAM. The
+   first eval row's chat_latency_s is therefore inflated. Subsequent
+   rows are warm (~10s). This affects latency stats, not verdict.
 
 ### 6.5.9 Phase J.2 — KB↔DB rectification, snapshot facts, inventory shortcut, relative dates (Run #1 baseline)
 
@@ -758,155 +835,6 @@ The TH multi-turn recovery (`mt_th_booking_3nights`) confirms the §6.5.17.4 kb_
 
 Aggregate: pre-Phase-R **347/354 = 98.02 %**; post-Phase-R **348/354 = 98.31 %**, **+0.29 pp**. Per-language: EN 181/186 = **97.31 %** (unchanged — recovery offset by no net EN gain because the `adv_other_guest_pii_en` recovery is EN but two other EN cases held), correction — EN gains 1 (`adv_other_guest_pii_en`) → EN 182/186 = **97.85 %**, TH 166/168 = **98.81 %** (unchanged — `mt_th_change_dates` not yet recovered). Backup: `eval/results/clean_v3_final/20260616T203134/raw.jsonl.before_replay_20260619T014000`; updated raw: `eval/results/clean_v3_final/20260616T203134/raw.jsonl`.
 
-**6.5.20.6 RUBRIC_EDGE residuals (unchanged).** Four residuals carry forward as RUBRIC_EDGE and are explicitly classified as such in §6.5.19.8 — not tractable without rubric-gaming: (a) `pricing_standard_last_minute_en` — post-timezone-fix the live response emits the correct Last-Minute tier (+20 %) but the rubric `must_not_contain` is over-strict on a token that legitimately appears in the surrounding explanation; defect shifted from `spec_wrong` (pre-timezone-fix) to `over_refuse` (post-fix, on the rubric side); (b) `mi_wifi_and_breakfast_en` — response covers 3 of 4 expected facts but the judge over-reads token absence of a single framing word ("welcome card") that the model rephrased as "given at check-in"; (c) `mi_th_wifi_and_breakfast` — symmetric TH version; response is factually complete but the tool-call name does not exactly match the expected `search_hotel_knowledge` token; (d) `adv_force_chinese_en` — documented policy gray area where the user-explicit-language-override policy line is codified in the prompts but the judge rubric does not yet credit the policy-correct outcome. These four are RUBRIC_EDGE because the bot's behaviour is correct against the documented policy and KB facts; closing them requires rubric refinement that crosses the rubric-gaming threshold the thesis methodology explicitly forbids (§6.3.6).
+**6.5.20.6 RUBRIC_EDGE residuals (unchanged).** Four residuals carry forward as RUBRIC_EDGE and are explicitly classified as such in §6.5.19.8 — not tractable without rubric-gaming: (a) `pricing_standard_last_minute_en` — post-timezone-fix the live response emits the correct Last-Minute tier (+20 %) but the rubric `must_not_contain` is over-strict on a token that legitimately appears in the surrounding explanation; defect shifted from `spec_wrong` (pre-timezone-fix) to `over_refuse` (post-fix, on the rubric side); (b) `mi_wifi_and_breakfast_en` — response covers 3 of 4 expected facts but the judge over-reads token absence of a single framing word ("welcome card") that the model rephrased as "given at check-in"; (c) `mi_th_wifi_and_breakfast` — symmetric TH version; response is factually complete but the tool-call name does not exactly match the expected `search_hotel_knowledge` token; (d) `adv_force_chinese_en` — documented policy gray area where the user-explicit-language-override policy line is codified in the prompts but the judge rubric does not yet credit the policy-correct outcome. These four are RUBRIC_EDGE because the bot's behaviour is correct against the documented policy and KB facts; closing them requires rubric refinement that crosses the rubric-gaming threshold the thesis methodology explicitly forbids (§6.4.1).
 
 **6.5.20.7 New official thesis end-state.** **348/354 = 98.31 %** against the 354-case `clean_v3_final` canonical dataset, local Gemma 12B Q8 primary + Gemma 4 31B cloud side-channel + Phase Q tool-envelope synthesis + multi-intent cloud prompt refinement + timezone fix + TH lost-and-found KB extension + Phase R defect-specific corrections (price-gate date-change signal extension in `hotel_langgraph.py`, `## EMAIL GATE` block in both `hotel_prompt.yaml` and `hotel_prompt_stackoff.yaml`, `primary_assistant:` PII-guard clause). Per-language: EN 182/186 = **97.85 %**, TH 166/168 = **98.81 %**. This supersedes the Phase Q 347/354 = 98.02 % number cited in §6.5.19.9 / AP_F §F.1 / AP_F §F.5.1 / AP_F §F.2.14. The four RUBRIC_EDGE residuals are documented in 6.5.20.6 and §6.5.19.8 as the canonical handover floor — closing them is gated on rubric refinement that the thesis methodology forbids.
-
-## 6.6 Results
-
-This section consolidates the full Phase F → R trajectory into a single Results view. Each row corresponds to a phase boundary documented in §6.5; the headline aggregate, per-language pass rates, the top three defect bucket counts, and the gate verdict against the §6.1 ship test are reported per phase. The end-state at the bottom is the canonical 348/354 = 98.31 % carried into §6.6.6.
-
-**6.6.1 Phase ladder — aggregate trajectory.**
-
-| Phase | What changed | Aggregate strict pass | Δ vs prior |
-| --- | --- | ---: | ---: |
-| Baseline (Qwen 9B, pre-Phase-J) | 25-case eval era, multi-layer base patches + iter3 chunking | 54.3 % (75/138) | — |
-| iter3 (Qwen 9B) | `chunk_size` 2000→1000, re-ingest (49 chunks per-H2-section) | 79.2 % | +24.9 pp from baseline |
-| Phase A | Local LLM swap Qwen 9B → Gemma 4 12B Q8_0 (`gemma4:12b`) at iter3 retrieval | 80.2 % | +1.0 pp (within 1σ noise band) |
-| Phase F variance baseline | 5-run mean of Phase A config, σ = 1.58 pp | 80.83 % | (stat baseline) |
-| Phase G/H stack-OFF (post Phase I fixes) | Vector-only retrieval, base prompts | ~72 % (504-case, contaminated read) | — |
-| Phase J.2 → J.5 | KB↔DB sweep + snapshot facts + inventory shortcut + relative dates + pricing shortcut + polish-prompt tightening + date repointing | 95.20 % (337/354) | (Gemma-era clean) |
-| Phase K | Suite room-type detector + multi-turn date repointing + WiFi DB seed + multi-intent / adversarial relax | 96.89 % (343/354) | +1.69 pp |
-| Phase L | Multi-turn pricing fallback + multi-intent prompt rewrite + rubric finals (smoke 1/5 → replay 0/11) | 96.89 % | 0.00 pp |
-| Phase M | Tactical local patches (multi-turn EN tool-surface fix + language-lock relax) | 97.18 % (344/354) | +0.29 pp |
-| Phase N (negative result) | Wholesale cloud Gemma 4 31B backend swap — all 10 residuals returned empty content; rolled back | 96.33 % (counterfactual) | −0.85 pp (rolled back) |
-| Phase O | Adaptive escalation side-channel + per-model prompt registry | 97.46 % (345/354) | +0.28 pp vs M |
-| Phase Q | Tool-envelope synthesis on escalation path + multi-intent cloud prompt refinement + timezone fix + TH lost-and-found KB re-ingest | 98.02 % (347/354) | +0.56 pp |
-| Phase R (**end-state**) | Price-gate date-change signal extension + `## EMAIL GATE` block + `primary_assistant:` PII guard | **98.31 % (348/354)** | **+0.29 pp** |
-
-**6.6.2 Per-language pass rates (end-state).**
-
-| Language | Cases | Phase R Pass | Phase R Pass Rate |
-| --- | ---: | ---: | ---: |
-| EN | 186 | 182 | **97.85 %** |
-| TH | 168 | 166 | **98.81 %** |
-| Aggregate | 354 | 348 | **98.31 %** |
-
-**6.6.3 Defect bucket trajectory.** The top five defect classes at baseline (`incomplete`, `rag_miss`, `hallucination`, `over_refuse`, `spec_wrong`) collectively accounted for ~95 % of failures. The Phase J.2 → R trajectory closed each of them via a different mechanism:
-
-| Defect | Pre-Phase-J rate | Phase R rate | Mechanism closed |
-| --- | ---: | ---: | --- |
-| `incomplete` | 30.4 % | < 1 % | Snapshot facts + inventory shortcut + pricing shortcut |
-| `rag_miss` | 21.7 % | < 1 % | iter3 chunking + KB re-ingest passes (Phase J.2, J.5, Q) |
-| `hallucination` | 20.3 % | < 1 % | KB↔DB rectification + tool-envelope determinism + snapshot facts |
-| `over_refuse` | 13.8 % | < 1 % | Phase L multi-intent prompt rewrite + Phase R `## EMAIL GATE` discipline (replaces refusal with gated-refusal) |
-| `spec_wrong` | 8.7 % | < 1 % | Phase J.2 KB↔DB sweep (valet rate, parking levels, room sizes, fitness hours) |
-| `tool_not_called` | 4.3 % | < 1 % | Phase J.4 pricing shortcut + Phase Q tool-envelope synthesis on escalation path |
-| `rag_drift` | 2.2 % | 0 % | Phase J.2 KB strip + `audit_data_db_drift.py` CI gate |
-
-**6.6.4 Promotion-gate verdict at end-state.**
-
-| Gate | Threshold | Phase R Value | Status |
-| --- | --- | ---: | --- |
-| Aggregate strict pass | ≥ 75 % | 98.31 % | PASS (margin +23.31 pp) |
-| Worst per-language | ≥ 65 % | 97.85 % (EN) | PASS (margin +32.85 pp) |
-| Canary pass rate | = 100 % | 100 % | PASS |
-| Hard-negative pass rate | ≥ 80 % | 5/6 = 83.3 % | PASS (margin +3.3 pp; `hardneg_book_without_email_en` is the lone fail) |
-| Per-row language match | ≥ 98 % | ~99 % | PASS |
-| `rag_drift` rate (deterministic, `audit_data_db_drift.py`) | 0 | 0 | PASS |
-
-All six gates pass; the system clears the §6.1 ship test with margin. This is a meaningful shift from the §6.5.6 post-fix state (3 of 5 gates failing) and is the joint result of the per-stay WiFi seed, the deterministic tool-call surfaces, the snapshot facts, and the adaptive cloud escalation.
-
-**6.6.5 Wilson 95 % confidence interval at end-state.** At 348/354 the Wilson 95 % CI is approximately [96.4 %, 99.3 %]. Every endpoint is comfortably above the 75 % aggregate ship gate; the system is ship-ready with statistical confidence, not merely "plausibly" as the §6.5.6 prior-state report had to hedge.
-
-**6.6.6 The six residual cases.** Six cases remain `incorrect` or `partial` at end-state, all four of the RUBRIC_EDGE class (§6.5.20.6) plus two structural items carried into Phase S+: `hardneg_book_without_email_en` (Replay #8 judge re-tripped on a token mismatch after the `## EMAIL GATE` block clearly fires on first attempt) and `mt_th_change_dates` (synth-handler edge — gate now contains the right tokens but model still failed to re-invoke `calculate_dynamic_price` on turn 2). Both are documented as Phase S+ backlog items; closing them is gated on either (a) judge-prompt refinement that crosses the rubric-gaming threshold §6.3 forbids, or (b) a synth-handler edge that the Phase Q tool-envelope synthesis design does not yet reach. The 6 residuals therefore represent a design limit at the current rubric / synth-handler scope, not an open defect — see §6.10.
-
-## 6.7 Infrastructure Test Results (193/193)
-
-### 6.7.1 Test Suite Summary
-
-| Suite              | Tests | Passed | Coverage                                                                        |
-| ------------------ | ----- | ------ | ------------------------------------------------------------------------------- |
-| Auth Baseline      | 72    | 72     | Login, register, JWT validation, role separation, public endpoints              |
-| Auth Hardening     | 38    | 38     | Rate limiting, account lockout, token blocklist, password change, logout        |
-| Audit + DB Scaling | 46    | 46     | Audit log CRUD, filters, pagination, DB pool, user cache, concurrent queries    |
-| Chat Scaling       | 37    | 37     | LLM semaphore, session locks, chat rate limit, SSE stream cap, metrics endpoint |
-
-[Figure 6.7.1: Infrastructure test coverage pie chart — Auth Baseline 37%, Hardening 20%, Audit+Scaling 24%, Chat Scaling 19%. Total: 193 tests covering authentication, security, database, and concurrent-user scaling.]
-
-### 6.7.2 Key Verifications
-
-- **Access control**: Every admin/dashboard endpoint verified with 3 scenarios (no token → 401, user token → 403, admin token → 200)
-- **Rate limiting**: Per-IP and per-username login limits trigger 429 with Retry-After header
-- **Token revocation**: Logged-out tokens are rejected on subsequent requests; old tokens stay blocked after new login
-- **Password-change invalidation**: Changing password invalidates ALL prior tokens (persistent via `password_changed_at`, survives server restart)
-- **Concurrent chat**: 5 parallel `/chat` requests to different sessions complete in 3 seconds (not serialized)
-
-## 6.8 Performance Optimization Results
-
-### 6.8.1 Before/After Benchmarks
-
-| Optimization             | Before                     | After                            | Impact                           |
-| ------------------------ | -------------------------- | -------------------------------- | -------------------------------- |
-| Reranker removal         | 18s per /chat              | **5s** per /chat           | **3.6× faster**           |
-| Prompt trimming          | 5,500 chars                | **2,800 chars**            | -50% tokens per request          |
-| Ollama NUM_PARALLEL=4→2 | 30–50s per chat           | **4–9s** per chat         | Full GPU throughput per request  |
-| Flash attention          | —                         | Enabled                          | Faster attention compute         |
-| Q8_0 KV cache            | Tested                     | **Removed**                | Caused CPU offload, 10× slower  |
-| Knowledge cache          | No caching                 | **500 entries, 5-min TTL** | ~1ms vs ~500ms per cached query  |
-| DB connection pool       | New connection per request | **Pool (min=2, max=20)**         | Eliminated connection setup cost |
-
-[Figure 6.8.1: Before/after optimization chart — warm chat latency dropped from 18s to 5s. Concurrent 5-session test improved from serialized (~90s total) to parallel (~3s total).]
-
-### 6.8.2 Ollama GPU Tuning (RTX 5080, 16 GB)
-
-| Config                   | VRAM Used        | GPU %                       | Per-Request Latency |
-| ------------------------ | ---------------- | --------------------------- | ------------------- |
-| NUM_PARALLEL=4           | 9.9 GB           | 100%                        | 30–50s             |
-| **NUM_PARALLEL=2** | **9.9 GB** | **100%**              | **4–9s**     |
-| NUM_PARALLEL=2 + Q8_0 KV | 7.9 GB           | **37% GPU / 63% CPU** | >120s (broken)      |
-
-The key insight: `OLLAMA_NUM_PARALLEL` divides the GPU's fixed token/sec throughput across active sequences. Reducing from 4 to 2 halved throughput per slot but **doubled per-request speed** — the better trade-off for interactive hotel chat.
-
-### 6.8.3 Scaling Metrics Under Load
-
-| Benchmark                                 | Result                                   |
-| ----------------------------------------- | ---------------------------------------- |
-| 30 concurrent `GET /auth/me`            | total**0.06s**, p95 **20ms** |
-| 50 sequential `GET /admin/audit`        | **50/50** success                  |
-| 20 concurrent `GET /admin/audit`        | total**0.16s**, all 200            |
-| 2 concurrent `/chat` (within GPU slots) | **14.5s** wall time                |
-| 4 concurrent `/chat` (2 queued)         | **19.7s** wall time, 0 failures    |
-
-## 6.9 Threats to Validity
-
-1. **Single judge model.** DeepSeek Chat v3.1 is the sole LLM judge. We mitigated by enforcing strict-JSON output (`response_format=json_object`), running the Phase E judge-stability gate (§6.3.5 / §6.5.5c) on 60 calibration triples (FPR/FNR both 0 % with 95 % CI [0, 11.4 %]), and isolating the judge family from the bot family (DeepSeek vs Qwen/Gemma). A second-judge comparison or a human-judge cross-check would strengthen the claim further; both are Phase S+ items.
-2. **Judge-system overlap.** The chatbot uses Gemma 4 12B Q8_0 locally and `google/gemma-4-31b-it` on the cloud side-channel. DeepSeek Chat v3.1 is a different vendor family (DeepSeek, not Gemma/Qwen), which reduces judge-bias risk from "model judges itself." But both are LLMs; a human-judge comparison would be stronger.
-3. **Dataset contamination.** The 354 cases were derived from the same `data/hotel/*.md` files the chatbot's RAG indexes. Cases that probe exactly the chunks RAG already retrieves will pass trivially. We mitigated this with hand-curated hard negatives (refusal cases that have NO source in the KB), programmatic pricing templates (whose ground truth comes from the DB, not the markdown), and adversarial probes (SQL drop, jailbreak, PII probe, force-language). Some portion of the 98.31 % aggregate is "trivially correct" — interpret the absolute number cautiously and weight the per-defect deltas (§6.6.3) higher.
-4. **Per-language n is small for hard-negative + adversarial slices.** Hard-negatives are 6 cases and adversarial are 6 cases; the Wilson 95 % CIs on those slice pass rates are ±15–25 pp wide. Aggregate trends are reliable; small per-slice shifts are not.
-5. **Cold-start latency variance.** The Ollama backend takes ~24 s on the first call to load the Gemma 12B Q8_0 weights into VRAM. The first eval row's `chat_latency_s` is therefore inflated; subsequent rows are warm (~10–15 s on a typical EN/TH turn under Q8_0). This affects latency stats, not verdict.
-6. **CN excluded from canonical aggregate.** CN was excluded from the 354-case aggregate per the §6.5.9.6 project directive (no CN-speaking reviewers, minority audience). CN is smoke-tested via the §5.14.7 Chinese-leak suite but not graded at scale. The 98.31 % headline is therefore EN + TH only; a future CN-inclusive run is Phase S+ backlog.
-7. **Cloud-vs-local model-floor not measured.** The Phase M cloud-experiment was blocked by the admin-seed / schema-grant defect (§6.5.15.3) and was never re-attempted under Phase O+. The Phase N wholesale-swap negative result rules out one specific cloud-use pattern but does not measure cloud capability per se. The 98.31 % is therefore a local-primary + cloud-side-channel number, not a pure-cloud upper bound.
-8. **Phase O escalation rate is a snapshot, not a steady-state.** The ~3 % escalation rate observed at Replay #6 (§6.5.18.4) and the ~$40 / 100K-queries monthly cost projection (§6.5.17.7) are valid for the canonical 354-case dataset distribution. Production traffic distributions will likely differ; the escalation rate could drift higher under unexpected user phrasings and the cost projection should be re-measured against live traffic logs before any contractual commitment.
-
-## 6.10 Limitations and Future Work
-
-This section consolidates the limitations of the evaluation regime and the system end-state, and the Phase S+ backlog that the iteration ladder did not close.
-
-**6.10.1 Design limit: the six residuals (§6.6.6).** Six cases remain at end-state. Four are RUBRIC_EDGE (§6.5.20.6) — the bot's behaviour matches the documented policy and KB facts but the rubric over-strictly enforces a single token or framing word that the model paraphrased. Two are structural (synth-handler edge + judge-side `hardneg_book_without_email_en` re-trip after gate clearly fires on first turn). Closing them is gated on rubric refinement that crosses the rubric-gaming threshold §6.3.6 forbids, OR a redesign of the synth-handler that touches the LangGraph orchestration layer in a way that would risk regressing the 348 currently-passing cases. The six are therefore a design limit, not an open defect — but they are a real limit and should not be glossed over.
-
-**6.10.2 Rubric over-strictness.** Several rubric blocks accumulated over the Phase J → R ladder are tighter than human judgement would be: the `mi_*_wifi_and_breakfast` cases penalise a `tool_call` name mismatch even when the bot's tool-surface produces the correct functional outcome; the `pricing_standard_last_minute_en` rubric `must_not_contain` is over-strict on a token that legitimately appears in the surrounding pricing-tier explanation; the `adv_force_chinese_en` rubric does not yet credit the user-explicit-language-override policy-correct outcome. A future iteration could add a `judge_hint` clause to each that loosens the surface check without loosening the substantive check, or could replace the LLM judge with a two-judge ensemble whose disagreement triggers a human-in-the-loop review.
-
-**6.10.3 CN excluded from canonical eval.** CN was excluded per §6.5.9.6 project directive; the 98.31 % headline is EN + TH only. A future Phase S+ would re-include CN, repoint CN pricing dates to the current anchor (§6.5.12.3 pattern), and re-run the Phase R pipeline against the trilingual aggregate. The §5.14.7 Chinese-leak suite confirms CN behaviour at smoke-test scale.
-
-**6.10.4 Single LLM judge.** As §6.9 #1–2 note, the chapter's headline number is a single-judge number. A two-judge ensemble (e.g. DeepSeek Chat v3.1 + Anthropic Claude 3.5 Sonnet, or DeepSeek + a held-out OpenAI GPT-4o-mini) is the strongest single mitigation; a human-judge spot-check on the borderline cases (typically the 30–50 `partial` verdicts per run) is a complementary control.
-
-**6.10.5 Phase S+ backlog (tractable-but-deferred).** Seven items were scoped, started, or proposed during Phase L → R but not landed because the smoke gate or budget did not warrant it:
-
-1. **Two-judge ensemble** — the strongest single mitigation against §6.9 #1; ~$0.005 / case judge cost on a second-pass, ~$2 for a full 354-case re-grade.
-2. **Cloud-vs-local model-floor measurement** — gated on the §6.5.15.3 schema-grant / admin-seed fix; the runtime hot-swap surface is verified and the wallet pre-funded, the lone blocker is the auth path.
-3. **CN re-inclusion** — re-point CN pricing dates, re-run the Phase R pipeline against `golden_cn.jsonl` (159 cases at last count) plus the CN slices of multi-intent / multi-turn.
-4. **`init-eval-fixtures.sql`** — decouple the eval-fixture lifecycle (per-stay WiFi seed, eval-only test guests) from the production `init-hotel.sql` so a fresh container rebuild does not drop fixtures (§6.5.13.3).
-5. **Synth-handler reach for TH date-change** — close the §6.6.6 `mt_th_change_dates` residual by extending the Phase Q synth handler to cover the date-change-on-turn-2 trajectory the gate now permits.
-6. **Hard-negative gate post-fix** — the `## EMAIL GATE` block fires correctly on first turn at smoke; the Replay #8 judge re-trip on a token mismatch is the lone failure on `hardneg_book_without_email_en` and could be closed with a `judge_hint` clause without rubric-gaming.
-7. **Human-judge spot-check on the borderline cases** — a small (~30 case) human-judge sample on the `partial`-verdict subset to characterise the LLM judge's strictness bias quantitatively. Out of scope for the thesis cycle but the right next experimental step.
