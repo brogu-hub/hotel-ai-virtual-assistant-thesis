@@ -366,15 +366,17 @@ After the iter1–9 plateau, a 4-agent strategic investigation surfaced cloud-LL
 
 ### Phase A — Gemma 4 12B swap (SHIPPED)
 
-- **Pulled:** `ollama pull gemma4:12b` (11.9B params, Q4_K_M, 7.6 GB, 262K context). Required upgrading the `ollama/ollama` image from 0.18.2 → 0.30.7 to recognise the model.
-- **Swap path:** runtime hot-swap via `PUT /settings/llm {"backend":"ollama","model":"gemma4:12b"}` (admin-only). No restart, no code change.
-- **Result vs Qwen3.5-Opus 9B at iter3 config (n=100, seed=42):**
+- **Pulled:** `ollama pull gemma4:12b-it-q4_K_M` (11.9B params, Q4_K_M, 7.6 GB, 262K context) — the *initial* swap candidate used for the Phase A measurement below. Required upgrading the `ollama/ollama` image from 0.18.2 → 0.30.7 to recognise the model. Phase H.D (2026-06-12, see CH4 §4.9.4 and `.env` lines 11-15) later promoted the production quant to **Q8_0** (`gemma4:12b-it-q8_0`, ~12 GB) after a TH-particle smoke run showed Q4_K_M produced 4/5 mixed ครับ/ค่ะ replies versus 0/5 mixed at Q8_0. **All Phase F variance baseline measurements onward, all of Phase J → R, and the canonical 348/354 = 98.31 % end-state run on Q8_0, NOT Q4_K_M.** The Q4_K_M Phase A measurement is preserved below as a stepping-stone reading; it is not the canonical configuration.
+- **Swap path:** runtime hot-swap via `PUT /settings/llm {"backend":"ollama","model":"gemma4:12b-it-q4_K_M"}` (admin-only, Phase A) / `gemma4:12b-it-q8_0` (admin-only, Phase H.D production). No restart, no code change.
+- **Result vs Qwen3.5-Opus 9B at iter3 config (n=100, seed=42, Q4_K_M):**
   - Strict pass: 79.2% → **80.2%** (+1.0 pp).
   - `hallucination`: 14 → 12 (−2).
   - `incomplete`: 11 → 9 (−2).
   - `hard_negatives`: 3/3 in sample (was 3/3 in iter3 sample too, but n=3 has huge variance).
   - Average chat latency: ~13s (similar to 9B; gemma4:12b at Q4_K_M is faster per token than the 9B's wider context).
-- **Status:** **NEW BASE OPTIMUM**. All subsequent work uses gemma4:12b.
+  - Note: this +1.0 pp gain is within the ±1σ variance band (σ ≈ 1.58 pp measured in Phase F); the Qwen → Gemma swap is a **parity-accuracy, qualitative-choice** decision (cleaner TH/CN output, no script leaks, eliminates the §5.14.7 CJK-leak regression), not a measurable accuracy improvement.
+- **Production quant promotion (Phase H.D, 2026-06-12):** swapped to `gemma4:12b-it-q8_0` after the TH-particle and per-stay-decline smoke (CH4 §4.9.4); peak VRAM ~15.8 GB on RTX 5080; `OLLAMA_NUM_PARALLEL` dropped from 2 → 1 as the concurrency trade-off, absorbed by the Phase O adaptive escalation side-channel (CH6 §6.5.17). The canonical eval configuration is Q8_0.
+- **Status:** **NEW BASE OPTIMUM** (Phase A at Q4_K_M, then Phase H.D promotion to Q8_0 production). All Phase F → R work uses Q8_0.
 
 ### Phase B — BGE / Qwen3-0.6B cross-encoder reranker (REVERTED)
 
@@ -402,7 +404,7 @@ After the iter1–9 plateau, a 4-agent strategic investigation surfaced cloud-LL
 - **FPR = 0.0%** [Wilson 95% CI 0.0%–11.4%] — gate < 10% **PASS**
 - **FNR = 0.0%** [Wilson 95% CI 0.0%–11.4%] — gate < 10% **PASS**
 
-The most-cited threat to validity in §6.5.7 is now formally closed.
+The most-cited threat to validity in §6.9 (renumbered from the prior §6.5.7 placement) is now formally closed.
 
 ### Phase F — Variance baseline (5 runs, completed)
 

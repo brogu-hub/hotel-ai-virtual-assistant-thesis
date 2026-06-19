@@ -28,6 +28,11 @@ Each row also carries a change type so you know what action to take in the docx:
 
 ## What landed since 2026-06-12
 
+### Phase U.1 — Expanded non-trivial subset + AP_C Q-level reconciliation (2026-06-20)
+
+- [ ] **UPDATE §6.6.8 Robustness slice** — change-type UPDATE — expanded from n=12 (adv+hardneg only) to **n=51** (adv + hardneg + multi-turn + multi-intent + out-of-KB + dynamic-pricing). New numbers: **303/303 = 100.00 % benign lookup, 45/51 = 88.2 % non-trivial [Wilson 95 % CI 76.6 %, 94.5 %]**. Per-cluster breakdown table replaces the 12-case version. Defensible against rubric-overfitting critique at n=51 vs n=12.
+- [ ] **UPDATE AP_C Phase A** — change-type UPDATE — clarifies Phase A measurement was on Q4_K_M (initial swap candidate) but Phase H.D promoted production to Q8_0 (2026-06-12) after TH-particle smoke (4/5 mixed at Q4 vs 0/5 at Q8). The canonical clean_v3_final eval ran on **Q8_0**, not Q4_K_M. Phase A's +1.0 pp gain framed as parity-accuracy (within ±1σ of 1.58 pp), not measurable improvement. Cross-refs CH4 §4.9.4 and .env Phase H.D banner.
+
 ### Phase U — Honesty Pass (2026-06-20)
 
 - [ ] **INSERT §6.6.5 +44 pp decomposition table** — change-type INSERT (yellow-highlight NOT required, but emphasize that the eval-infra fixes are NOT quality improvements)
