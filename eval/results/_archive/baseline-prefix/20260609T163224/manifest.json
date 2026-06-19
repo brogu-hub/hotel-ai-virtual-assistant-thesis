@@ -1,0 +1,12 @@
+{
+  "tag": "baseline-prefix",
+  "ts": "20260609T163224",
+  "endpoint": "http://localhost:8088",
+  "judge_model": "deepseek/deepseek-chat-v3.1",
+  "started_at": "2026-06-09T16:41:12+00:00",
+  "workflow_sha": "a0d9400",
+  "corpus_version": "qdrant_hotel_knowledge_unknown_20260609T164112",
+  "embedding_model": "qwen/qwen3-embedding-8b",
+  "llm_model": "fredrezones55/qwen3.5-opus:9b",
+  "dataset_version": "unspecified"
+}

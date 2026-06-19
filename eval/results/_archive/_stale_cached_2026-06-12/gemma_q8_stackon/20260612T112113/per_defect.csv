@@ -1,0 +1,9 @@
+defect,count
+over_refuse,408
+incomplete,286
+rag_miss,180
+hallucination,102
+tool_not_called,43
+spec_wrong,36
+wrong_routing,2
+language_leak,1

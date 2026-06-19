@@ -1,0 +1,456 @@
+{
+  "rows": [
+    {
+      "id": "rooms_standard_room_en_1",
+      "language": "en",
+      "domain": "rooms",
+      "question": "What is the size of a Standard Room?",
+      "response": "The size of a Standard Room is listed as 28 sqm in our general information and comparison table, while it is also noted as 32 sqm in the detailed room types section.",
+      "expected_facts": [
+        "28 sqm"
+      ],
+      "must_contain_any": [
+        "28",
+        "sqm"
+      ],
+      "must_not_contain": [
+        "don't have access",
+        "contact the front desk"
+      ],
+      "verdict": "incorrect",
+      "reason": "The response contains conflicting size information (28 sqm and 32 sqm) where only 28 sqm is supported by expected facts.",
+      "defects": [
+        "hallucination",
+        "spec_wrong"
+      ]
+    },
+    {
+      "id": "rooms_deluxe_room_en_1",
+      "language": "en",
+      "domain": "rooms",
+      "question": "What is the size of the Deluxe Room?",
+      "response": "The size of the Deluxe Room is listed as 35 sqm in our room comparison table and 45 sqm in our detailed room types directory.",
+      "expected_facts": [
+        "35 sqm"
+      ],
+      "must_contain_any": [
+        "35",
+        "sqm"
+      ],
+      "must_not_contain": [
+        "don't have access",
+        "contact the front desk"
+      ],
+      "verdict": "incorrect",
+      "reason": "The response contains conflicting size information (35 sqm and 45 sqm) where only 35 sqm is correct, introducing hallucinated content.",
+      "defects": [
+        "hallucination",
+        "spec_wrong"
+      ]
+    },
+    {
+      "id": "rooms_suite_en_1",
+      "language": "en",
+      "domain": "rooms",
+      "question": "What is the size of the Suite room?",
+      "response": "I apologize for the delay. I am currently retrieving the exact dimensions and specifications for our Suite room from our records to ensure I provide you with the most accurate information. One moment, please.",
+      "expected_facts": [
+        "55 sqm"
+      ],
+      "must_contain_any": [
+        "55 sqm",
+        "55 square meters"
+      ],
+      "must_not_contain": [
+        "don't have access",
+        "contact the front desk"
+      ],
+      "verdict": "incorrect",
+      "reason": "The response failed to provide the required size information and instead gave a generic delay statement without factual content.",
+      "defects": [
+        "rag_miss",
+        "incomplete",
+        "tool_not_called"
+      ]
+    },
+    {
+      "id": "rooms_room_comparison_en_1",
+      "language": "en",
+      "domain": "rooms",
+      "question": "What is the size of a Standard room?",
+      "response": "Please allow me a moment to confirm the exact dimensions of our Standard room for you. I will provide those details as soon as possible.",
+      "expected_facts": [
+        "28 sqm"
+      ],
+      "must_contain_any": [
+        "28 sqm"
+      ],
+      "must_not_contain": [
+        "don't have access",
+        "contact the front desk"
+      ],
+      "verdict": "incorrect",
+      "reason": "The response does not contain the required factual information '28 sqm'.",
+      "defects": [
+        "incomplete",
+        "over_refuse"
+      ]
+    },
+    {
+      "id": "rooms_room_comparison_en_2",
+      "language": "en",
+      "domain": "rooms",
+      "question": "How many guests can a Deluxe room accommodate?",
+      "response": "A Deluxe room can accommodate a maximum of 2 adults and 1 child.",
+      "expected_facts": [
+        "3 guests"
+      ],
+      "must_contain_any": [
+        "3"
+      ],
+      "must_not_contain": [
+        "don't have access",
+        "contact the front desk"
+      ],
+      "verdict": "incorrect",
+      "reason": "The response states '2 adults and 1 child' which does not exactly match the expected fact '3 guests'.",
+      "defects": [
+        "spec_wrong"
+      ]
+    },
+    {
+      "id": "rooms_special_requests_en_1",
+      "language": "en",
+      "domain": "rooms",
+      "question": "How much does an extra bed cost per night?",
+      "response": "An extra bed is available for 800 THB per night. \n\nPlease note that the maximum number of extra beds permitted depends on your room type:\n- Standard Room: 1 extra bed\n- Deluxe Room: 1 extra bed\n- Suite: 2 extra beds\n- Penthouse: 3 extra beds\n\nYou can request an extra bed by contacting the front desk, dialing 0 from your room phone, or via the hotel app.",
+      "expected_facts": [
+        "800 THB",
+        "per night"
+      ],
+      "must_contain_any": [
+        "800 THB",
+        "800 baht"
+      ],
+      "must_not_contain": [
+        "don't have access",
+        "contact the front desk"
+      ],
+      "verdict": "incorrect",
+      "reason": "The response contains prohibited content about contacting the front desk despite providing the correct price information.",
+      "defects": [
+        "over_refuse"
+      ]
+    },
+    {
+      "id": "rooms_room_types_en_1",
+      "language": "en",
+      "domain": "rooms",
+      "question": "What is the size of a Standard Room?",
+      "response": "Our records indicate that the Standard Room is listed as 2",
+      "expected_facts": [
+        "32 sqm",
+        "Standard Room"
+      ],
+      "must_contain_any": [
+        "32 sqm",
+        "32 square meters"
+      ],
+      "must_not_contain": [
+        "don't have access",
+        "contact the front desk"
+      ],
+      "verdict": "incorrect",
+      "reason": "The response provides an incomplete size ('2') without the correct unit, failing exact_match_with_unit requirements.",
+      "defects": [
+        "incomplete",
+        "hallucination"
+      ]
+    },
+    {
+      "id": "rooms_housekeeping_en_2",
+      "language": "en",
+      "domain": "rooms",
+      "question": "How can I request daily cleaning service?",
+      "response": "Welcome to The Grand Horizon Hotel! It would be my pleasure to assist you with your request regarding our housekeeping services.\n\nTo ensure your room is prepared to your liking every day, you can request daily cleaning service in the following ways:\n\n1.  **Via Room Telephone**: You may call the \"Housekeeping\" button from your in-room phone at any time to request a cleaning.\n2.  **Front Desk**: You can contact our 24-hour front desk, and we will coordinate with the housekeeping team immediately.\n3.  **Direct Assistance**: If you would like me to arrange this for you right now, please provide yo",
+      "expected_facts": [
+        "Make Up Room sign"
+      ],
+      "must_contain_any": [
+        "Make Up Room"
+      ],
+      "must_not_contain": [
+        "don't have access",
+        "contact the front desk"
+      ],
+      "verdict": "incorrect",
+      "reason": "The response failed to mention the required 'Make Up Room sign' fact while including prohibited content about contacting the front desk.",
+      "defects": [
+        "incomplete",
+        "spec_wrong"
+      ]
+    },
+    {
+      "id": "rooms_extra_beds_en_1",
+      "language": "en",
+      "domain": "rooms",
+      "question": "How much does an extra bed cost per night?",
+      "response": "An extra bed is available for 800 THB per night. \n\nPlease note that the maximum number of extra beds allowed depends on your room type:\n* **Standard Room:** 1 extra bed\n* **Deluxe Room:** 1 extra bed\n* **Suite:** 2 extra beds\n* **Penthouse:** 3 extra beds\n\nYou can request an extra bed by contacting the front desk, dialing 0 from your room phone, or via the hotel app.",
+      "expected_facts": [
+        "800 THB per night"
+      ],
+      "must_contain_any": [
+        "800 THB",
+        "800 baht"
+      ],
+      "must_not_contain": [
+        "don't have access",
+        "contact the front desk",
+        "ไม่มีข้อมูล",
+        "没有"
+      ],
+      "verdict": "incorrect",
+      "reason": "The response contains prohibited content 'contact the front desk' despite providing the correct price information.",
+      "defects": [
+        "over_refuse"
+      ]
+    },
+    {
+      "id": "spa_reservations_en_1",
+      "language": "en",
+      "domain": "spa",
+      "question": "How can I book a spa treatment?",
+      "response": "To book a spa treatment at The Grand Horizon Hotel, you can visit our Spa & Wellness center located on Level 3, which is open daily from 9:00 AM to 9:00 PM. The starting price for treatments is 2,500 Baht.\n\nI would be happy to handle the booking for you directly. Could you please provide your reservation ID and your preferred time or specific treatment? Once I have those details, I will create the request for you immediately.",
+      "expected_facts": [
+        "Call extension 303",
+        "Visit the spa reception on the 3rd floor",
+        "Book through the hotel app"
+      ],
+      "must_contain_any": [
+        "303",
+        "reception",
+        "app"
+      ],
+      "must_not_contain": [
+        "don't have access",
+        "contact the front desk"
+      ],
+      "verdict": "incorrect",
+      "reason": "The response does not contain any of the required set items (303, reception, app) and includes unsupported factual claims.",
+      "defects": [
+        "hallucination",
+        "incomplete",
+        "rag_miss"
+      ]
+    },
+    {
+      "id": "facilities_fitness_center_en_3",
+      "language": "en",
+      "domain": "facilities",
+      "question": "How much does a personal training session cost and how do I book one?",
+      "response": "While our Fitness Center is complimentary for all guests and open from 6:00 AM to 10:00 PM on Level 2, we do not have the specific pricing for private personal training sessions listed in our general services.\n\nI would be happy to contact our fitness team directly to get the current rates and availability for a personal trainer for you. Could you please let me know your preferred date and time? Once I have those details, I can coordinate the booking on your behalf.",
+      "expected_facts": [
+        "1,000 THB per session",
+        "1 hour",
+        "Dial 404"
+      ],
+      "must_contain_any": [
+        "1,000 THB",
+        "404"
+      ],
+      "must_not_contain": [
+        "don't have access",
+        "contact the front desk"
+      ],
+      "verdict": "incorrect",
+      "reason": "The response failed to provide the required pricing information and booking method while containing prohibited content.",
+      "defects": [
+        "rag_miss",
+        "incomplete",
+        "over_refuse"
+      ]
+    },
+    {
+      "id": "facilities_wifi_en_1",
+      "language": "en",
+      "domain": "facilities",
+      "question": "What is the name of the standard Wi-Fi network for guests?",
+      "response": "The name of the standard Wi-Fi network for our guests is **HotelGuest**.\n\nPlease note that we do not provide a fixed password for security reasons. Each reservation receives its own randomly-generated temporary password at check-in, which is printed on your welcome card and listed in your in-room directory. You can also request it from reception (ext. 0) once you have checked in.\n\nThe Wi-Fi provides speeds of up to 100 Mbps throughout the entire hotel and is complimentary for all in-house guests.",
+      "expected_facts": [
+        "HotelGuest"
+      ],
+      "must_contain_any": [
+        "HotelGuest"
+      ],
+      "must_not_contain": [
+        "don't have access",
+        "contact the front desk",
+        "ไม่มีข้อมูล",
+        "没有"
+      ],
+      "verdict": "incorrect",
+      "reason": "The response contains the forbidden phrase 'contact the front desk' (implied by 'request it from reception'), violating the must-not-contain rule.",
+      "defects": [
+        "spec_wrong"
+      ]
+    },
+    {
+      "id": "facilities_wifi_en_3",
+      "language": "en",
+      "domain": "facilities",
+      "question": "Can I get faster Wi-Fi, and if so, how much does it cost per day?",
+      "response": "Yes, we offer a High-Speed Premium WiFi option for our guests. This service provides speeds of up to 500 Mbps and costs 300 THB per day. Please contact the front desk to arrange this upgrade for your stay.",
+      "expected_facts": [
+        "High-Speed Premium WiFi",
+        "500 Mbps",
+        "300 THB per day",
+        "contact front desk to upgrade"
+      ],
+      "must_contain_any": [
+        "500 Mbps",
+        "300 THB"
+      ],
+      "must_not_contain": [
+        "don't have access",
+        "contact the front desk",
+        "ไม่มีข้อมูล",
+        "没有"
+      ],
+      "verdict": "incorrect",
+      "reason": "matched must_not_contain token",
+      "defects": [
+        "over_refuse"
+      ]
+    },
+    {
+      "id": "faq_check_in_check_out_en_2",
+      "language": "en",
+      "domain": "faq",
+      "question": "Can I get a late check-out, and what is the cost?",
+      "response": "I would be happy to assist you with that. To provide you with the correct information regarding late check-out availability and costs, could you please provide your reservation confirmation number (starting with HTL) or the email address used for the booking?",
+      "expected_facts": [
+        "Late check-out is available for 500 THB per hour until 6:00 PM",
+        "Please contact the front desk to arrange late check-out"
+      ],
+      "must_contain_any": [
+        "500 THB",
+        "6:00 PM"
+      ],
+      "must_not_contain": [
+        "don't have access",
+        "contact the front desk",
+        "ไม่มีข้อมูล",
+        "没有"
+      ],
+      "verdict": "incorrect",
+      "reason": "The response fails to provide any of the required facts about late check-out costs and availability, instead requesting additional information.",
+      "defects": [
+        "rag_miss",
+        "incomplete",
+        "over_refuse"
+      ]
+    },
+    {
+      "id": "policies_cancellation_en_3",
+      "language": "en",
+      "domain": "policies",
+      "question": "How can I cancel my reservation at The Grand Horizon Hotel?",
+      "response": "To assist you with your cancellation, could you please provide either your **confirmation number** (starting with \"HTL\") or the **email address** used to make the booking? \n\nOnce I have that information, I can locate your reservation and process the cancellation for you.",
+      "expected_facts": [
+        "Online through our website",
+        "Call: +66 2 123 4567",
+        "Email: reservations@grandparadise.com"
+      ],
+      "must_contain_any": [
+        "website",
+        "+66 2 123 4567",
+        "reservations@grandparadise.com"
+      ],
+      "must_not_contain": [
+        "don't have access",
+        "contact the front desk",
+        "ไม่มีข้อมูล",
+        "没有"
+      ],
+      "verdict": "incorrect",
+      "reason": "The response does not contain any of the required facts about cancellation methods.",
+      "defects": [
+        "incomplete",
+        "rag_miss"
+      ]
+    },
+    {
+      "id": "policies_pet_policy_en_1",
+      "language": "en",
+      "domain": "policies",
+      "question": "What is the weight limit for pets allowed at The Grand Horizon Hotel?",
+      "response": "I don't see a specific pet weight limit listed in our hotel directory; however, the front desk may be able to provide you with those details directly.",
+      "expected_facts": [
+        "Small pets only",
+        "under 5 kg",
+        "11 lbs"
+      ],
+      "must_contain_any": [
+        "5 kg",
+        "11 lbs"
+      ],
+      "must_not_contain": [
+        "don't have access",
+        "contact the front desk",
+        "ไม่มีข้อมูล",
+        "没有"
+      ],
+      "verdict": "incorrect",
+      "reason": "The response does not contain any of the required facts and incorrectly states that the information is not available.",
+      "defects": [
+        "rag_miss",
+        "incomplete",
+        "over_refuse"
+      ]
+    },
+    {
+      "id": "policies_smoking_en_1",
+      "language": "en",
+      "domain": "policies",
+      "question": "What is the smoking policy at The Grand Horizon Hotel?",
+      "response": "I don't see the smoking policy listed in our current directory; however, the front desk may be able to help you with this specific information. Please feel free to contact them for further assistance.",
+      "expected_facts": [
+        "100% Non-smoking property"
+      ],
+      "must_contain_any": [
+        "non-smoking",
+        "100%"
+      ],
+      "must_not_contain": [
+        "don't have access",
+        "contact the front desk"
+      ],
+      "verdict": "incorrect",
+      "reason": "The chatbot did not provide the required facts and refused unnecessarily.",
+      "defects": [
+        "rag_miss",
+        "over_refuse"
+      ]
+    }
+  ],
+  "lang": {
+    "en": 17
+  },
+  "domain": {
+    "rooms": 9,
+    "spa": 1,
+    "facilities": 3,
+    "faq": 1,
+    "policies": 3
+  },
+  "defects": {
+    "hallucination": 4,
+    "spec_wrong": 5,
+    "rag_miss": 7,
+    "incomplete": 9,
+    "tool_not_called": 1,
+    "over_refuse": 8
+  },
+  "total": 102,
+  "n_inc": 17
+}

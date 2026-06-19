@@ -1,0 +1,47 @@
+{
+  "defect": "thai_pricing_no_tool",
+  "summary": "Thai guest asking \"ค่าห้องดีลักซ์ ... วันที่ 15 มิถุนายน 3 คืน\" gets quoted the flat 4,500 THB rate-card price instead of the Last-Minute-bracketed 5,400 THB/night. Root cause is that the `_maybe_compute_pricing_context()` pre-fetch helper only runs inside `handle_knowledge`, while booking-shaped Thai pricing questions route to `handle_booking` — which neither pre-computes pricing nor exposes `calculate_dynamic_price` in its bound tool list, so the LLM has no path to dynamic pricing and falls back to the static rate card from RAG memory.",
+  "root_cause": "In `src/hotel_guardrails/hotel_langgraph.py`, `handle_knowledge` (line ~621) calls `_maybe_compute_pricing_context(last_user_message)` and stuffs a \"LIVE PRICING\" block into the prompt. `handle_booking` (lines 307-366) does not. Worse, `handle_booking` binds a narrower tool list (lines 337-347) that omits `calculate_dynamic_price` — even though the booking_flow prompt instructs the LLM to use that tool, and even though `build_hotel_graph`'s booking_tools ToolNode (line 1079-1092) does include it. Net effect: when a pricing query is wrapped in a booking envelope (\"I'll come stay on Jun 15 for 3 nights, how much is the Deluxe?\"), the message routes to `hotel_booking`, the LLM cannot tool-call `calculate_dynamic_price` (not bound), no helper pre-fetches it, and the model emits the base_price it remembers from the rate card. The Thai regex in `_extract_dates` and the Thai price signals (\"เท่าไหร่\") are actually correct — the helper just never gets invoked on this code path.",
+  "fix_strategy": "Two-part, low-risk fix in `src/hotel_guardrails/hotel_langgraph.py`:\n\n(1) Port the pricing pre-fetch into `handle_booking`. Right after the existing `_extract_prefs_from_text(state, user_text)` call (line 335), compute `pricing_block = _maybe_compute_pricing_context(user_text)` and, if non-empty, append it to `booking_prompt` as a system-level addendum (same \"LIVE PRICING (already calculated...) — USE THESE NUMBERS\" framing used in `handle_knowledge`). This guarantees that any booking-routed message with (room_type + date + price-intent) gets a deterministic, bracket-correct quote in the prompt regardless of whether the LLM decides to tool-call.\n\n(2) Add `calculate_dynamic_price` to `handle_booking`'s local imports and to the `booking_tools` list it binds (lines 309-319, 337-347), so the LLM still has the explicit tool path the booking_flow prompt already tells it to use. This is consistent with the `build_hotel_graph` booking_tools ToolNode (line 1079-1092) which already includes it, removing a silent mismatch between bound tools and the tool node.\n\nNo changes needed to `_maybe_compute_pricing_context`, `_detect_room_type`, `_extract_dates`, or `_TH_MONTHS` — they already correctly parse \"ดีลักซ์\" + \"วันที่ 15 มิถุนายน\" + \"เท่าไหร่\". The Thai/CN coverage is fine; the defect is purely that the helper wasn't wired into the booking node.",
+  "files_touched": [
+    {
+      "path": "z:/Dev_Drive/hote-ai-virtual-assistant-thesis/src/hotel_guardrails/hotel_langgraph.py",
+      "change_type": "edit",
+      "location_hint": "Top of handle_booking() imports block, around lines 309-319",
+      "rationale": "Make calculate_dynamic_price importable so it can be added to the booking sub-agent's bound tools and so the LLM has a callable path that matches what booking_flow.yaml instructs.",
+      "risk": "low",
+      "exact_diff_or_content": "@@ async def handle_booking(state: HotelState, config: RunnableConfig) -> Dict:\n     from src.agent.hotel_tools import (\n         check_room_availability,\n         create_reservation,\n         confirm_reservation,\n         update_reservation,\n         cancel_reservation,\n         check_in_guest,\n         check_out_guest,\n         get_reservation_details,\n         get_guest_reservations,\n+        calculate_dynamic_price,\n     )"
+    },
+    {
+      "path": "z:/Dev_Drive/hote-ai-virtual-assistant-thesis/src/hotel_guardrails/hotel_langgraph.py",
+      "change_type": "edit",
+      "location_hint": "Inside handle_booking(), right after the _extract_prefs_from_text call (~line 335) and before the booking_tools list is assembled (~line 337). Mirrors the pricing block already used in handle_knowledge() at lines 621-626.",
+      "rationale": "Booking-envelope pricing intents (Thai or otherwise) never reach handle_knowledge, so the pricing helper must also fire here. Pre-baking the LIVE PRICING block into the prompt guarantees the bracket-correct quote even if the LLM doesn't choose to tool-call.",
+      "risk": "low",
+      "exact_diff_or_content": "    user_text = _last_user_text(state)\n    if user_text:\n        await _extract_prefs_from_text(state, user_text)\n\n+    # Booking-envelope pricing intents (e.g. \"จะมาพักวันที่ 15 มิถุนายน 3 คืน\n+    # ค่าห้องดีลักซ์เท่าไหร่\") never reach handle_knowledge, so pre-fetch dynamic\n+    # pricing here too. Without this, the booking sub-agent quotes base_price\n+    # from the rate card and misses Last-Minute / Early-Bird brackets. Same\n+    # helper used by handle_knowledge — Thai/CN/EN dates + room types covered.\n+    pricing_block = _maybe_compute_pricing_context(user_text) if user_text else \"\"\n+    if pricing_block:\n+        booking_prompt = (\n+            booking_prompt\n+            + \"\\n\\n\"\n+            + pricing_block\n+            + \"\\n\\nWhen quoting a price for these dates/room type, USE THE LIVE\"\n+            + \" PRICING NUMBERS ABOVE (they already include any Early-Bird\"\n+            + \" discount or Last-Minute surcharge). Do NOT quote the base\"\n+            + \" rate-card price from memory.\"\n+        )\n+"
+    },
+    {
+      "path": "z:/Dev_Drive/hote-ai-virtual-assistant-thesis/src/hotel_guardrails/hotel_langgraph.py",
+      "change_type": "edit",
+      "location_hint": "handle_booking()'s booking_tools list, lines 337-347",
+      "rationale": "Aligns the sub-agent's bound tools with both (a) build_hotel_graph's booking_tools ToolNode at line 1079-1092 which already includes it, and (b) the booking_flow.yaml prompt which already tells the LLM to call calculate_dynamic_price. Closes a silent mismatch that prevents the LLM from ever picking the tool.",
+      "risk": "low",
+      "exact_diff_or_content": "    booking_tools = [\n         check_room_availability,\n+        calculate_dynamic_price,\n         create_reservation,\n         confirm_reservation,\n         update_reservation,\n         cancel_reservation,\n         check_in_guest,\n         check_out_guest,\n         get_reservation_details,\n         get_guest_reservations,\n     ]"
+    },
+    {
+      "path": "RESTART",
+      "change_type": "restart_uvicorn",
+      "location_hint": "uvicorn process serving http://localhost:8088",
+      "rationale": "The hotel_langgraph module is imported once at startup. The dev runner uses --reload, but if running without it (e.g. via Procfile/Railway-style), restart is required for the edits to take effect.",
+      "risk": "low",
+      "exact_diff_or_content": "Restart: python -m uvicorn src.hotel_guardrails.server:app --host 0.0.0.0 --port 8088 --reload  (or kill+restart the running process)"
+    }
+  ],
+  "live_smoke_test": {
+    "before_question": "ดิฉันชื่อสิริ จะมาพักวันที่ 15 มิถุนายน 3 คืนค่ะ อยากทราบว่าค่าห้องดีลักซ์เท่าไหร่คะ",
+    "before_failure_signature": "Reply quotes 4,500 THB/night and 13,500 THB total (flat base rate). No mention of Last-Minute +20% surcharge. Server log shows route=hotel_booking and no calculate_dynamic_price tool call.",
+    "after_question": "ดิฉันชื่อสิริ จะมาพักวันที่ 15 มิถุนายน 3 คืนค่ะ อยากทราบว่าค่าห้องดีลักซ์เท่าไหร่คะ",
+    "after_pass_criteria": "Reply quotes 5,400 THB/night (4,500 × 1.20 Last-Minute bracket) for Jun 15. Either (a) explicitly references Last-Minute surcharge / says ราคาช่วงจองกระชั้นชิด/ราคาใกล้วันเข้าพัก, or (b) the server log shows _maybe_compute_pricing_context emitted a LIVE PRICING block for room_type='Deluxe Room' check_in='2026-06-15', or (c) a calculate_dynamic_price tool invocation appears in the trace. Three-night total, if quoted, should be ~16,200 THB (3 × 5,400) rather than 13,500 THB. Route still = hotel_booking is acceptable; route flipping to hotel_knowledge is also acceptable."
+  },
+  "risk": "low"
+}

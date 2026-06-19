@@ -63,3 +63,15 @@ CLAUDE.md
 # OS files
 .DS_Store
 Thumbs.db
+
+# Auto-backup files (timestamped snapshots next to source)
+*.before_*
+
+# Deferred / staged-but-not-applied artifacts
+*.deferred
+
+# Obsidian vault metadata
+.obsidian/
+
+# Loose scratch files
+Untitled.base

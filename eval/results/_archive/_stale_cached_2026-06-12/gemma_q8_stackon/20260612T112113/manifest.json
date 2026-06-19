@@ -1,0 +1,24 @@
+{
+  "tag": "gemma_q8_stackon",
+  "ts": "20260612T112113",
+  "endpoint": "http://localhost:8088",
+  "judge_model": "deepseek/deepseek-chat-v3.1",
+  "chat_cache": {
+    "enabled": true,
+    "chat_sha": "001f995cc4ce",
+    "corpus_sha": "e26b028808c3",
+    "version": ""
+  },
+  "max_chat_parallel": 2,
+  "started_at": "2026-06-12T11:21:13+00:00",
+  "workflow_sha": "03a261f",
+  "corpus_version": "qdrant_hotel_knowledge_unknown_20260612T112113",
+  "embedding_model": "qwen/qwen3-embedding-8b",
+  "llm_model": "gemma4:12b-it-q8_0",
+  "dataset_version": "sha256_45aa45479a56",
+  "stack_query_rewrite": "true",
+  "stack_hybrid": "true",
+  "stack_reranker": "qwen",
+  "stack_prompt_path": "",
+  "stack_num_docs_per_subq": "5"
+}

@@ -1,0 +1,223 @@
+{
+  "summary": "Restructure plan to (a) reframe Phase A Gemma 4 12B as the shipped baseline (not an experiment), (b) document Phases D-H as architectural changes in CH4/CH6/AP_C, (c) add per-case Q&A vs golden tables in a new AP_D, (d) document Claude live tests as informal qualitative evidence in a new AP_E with explicit user_live_test=true flag. CH3 receives a one-paragraph \"model migration note\" so Phases 1-9 keep their methodological validity on Qwen 9B while final-state shipped model becomes Gemma 4 12B. CH4 §4.3 / §4.5 grow new sub-sections for runtime LLM swap (Phase D), per-model prompt versioning (Phase G), and the BM25+keyword+bge-reranker-v2-m3 hybrid retrieval stack (Phase H). CH6 §6.5.5/6.5.6/6.5.7 are extended (not rewritten) with Phase G/H rows, the 7/8 live-PASS headline, and an updated \"Final shipped\" sentence. AP_C closing summary and Phase A status header are rewritten to drop the \"experiment\" framing and AP_D/AP_E are appended. Phases 1-6 on Qwen retain narrative position as \"methodology proven on baseline model\" — no rewrite of iter1-iter9 rows.",
+  "sections_to_modify": [
+    {
+      "chapter": "CH3",
+      "section": "§3.3.3 LLM Model Selection",
+      "change_type": "rewrite",
+      "description": "Replace the Qwen3.5 Opus 9B (Local) vs Qwen3 Max (Cloud) decision table with a three-column comparison: Qwen3.5 Opus 9B (baseline iteration model), Gemma 4 12B (shipped local model), Qwen3 Max (cloud fallback). Add a 'Migration note' paragraph stating Qwen 9B was the experimental baseline used through iter1-iter9 to prove the iteration methodology, and that the final shipped configuration uses Gemma 4 12B via runtime hot-swap (Phase A, §6.5.5). Keep the existing decision rationale intact for cloud Qwen3 Max as fallback.",
+      "rationale": "User's framing: Qwen 9B was methodologically valid for iter1-9; don't rewrite those — but the shipped artifact is Gemma 4 12B. A one-paragraph migration note preserves the prior narrative without invalidating it."
+    },
+    {
+      "chapter": "CH3",
+      "section": "§3.4.7 Strategic Backtest Methodology",
+      "change_type": "minor_edit",
+      "description": "Append a short paragraph noting that the backtest pipeline was designed model-agnostically (judge held fixed at DeepSeek Chat v3.1 T=0.0; chatbot LLM is the swept variable), which is what enabled the Qwen 9B → Gemma 4 12B migration to be evaluated at zero re-instrumentation cost. Reference the Phase A swap as the canonical example.",
+      "rationale": "Explains methodologically why the model migration did not invalidate the backtest pipeline — judge and dataset are decoupled from the chatbot LLM under test."
+    },
+    {
+      "chapter": "CH4",
+      "section": "§4.3 LangGraph Agent Design — new §4.3.4 'Runtime LLM swap and per-model prompt versioning'",
+      "change_type": "add",
+      "description": "New sub-section documenting: (a) the runtime `PUT /settings/llm` hot-swap endpoint (Phase A enabler), (b) per-model prompt overrides keyed by model id under `src/hotel_guardrails/config/prompts/<model>.yml` with fallback to base prompts.yml (Phase G). Show a code block of the override-resolution order and an example gemma4-specific tightening rule. Cross-reference §6.5.5e for the empirical result.",
+      "rationale": "Phases A and G are architectural, not just experimental knobs. They belong in System Design so a reader understands the shipped system without having to read CH6."
+    },
+    {
+      "chapter": "CH4",
+      "section": "§4.5 RAG Pipeline Design — new §4.5.2 'Hybrid retrieval stack (Phase H)'",
+      "change_type": "add",
+      "description": "New sub-section documenting the Phase H stack: keyword extraction → BM25 sparse channel → vector channel → reciprocal-rank fusion → bge-reranker-v2-m3 cross-encoder rerank → top-k=5. Include a small diagram (Fig_4.5_Hybrid_Retrieval.png) and the rationale for why this works on Gemma 4 12B where the Phase B Qwen3-0.6B reranker did not on iter3 Qwen 9B. Note: 49-chunk Qdrant index and chunk_size=1000 from iter3 retained.",
+      "rationale": "Phase H landed and is the shipped retrieval stack. Putting it in System Design lets the reader see the final architecture without inferring it from CH6 prose."
+    },
+    {
+      "chapter": "CH4",
+      "section": "§4.2 System Architecture — overview diagram caption",
+      "change_type": "minor_edit",
+      "description": "Update the system-architecture caption to name 'Gemma 4 12B (Ollama, local)' as the primary LLM and 'Qwen3 Max (OpenRouter, fallback)'. Remove or rephrase any text that names Qwen 9B as the current primary.",
+      "rationale": "Aligns the shipped-system framing with the new model selection."
+    },
+    {
+      "chapter": "CH6",
+      "section": "§6.5.5 Iteration table — 'Final shipped' sentence",
+      "change_type": "minor_edit",
+      "description": "Replace the line 'Final shipped configuration (Phase A): Local LLM = gemma4:12b … no reranker …' with 'Final shipped configuration (Phase A + G + H): Local LLM = gemma4:12b (per-model prompt overrides active, Phase G), iter3 chunking (chunk_size=1000, 49 Qdrant chunks), hybrid BM25+vector retrieval with bge-reranker-v2-m3 cross-encoder (Phase H), num_docs=5, temperature=0.3, pricing pre-fetch helper active.' Keep all iter1-iter9 and Phase A-C rows verbatim; they remain the narrative of what was tried.",
+      "rationale": "User's exact ask: change the single 'Final shipped' sentence, do not rewrite the iteration rows."
+    },
+    {
+      "chapter": "CH6",
+      "section": "§6.5.5 Iteration table — add Phase G and Phase H rows",
+      "change_type": "add",
+      "description": "Append two new rows to the iteration table below Phase C: Phase G 'Per-model prompt versioning (gemma4 overrides active)' and Phase H 'Keyword + BM25 hybrid + bge-reranker-v2-m3 cross-encoder rerank'. Cite the per-row strict pass and Δ vs Phase A from eval/results/_workflow_3retrieval/ and the 7/8 live-PASS qualitative result for Phase H.",
+      "rationale": "Phases G and H landed and are in the shipped stack but are absent from the iteration table. Adding them as rows (not rewrites) preserves the chronological narrative."
+    },
+    {
+      "chapter": "CH6",
+      "section": "§6.5.5e (new) 'Per-model prompt versioning (Phase G)'",
+      "change_type": "add",
+      "description": "New sub-section analogous to existing 6.5.5b/c/d. Describe the prompt-override resolution order (model-specific YAML → base prompts.yml), enumerate the gemma4-specific overrides currently active (e.g. tightened handle_knowledge refusal rule, language-lock injection), and report the Δ vs Phase A on the 96-case stratified sample. Mark LANDED.",
+      "rationale": "Phase G is currently undocumented in CH6 despite being shipped."
+    },
+    {
+      "chapter": "CH6",
+      "section": "§6.5.5f (new) 'Hybrid retrieval (Phase H)'",
+      "change_type": "add",
+      "description": "New sub-section. Describe the Phase H stack (keyword extractor + BM25 + vector + RRF + bge-reranker-v2-m3), justify why it succeeds on Gemma 4 12B where Phase B's Qwen3-0.6B reranker failed (different reranker family, hybrid sparse+dense input rather than dense-only top-30 reorder), and report the headline: 7/8 live-test PASS on gemma4. Cross-reference AP_E for the case-by-case live-test log. Mark LANDED.",
+      "rationale": "Phase H is the most consequential shipped change since Phase A and must be documented in the main eval chapter."
+    },
+    {
+      "chapter": "CH6",
+      "section": "§6.5.6 Post-fix backtest + per-stratum delta — promotion-gate verdict",
+      "change_type": "minor_edit",
+      "description": "Update the 'Promotion-gate verdict: DO NOT SHIP' header to 'Promotion-gate verdict at Phase A: DO NOT SHIP (3 gates fail)'. Add one trailing paragraph: 'Phases G and H subsequently closed the aggregate-pass and hard-negative-hallucination gates on the live-test subset (§6.5.5f, AP_E); a full 261-case re-run on the Phase A+G+H stack is a follow-up.' Do not rewrite the gate table itself.",
+      "rationale": "The DO-NOT-SHIP verdict is true at Phase A and should remain in the historical narrative; Phases G/H change the picture and the reader needs the pointer."
+    },
+    {
+      "chapter": "CH6",
+      "section": "§6.5.7 Threats to validity",
+      "change_type": "minor_edit",
+      "description": "Add a bullet: 'Live-test subset is informal (n=8, single human reviewer = Claude as adjudicator). The 7/8 PASS headline for Phase G+H is qualitative confirmation, not a statistical claim. The 261-case stratified re-run on Phase A+G+H remains a follow-up. See AP_E for the per-case log and the user_live_test=true flag convention.'",
+      "rationale": "Aligns the threats-to-validity list with the new informal evidence channel."
+    },
+    {
+      "chapter": "AP_C",
+      "section": "§C.Y Phase A header",
+      "change_type": "minor_edit",
+      "description": "Change 'Phase A — Gemma 4 12B swap (SHIPPED)' to 'Phase A — Gemma 4 12B swap (SHIPPED, now the production baseline)'. Add one sentence to the bullet list: 'All post-Phase-A work (B, C, D, E, F, G, H) is evaluated against gemma4:12b as the base; Qwen3.5-Opus 9B is retained only as a historical reference point for the iter1-iter9 methodology proof.'",
+      "rationale": "User's explicit ask to reframe Phase A as the shipped baseline rather than an experiment."
+    },
+    {
+      "chapter": "AP_C",
+      "section": "§C.Y add Phase G and Phase H sub-sections",
+      "change_type": "add",
+      "description": "Append two new sub-sections after Phase F using the same heading style: 'Phase G — Per-model prompt versioning (LANDED)' and 'Phase H — Keyword + BM25 + bge-reranker-v2-m3 hybrid retrieval (LANDED, 7/8 live PASS on gemma4)'. Include the implementation artifacts (file paths) and the result line for each.",
+      "rationale": "AP_C is the defect-inventory closing chronicle; the new phases must be appended so the document chain matches CH6."
+    },
+    {
+      "chapter": "AP_C",
+      "section": "§C.Z Closing patch list table",
+      "change_type": "minor_edit",
+      "description": "Append two rows to the closing patch-list table: Phase G (per-model prompt versioning, LANDED) and Phase H (hybrid retrieval, LANDED). Update the 'Final state' sentence to read 'Final state: local Gemma 4 12B + iter3 retrieval + Phase G per-model prompts + Phase H hybrid BM25+vector+bge-reranker-v2-m3; live-test subset 7/8 PASS; full 261-case re-run on this stack is a follow-up.'",
+      "rationale": "Keeps the closing patch list synchronized with the new phases."
+    },
+    {
+      "chapter": "CH7",
+      "section": "§7 Discussion — model migration paragraph",
+      "change_type": "add",
+      "description": "Add a short discussion paragraph (3-5 sentences) titled 'On the Qwen-to-Gemma migration'. Argue that the Phase F variance baseline (σ=1.58 pp) shows Phase A's +1.0 pp delta is statistically indistinguishable from Qwen 9B on aggregate strict pass, so the migration is justified on qualitative grounds (cleaner CN/TH output, no Thai unit fragment leaks, better politeness markers) rather than on a headline accuracy number — and that the iter1-iter9 methodology proven on Qwen 9B transferred cleanly to Gemma 4 12B without re-instrumentation.",
+      "rationale": "Gives the reader an honest framing of why the shipped model changed despite the aggregate delta being inside noise."
+    }
+  ],
+  "table_schemas": [
+    {
+      "table_id": "T_AP_D_1",
+      "title": "Per-case Q&A — shipped response vs golden expectation (full 25-case golden set)",
+      "where_in_thesis": "AP_D §D.1 (one row per golden case, one table for all 25 golden K/B/G/L/E cases)",
+      "columns": [
+        "case_id",
+        "category",
+        "lang",
+        "input_message",
+        "expected_keywords",
+        "expected_behavior",
+        "shipped_response (Gemma4 + Phase G+H)",
+        "keyword_hit_rate",
+        "lang_check_pass",
+        "strict_pass",
+        "judge_verdict",
+        "notes"
+      ],
+      "example_rows": "K01 | knowledge | en | 'What is the WiFi password?' | ['GrandHorizon2026','complimentary'] | 'Return the published WiFi password verbatim' | 'The complimentary WiFi password is GrandHorizon2026.' | 1.0 | PASS | PASS | correct | retrieved from hotel_faq.md chunk 6"
+    },
+    {
+      "table_id": "T_AP_D_2",
+      "title": "Per-case Q&A — strategic backtest stratified sample (96-case Phase A+G+H rerun)",
+      "where_in_thesis": "AP_D §D.2 (compact per-case roll-up, one row per case)",
+      "columns": [
+        "case_id",
+        "stratum (domain,lang)",
+        "expected_answer (gold)",
+        "shipped_response_summary",
+        "defect_buckets (if any)",
+        "strict_pass",
+        "Δ vs Phase A only"
+      ],
+      "example_rows": "SB_RAG_TH_017 | knowledge,th | 'รหัส WiFi คือ GrandHorizon2026' | 'รหัส WiFi คือ GrandHorizon2026 ค่ะ ใช้ได้ในทุกพื้นที่' | [] | PASS | +1 vs Phase A (was rag_miss)"
+    },
+    {
+      "table_id": "T_CH6_aggregate_compare",
+      "title": "Aggregate strict-pass comparison — Phase A vs Phase A+G vs Phase A+G+H",
+      "where_in_thesis": "CH6 §6.5.5f, immediately above the Phase H sub-section narrative",
+      "columns": [
+        "Config",
+        "Strict pass %",
+        "σ across runs (where applicable)",
+        "hallucination count",
+        "incomplete count",
+        "over_refuse count",
+        "rag_miss count",
+        "hard_negatives pass rate",
+        "Δ vs Phase A"
+      ],
+      "example_rows": "Phase A (gemma4 alone) | 80.83% | 1.58 pp (5-run) | 12 | 9 | 3 | 5 | 3/3 | baseline\nPhase A+G | (fill from _workflow_makeclaude) | — | … | … | … | … | … | …\nPhase A+G+H (shipped) | (fill from _workflow_3retrieval/bm25Hybrid.json) | — | … | … | … | … | … | …"
+    },
+    {
+      "table_id": "T_CH4_arch_changes",
+      "title": "Architectural changes summary — Phases A, D, G, H (shipped) and B, C (reverted, retained for context)",
+      "where_in_thesis": "CH4 §4.8 (new closing summary table before §4.7 Frontend Design moves down, or as appendix to §4.5)",
+      "columns": [
+        "Phase",
+        "Layer",
+        "Change",
+        "Files / endpoints touched",
+        "Status (SHIP / REVERT / WORKFLOW)",
+        "Evaluation cross-ref"
+      ],
+      "example_rows": "A | LLM | Runtime PUT /settings/llm hot-swap to gemma4:12b | src/hotel_guardrails/server.py, openrouter_llm.py | SHIP | §6.5.5 row 'Phase A'\nG | Prompts | Per-model prompt overrides (model-specific YAML) | src/hotel_guardrails/config/prompts/gemma4.yml | SHIP | §6.5.5e\nH | RAG | Keyword + BM25 + vector + bge-reranker-v2-m3 hybrid | src/retrievers/hotel_knowledge/, src/common/reranker_*.py | SHIP | §6.5.5f"
+    },
+    {
+      "table_id": "T_AP_E_livetest",
+      "title": "Claude live-test summary — informal qualitative adjudication (user_live_test=true)",
+      "where_in_thesis": "AP_E §E.1 headline summary table; per-case detail follows in §E.2",
+      "columns": [
+        "live_case_id",
+        "category (booking / knowledge / refusal / multi-lang)",
+        "input",
+        "shipped response (verbatim)",
+        "claude_adjudication (PASS / FAIL / PARTIAL)",
+        "claude_rationale (1-2 sentences)",
+        "would_strict_pass_under_LLM_judge",
+        "user_live_test (always true)"
+      ],
+      "example_rows": "LIVE_01 | knowledge,en | 'Do you have a casino?' | 'No, The Grand Horizon Hotel does not have a casino.' | PASS | Correct hard-negative refusal, no fabrication. | yes | true\nLIVE_05 | booking,th | 'จองห้อง Deluxe 15 พ.ค.' | (verbatim shipped response) | PASS | Thai-only, asks for email and headcount per policy. | yes | true"
+    },
+    {
+      "table_id": "T_CH6_phaseG_overrides",
+      "title": "Gemma 4 12B prompt overrides currently active (Phase G)",
+      "where_in_thesis": "CH6 §6.5.5e",
+      "columns": [
+        "sub_agent",
+        "override_field",
+        "base prompts.yml value (Qwen-tuned)",
+        "gemma4.yml override",
+        "rationale"
+      ],
+      "example_rows": "handle_knowledge | refusal_clause | 'If not in HOTEL INFORMATION, say I do not have that.' | 'If not in HOTEL INFORMATION, say I do not have that; never invent values; never substitute training-data answers.' | gemma4 was prone to confidently substituting training-data prices for missing-KB facts"
+    }
+  ],
+  "qwen_decommission_narrative": "Do NOT rewrite iter1-iter9. They were methodologically valid on Qwen 9B and they prove the iteration loop works — which is a contribution of the thesis. Instead, insert a one-paragraph 'Model migration note' at the END of §3.3.3 (LLM Model Selection): 'The iterative improvement loop (Chapter 6 §6.5.5, iter1-iter9) was conducted on Qwen3.5-Opus 9B as the baseline local LLM. At the conclusion of that loop the team performed a runtime model swap to Gemma 4 12B (Phase A, §6.5.5) which is now the shipped local LLM. The 9B configuration is retained only as a historical reference point that establishes the iteration methodology; all post-Phase-A architectural changes (Phases D, G, H) and all shipped artifacts are built against Gemma 4 12B. The Phase F variance baseline (σ=1.58 pp on a 5-run rerun, §6.5.5d) shows that the aggregate strict-pass delta between Qwen 9B and Gemma 4 12B is inside one standard deviation of the noise floor; the migration is therefore justified on qualitative grounds — cleaner CN/TH output, no Thai-unit-fragment leakage in CN responses, more reliable politeness markers — and on the strategic value of being able to layer Phases G (per-model prompt versioning) and H (hybrid retrieval + bge-reranker-v2-m3) on top, which the 9B model could not absorb (see Phase B revert).' Mirror the same paragraph as a callout at the top of CH4 §4.2 and at the top of CH6 §6.5. This preserves the prior narrative without forcing a rewrite, while making the shipped-model status of Gemma 4 12B unambiguous to any reader.",
+  "claude_live_test_treatment": "Place the Claude live tests in a new appendix AP_E ('Claude manual verification log') — NOT in the main CH6 eval numbers. Every row carries an explicit `user_live_test=true` boolean and the header carries a Limitations block stating: (1) n=8, not statistically powered; (2) adjudicator is a single LLM instance (Claude), not a panel of human reviewers, so this is qualitative confirmation rather than independent ground truth; (3) no Wilson CI is reported because the sample is too small and the adjudicator is not blinded; (4) the 7/8 PASS headline is reported as a qualitative signal that Phase H closed the rag_miss and hard_negative_hallucination defects observed under Phase A alone, not as an updated pass-rate number that supersedes the §6.5.6 figure. State the VALUE explicitly: (a) end-to-end real-API verification of the shipped Phase A+G+H stack outside the cached backtest pipeline, catching any regression that would be invisible to a cache-warmed run; (b) qualitative inspection of CN/TH output quality that the LLM judge does not score (politeness markers, unit fragments, code-switching cleanliness); (c) hard-negative refusal verification (no casino, no helipad, no underwater suite) on freshly-phrased inputs not in the golden set. Cross-reference AP_E from CH6 §6.5.5f and from §6.5.7 threats-to-validity. Do NOT use AP_E numbers in any aggregate or headline comparison; treat it strictly as supplementary qualitative evidence.",
+  "new_appendices": [
+    {
+      "appendix_id": "AP_D",
+      "title": "Per-case Q&A comparison — shipped responses vs golden expectations",
+      "contents": "§D.1 'Golden set (25 cases)' — full per-case table T_AP_D_1 covering K01-K08, B01-B06, G01-G04, L01-L03, E01-E04 with shipped Gemma 4 12B + Phase G + Phase H responses, keyword hit rate, language check, strict pass, judge verdict, and a notes column citing the retrieved chunk. §D.2 'Strategic backtest stratified sample (96 cases, Phase A+G+H)' — compact per-case roll-up T_AP_D_2 with stratum tag, gold answer, response summary, defect buckets (if any), strict pass, and Δ vs Phase A. §D.3 'Per-stratum aggregate' — small summary table with strict pass rate per (domain, language) cell at Phase A vs Phase A+G+H so the reader can locate the deltas without diffing two 96-row tables. §D.4 'Reading guide' — short paragraph explaining that strict pass is the headline metric, that defect-bucket tags follow the §6.5.3 taxonomy, and that AP_D rows are sourced from eval/results/_workflow_3retrieval/ and eval/results/_workflow_makeclaude/ JSON artifacts (file paths cited explicitly so the reader can reproduce).",
+      "appendix_id_dup_check": "AP_D"
+    },
+    {
+      "appendix_id": "AP_E",
+      "title": "Claude manual verification log — informal live-test adjudication (user_live_test=true)",
+      "contents": "§E.0 'Limitations' (read this first) — bullet list explicitly stating n=8, single-adjudicator (Claude), no Wilson CI, not blinded, supplementary-only, never used in headline numbers. §E.1 'Summary' — headline table T_AP_E_livetest with 7/8 PASS at Phase A+G+H, broken down by category (knowledge, booking, refusal, multi-lang). §E.2 'Per-case detail' — one block per live case with: live_case_id, category, full input verbatim, full shipped response verbatim, Claude's adjudication (PASS/FAIL/PARTIAL), Claude's 1-2 sentence rationale, the user_live_test=true flag, and the corresponding eval/results JSON artifact path (e.g. test_chinese_leak_extended.json, _workflow_makeclaude/antiHalluc.json). §E.3 'What this confirms and what it does not' — short prose paragraph: what the live tests confirm (Phase H closed rag_miss and hard-negative hallucination on freshly-phrased inputs; CN/TH output quality is qualitatively cleaner under gemma4 than under Qwen 9B; the runtime hot-swap and per-model prompt overrides do not break on first call) and what they do not confirm (no statistical claim of pass-rate improvement; no replacement for the 261-case strategic backtest; no independent ground truth). §E.4 'Cross-references' — list of all CH6 sections that cite AP_E as informal evidence (§6.5.5f, §6.5.7).",
+      "appendix_id_dup_check": "AP_E"
+    }
+  ]
+}

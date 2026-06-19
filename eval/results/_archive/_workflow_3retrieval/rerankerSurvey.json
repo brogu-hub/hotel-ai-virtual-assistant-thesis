@@ -1,0 +1,132 @@
+{
+  "summary": "Surveyed 5 reranker candidates for the bilingual EN/TH+CN hotel KB on RTX 5080 (16GB, ~5-6GB headroom alongside gemma3:12b on Ollama). Existing loader (src/common/reranker_qwen.py) already uses sentence-transformers CrossEncoder and defaults to BAAI/bge-reranker-v2-m3 in code despite the class name \"Qwen3Reranker\" — so model swaps are mostly a one-line env flip. None of these are Ollama-pullable (CrossEncoders, not chat LLMs); all run via HF transformers/sentence-transformers. Top recommendation: bge-reranker-v2-m3 on GPU (strong TH+CN, fits in ~1.5GB VRAM at fp16, drop-in via existing loader). Secondary: jina-reranker-v2-base-multilingual for lowest latency and explicit multilingual+long-doc design. The prior -2.1pp Phase B regression was on CPU-bound Qwen3-0.6B which also blocked the event loop; moving to GPU + bge-v2-m3 changes the latency story materially (~30-80ms/query vs 8s), so the -2.1pp benchmark is not the right reference for this targeted multi-intent TH/CN failure mode.",
+  "candidates": [
+    {
+      "model_id": "BAAI/bge-reranker-v2-m3",
+      "hf_path": "BAAI/bge-reranker-v2-m3",
+      "provider": "BAAI (HuggingFace)",
+      "params": "568M",
+      "vram_estimate": "~1.2-1.5GB at fp16, ~2.3GB at fp32",
+      "latency_estimate_ms": "GPU (RTX 5080): 30-60ms for 30 candidates @ 512 tokens; CPU: 800-1500ms",
+      "multilingual_support": "Excellent — trained on 100+ languages including TH and CN explicitly; XLM-RoBERTa-large backbone. Strong on cross-lingual query/doc pairs (TH query against EN doc).",
+      "fit_for_hotel_kb": "excellent",
+      "ollama_pullable": false,
+      "strengths": [
+        "Already the default in reranker_qwen.py DEFAULT_RERANKER_MODEL — zero loader changes needed",
+        "Best-in-class multilingual benchmarks (MIRACL, MKQA) for sub-1B reranker class",
+        "Fits comfortably in 5080 VRAM headroom alongside gemma3:12b",
+        "sentence-transformers CrossEncoder compatible — existing wrapper works as-is",
+        "Strong TH and CN support documented in BAAI paper",
+        "Handles cross-lingual pairs well (TH query vs EN/CN doc)"
+      ],
+      "weaknesses": [
+        "Larger than jina-v2-base — slightly more VRAM/latency",
+        "On CPU it is the model that caused the original 8s/query blocking issue",
+        "Max input 8192 tokens but quality optimized for <= 512"
+      ],
+      "recommended_rank": 1
+    },
+    {
+      "model_id": "jinaai/jina-reranker-v2-base-multilingual",
+      "hf_path": "jinaai/jina-reranker-v2-base-multilingual",
+      "provider": "Jina AI (HuggingFace)",
+      "params": "278M",
+      "vram_estimate": "~600MB at fp16, ~1.1GB at fp32",
+      "latency_estimate_ms": "GPU (RTX 5080): 15-35ms for 30 candidates; CPU: 400-900ms (2-3x faster than bge-v2-m3 on CPU)",
+      "multilingual_support": "Excellent — explicitly designed for 100+ languages with strong TH/CN coverage; flash attention support; trained on long-doc reranking up to 8192 tokens.",
+      "fit_for_hotel_kb": "excellent",
+      "ollama_pullable": false,
+      "strengths": [
+        "Smallest fp16 footprint of the multilingual options — lowest VRAM pressure on the 5080 budget",
+        "Lowest GPU latency in this set — best for FastAPI throughput",
+        "Designed for long-doc reranking (8192 tokens) — better for hotel policy/FAQ documents that exceed 512 tokens",
+        "Flash attention support → further latency wins",
+        "Strong performance on multilingual MTEB reranking benchmarks for its size class",
+        "If CPU fallback is ever needed, fast enough to be viable"
+      ],
+      "weaknesses": [
+        "Uses Jina's custom architecture (trust_remote_code=True required) — existing wrapper already passes this, but worth a smoke test",
+        "Slightly less battle-tested than BGE in production deployments",
+        "Marginally lower benchmark scores than bge-v2-m3 on pure retrieval MRR (~1-2 points)"
+      ],
+      "recommended_rank": 2
+    },
+    {
+      "model_id": "BAAI/bge-reranker-v2-gemma",
+      "hf_path": "BAAI/bge-reranker-v2-gemma",
+      "provider": "BAAI (HuggingFace)",
+      "params": "2.5B (gemma-2b backbone)",
+      "vram_estimate": "~5GB at fp16, ~10GB at fp32",
+      "latency_estimate_ms": "GPU (RTX 5080): 150-400ms for 30 candidates; CPU: not viable (10-30s+)",
+      "multilingual_support": "Very good — gemma backbone has solid multilingual coverage including TH and CN; LLM-based reranker uses generative scoring which improves cross-lingual nuance.",
+      "fit_for_hotel_kb": "good",
+      "ollama_pullable": false,
+      "strengths": [
+        "Highest quality reranker in this set on English benchmarks; LLM-as-reranker paradigm",
+        "Better handling of nuanced multi-intent queries (the exact failure mode user reported for TH/CN breakfast)",
+        "Generative scoring captures semantic equivalence across languages better than encoder-only models"
+      ],
+      "weaknesses": [
+        "5GB VRAM at fp16 essentially exhausts the available headroom alongside gemma3:12b (8GB) — risk of OOM or forcing LLM eviction",
+        "Requires LLM-style inference path (not sentence-transformers CrossEncoder) — existing loader will NOT work; needs a new loader using FlagEmbedding's FlagLLMReranker or transformers AutoModelForCausalLM",
+        "150-400ms latency on GPU adds noticeable user-facing delay",
+        "Overkill for hotel KB which has ~12 short markdown docs"
+      ],
+      "recommended_rank": 4
+    },
+    {
+      "model_id": "mixedbread-ai/mxbai-rerank-large-v1",
+      "hf_path": "mixedbread-ai/mxbai-rerank-large-v1",
+      "provider": "Mixedbread AI (HuggingFace)",
+      "params": "435M",
+      "vram_estimate": "~900MB at fp16, ~1.7GB at fp32",
+      "latency_estimate_ms": "GPU (RTX 5080): 25-50ms for 30 candidates; CPU: 600-1200ms",
+      "multilingual_support": "Fair — primarily English-trained; multilingual capability is limited and TH/CN performance is significantly weaker than BGE-v2-m3 or Jina v2. v1 was not explicitly designed as multilingual.",
+      "fit_for_hotel_kb": "fair",
+      "ollama_pullable": false,
+      "strengths": [
+        "Excellent English benchmarks (claims SOTA on BEIR for its size class)",
+        "Small VRAM footprint, fast on GPU",
+        "Apache 2.0 license, sentence-transformers compatible — drop-in via existing loader",
+        "Good if the workload were English-only"
+      ],
+      "weaknesses": [
+        "Weak Thai and Chinese support — this is a deal-breaker for the bilingual+CN hotel KB",
+        "v1 is English-centric; v2 (mxbai-rerank-large-v2, 1.5B, Mar 2025) added multilingual but at higher VRAM cost",
+        "Likely to make the TH/CN multi-intent failure WORSE, not better",
+        "No documented TH benchmark scores"
+      ],
+      "recommended_rank": 5
+    },
+    {
+      "model_id": "Qwen/Qwen3-Reranker-0.6B",
+      "hf_path": "Qwen/Qwen3-Reranker-0.6B",
+      "provider": "Alibaba Qwen (HuggingFace)",
+      "params": "596M",
+      "vram_estimate": "~1.2GB at fp16, ~2.4GB at fp32",
+      "latency_estimate_ms": "GPU (RTX 5080): 40-80ms for 30 candidates; CPU: 7000-9000ms (matches observed 8s blocking)",
+      "multilingual_support": "Good — Qwen3 family has strong CN (native) and decent TH coverage from multilingual pretraining; weaker on TH than bge-v2-m3 but stronger on CN than mxbai.",
+      "fit_for_hotel_kb": "fair",
+      "ollama_pullable": false,
+      "strengths": [
+        "Native CN strength (Qwen is Chinese-origin model family)",
+        "Aligns with the qwen3-max LLM and qwen3-embedding-8b stack — coherent provenance story for the thesis",
+        "If moved to GPU, latency becomes acceptable (~50ms vs 8s on CPU)"
+      ],
+      "weaknesses": [
+        "This IS the model that caused the prior -2.1pp Phase B regression — there is a documented quality issue beyond just latency",
+        "Reranker_qwen.py header notes 'score.weight not initialized' warning at load time — indicates the CrossEncoder head was not properly fine-tuned for sentence-transformers usage",
+        "Weaker TH support than bge-v2-m3",
+        "Comments in reranker_qwen.py explicitly call out the quality problem — switching away from this is already the codebase's recommendation"
+      ],
+      "recommended_rank": 3
+    }
+  ],
+  "apply_design": {
+    "env_var": "RERANKER_BACKEND=qwen (existing flag, despite the name it loads whatever RERANKER_MODEL points to via sentence-transformers; recommended pair: RERANKER_BACKEND=qwen + RERANKER_MODEL=BAAI/bge-reranker-v2-m3 + RERANKER_DEVICE=cuda). For top pick #2 Jina: RERANKER_MODEL=jinaai/jina-reranker-v2-base-multilingual. For #4 bge-gemma: requires new backend value e.g. RERANKER_BACKEND=bge_llm and a new loader module (reranker_bge_llm.py) using FlagLLMReranker.",
+    "container_recreate_needed": true,
+    "chains_py_changes": "src/retrievers/hotel_knowledge/chains.py: (1) update RERANKER_BACKEND default doc comment to reflect new options; (2) flip default to 'qwen' (which now means 'sentence-transformers CrossEncoder using RERANKER_MODEL') OR add a new branch 'hf_cross' that semantically replaces 'qwen' for clarity; (3) extend get_reranker() to read RERANKER_DEVICE env (default 'cuda' if torch.cuda.is_available() else 'cpu') and pass to get_qwen_reranker(device=...); (4) src/common/reranker_qwen.py get_qwen_reranker signature already accepts device — only need to default to cuda detection. For bge-gemma path: create src/common/reranker_bge_llm.py wrapping FlagEmbedding.FlagLLMReranker with the same BaseDocumentCompressor interface, and add a 'bge_llm' branch in get_reranker(). No changes needed in hotel_langgraph.py or actions.py — reranker is fully encapsulated behind HotelKnowledgeRetriever.document_search().",
+    "rollback_steps": "Set RERANKER_BACKEND=none in .env and docker compose restart hotel-guardrails. The chains.py 'none' branch is unchanged and returns top_k_rerank vector-search results directly — identical to current production behavior. If only the model is bad but the backend is fine, just change RERANKER_MODEL env var and recreate the container — sentence-transformers will redownload on next request. Keep the LRU cache invalidation in mind: get_qwen_reranker uses @lru_cache(maxsize=1) so a container restart is required to pick up a new model name, env var alone won't switch it on a hot process. Pin requirements: ensure sentence-transformers>=2.7 and transformers>=4.40 are in requirements.dev.txt before deploy; for Jina v2 verify einops is installed (trust_remote_code dependency)."
+  },
+  "eval_history_note": "Prior Phase B (CH6 §6.5.5) showed -2.1pp on 96-case stratified sample using Qwen3-0.6B reranker on CPU with 8s/query latency that also blocked the FastAPI event loop. Two reasons this is not the right benchmark for the current decision: (1) the regression was on CPU; moving to RTX 5080 GPU drops latency 100-200x and removes the event-loop blocking entirely, which changes the cost/benefit math fundamentally; (2) the 96-case sample does not include multi-intent TH/CN breakfast retrieval — the specific failure mode prompting this survey is uncovered by existing eval. Recommend: before committing to a model, extend eval/dataset to add ~15-20 multi-intent TH/CN cases (esp. queries combining time + service + facility), then re-run on the top-2 candidates (bge-v2-m3 GPU and jina-v2-base GPU) with RERANKER_BACKEND=qwen,RERANKER_DEVICE=cuda. The -2.1pp number from CH6 should be flagged as 'CPU+Qwen3-0.6B specific' and not generalized to all rerankers in the thesis narrative."
+}

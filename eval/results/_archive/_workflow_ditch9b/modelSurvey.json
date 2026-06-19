@@ -1,0 +1,51 @@
+{
+  "candidates": [
+    {
+      "ollama_tag": "gemma4:12b-it-q8_0",
+      "params": "12B",
+      "quantization": "Q8_0",
+      "size_gb": 13,
+      "fits_with_reranker": true,
+      "recommended_rank": 1,
+      "fit_reason": "13 GB + 1.3 GB reranker + ~0.5 GB system overhead = ~14.8 GB, fits in 16 GB with ~1.2 GB margin. Pure GPU offload, no CPU spillover.",
+      "expected_quality_vs_current_12b_q4": "Notable bump. Q8_0 is near-lossless vs FP16 (typical perplexity delta <0.1%), whereas Q4_K_M loses ~1-2% on reasoning/multi-step instruction-following benchmarks. Biggest gain visible on long-context tool-call accuracy and Thai/Chinese token fidelity.",
+      "expected_latency_vs_current": "~15-25% slower tok/s (more bytes per weight to move through memory bandwidth). Still dwarfed by the 5s bge-reranker pass the user already tolerates. Acceptable trade."
+    },
+    {
+      "ollama_tag": "gemma4:26b-a4b-it-qat",
+      "params": "26B (MoE, 4B active)",
+      "quantization": "QAT",
+      "size_gb": 16,
+      "fits_with_reranker": false,
+      "recommended_rank": 2,
+      "fit_reason": "16 GB raw weights + 1.3 GB reranker = 17.3 GB, exceeds 16 GB VRAM. Would force partial CPU offload causing severe latency. Not viable on a single 16 GB card even though it is an MoE.",
+      "expected_quality_vs_current_12b_q4": "Substantial bump if it could fit — 26B-MoE typically matches dense 20-24B quality on reasoning, but partial CPU offload would negate gains via 10x+ latency penalty.",
+      "expected_latency_vs_current": "5-15x slower due to forced CPU offload of overflow layers. Reject on this hardware."
+    },
+    {
+      "ollama_tag": "gemma4:12b-it-qat",
+      "params": "12B",
+      "quantization": "QAT (Q4-equivalent)",
+      "size_gb": 7.2,
+      "fits_with_reranker": true,
+      "recommended_rank": 3,
+      "fit_reason": "Trivially fits. Effectively same size as current Q4_K_M but quantization-aware-trained, so it recovers more quality at same bit-width.",
+      "expected_quality_vs_current_12b_q4": "Small bump (~0.5-1% on benchmarks). QAT recovers some Q4 degradation but is not comparable to Q8.",
+      "expected_latency_vs_current": "Equivalent to current (same bit-width, same params)."
+    },
+    {
+      "ollama_tag": "gemma4:e4b-it-q8_0",
+      "params": "4B effective (8B total Matformer)",
+      "quantization": "Q8_0",
+      "size_gb": 12,
+      "fits_with_reranker": true,
+      "recommended_rank": 4,
+      "fit_reason": "Fits easily but is a SMALLER model than current 12B. Useful only if latency-bound; user prioritised quality, so deprioritise.",
+      "expected_quality_vs_current_12b_q4": "Likely regression on reasoning/tool-calling — fewer active params outweighs the quantization win. Not recommended.",
+      "expected_latency_vs_current": "Faster (~2-3x) due to smaller active params."
+    }
+  ],
+  "current_state": "Running gemma4:12b @ Q4_K_M (7.6 GB) alongside bge-reranker-v2-m3 (~1.3 GB) on RTX 5080 16 GB. Total ~9 GB used, ~7 GB headroom. User wants the largest Gemma 4 that fits, prioritising quality over latency.",
+  "vram_budget": "16 GB total - 1.3 GB bge-reranker - 0.5 GB CUDA/system overhead = ~14.2 GB available for LLM weights + KV cache. Practical hard cap ~13.5 GB to keep margin for KV cache growth at 256K context.",
+  "recommended_action": "Pull gemma4:12b-it-q8_0 (13 GB). Largest quality-bump variant that fits with safe margin. The 26b-a4b MoE at 16 GB QAT overflows the 14.2 GB budget once the reranker is co-resident, so 12b-Q8_0 is the highest-quality option that runs fully on GPU. After pulling, update APP_LLM_MODELNAME to gemma4:12b-it-q8_0 in the hotel-ollama env and restart the service. Monitor `nvidia-smi` for actual VRAM use under load; if KV cache pushes total >15 GB, fall back to gemma4:12b-it-qat (7.2 GB) which still beats raw Q4_K_M slightly.</recommended_action>\n<parameter name=\"pull_commands\">[\"docker exec hotel-ollama ollama pull gemma4:12b-it-q8_0\", \"docker exec hotel-ollama ollama pull gemma4:12b-it-qat\"]"
+}

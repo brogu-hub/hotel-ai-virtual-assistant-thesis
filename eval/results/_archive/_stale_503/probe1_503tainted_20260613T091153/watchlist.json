@@ -1,0 +1,69 @@
+{
+  "metrics": {
+    "rag_drift_count": 0,
+    "language_leak_count_en_th": 0,
+    "hallucination_count_hard_neg": 0,
+    "tool_error_booking_count": 0,
+    "tool_call_leak_rate": 0.0,
+    "over_refuse_rate": 0.0517,
+    "empty_response_rate": 0.5517
+  },
+  "status": [
+    {
+      "label": "rag_drift",
+      "severity": "critical",
+      "metric": 0,
+      "threshold": 0,
+      "comparator": "<=",
+      "passed": true
+    },
+    {
+      "label": "language_leak (EN+TH replies)",
+      "severity": "critical",
+      "metric": 0,
+      "threshold": 0,
+      "comparator": "<=",
+      "passed": true
+    },
+    {
+      "label": "hallucination on hard negatives",
+      "severity": "critical",
+      "metric": 0,
+      "threshold": 0,
+      "comparator": "<=",
+      "passed": true
+    },
+    {
+      "label": "booking lifecycle tool_error",
+      "severity": "critical",
+      "metric": 0,
+      "threshold": 0,
+      "comparator": "<=",
+      "passed": true
+    },
+    {
+      "label": "tool_call_leak rate",
+      "severity": "high",
+      "metric": 0.0,
+      "threshold": 0.01,
+      "comparator": "<=",
+      "passed": true
+    },
+    {
+      "label": "over_refuse rate",
+      "severity": "high",
+      "metric": 0.0517,
+      "threshold": 0.15,
+      "comparator": "<=",
+      "passed": true
+    },
+    {
+      "label": "empty_response rate",
+      "severity": "high",
+      "metric": 0.5517,
+      "threshold": 0.03,
+      "comparator": "<=",
+      "passed": false
+    }
+  ]
+}

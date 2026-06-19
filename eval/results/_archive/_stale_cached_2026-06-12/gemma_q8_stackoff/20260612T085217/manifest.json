@@ -1,0 +1,24 @@
+{
+  "tag": "gemma_q8_stackoff",
+  "ts": "20260612T085217",
+  "endpoint": "http://localhost:8088",
+  "judge_model": "deepseek/deepseek-chat-v3.1",
+  "chat_cache": {
+    "enabled": true,
+    "chat_sha": "001f995cc4ce",
+    "corpus_sha": "e26b028808c3",
+    "version": ""
+  },
+  "max_chat_parallel": 2,
+  "started_at": "2026-06-12T08:52:17+00:00",
+  "workflow_sha": "03a261f",
+  "corpus_version": "qdrant_hotel_knowledge_unknown_20260612T085217",
+  "embedding_model": "qwen/qwen3-embedding-8b",
+  "llm_model": "gemma4:12b-it-q8_0",
+  "dataset_version": "sha256_45aa45479a56",
+  "stack_query_rewrite": "false",
+  "stack_hybrid": "false",
+  "stack_reranker": "none",
+  "stack_prompt_path": "/app/src/agent/hotel_prompt_stackoff.yaml",
+  "stack_num_docs_per_subq": "3"
+}

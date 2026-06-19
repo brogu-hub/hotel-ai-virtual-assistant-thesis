@@ -1,0 +1,191 @@
+--- a/src/retrievers/hotel_knowledge/chains.py
++++ b/src/retrievers/hotel_knowledge/chains.py
+@@ -3,11 +3,12 @@
+ """
+ Hotel Knowledge RAG Chain
+ 
+ Retrieves hotel information from Qdrant using OpenRouter embeddings.
+-Supports bilingual Thai/English queries. Reranking is OFF by default
+-(embedding search is already accurate enough and the reranker was
+-blocking the event loop under load).
++Supports bilingual Thai/English queries. Reranking is ON by default
++(RERANKER_BACKEND=qwen): the Qwen3-0.6B CrossEncoder reranks the top-30
++vector candidates down to top-5. document_search() is sync and is
++invoked from LangChain's @tool executor in a worker thread, so the
++CrossEncoder does NOT block the FastAPI event loop.
+ 
+ Usage:
+     from src.retrievers.hotel_knowledge.chains import HotelKnowledgeRetriever
+@@ -16,7 +17,7 @@ Usage:
+     results = retriever.document_search("What time is breakfast?")
+ 
+ Environment Variables:
+-    RERANKER_BACKEND: "none" (default, fastest), "qwen" (local CPU), or "nvidia" (API)
++    RERANKER_BACKEND: "qwen" (default, local CPU CrossEncoder), "none" (skip), or "nvidia" (API)
+     NVIDIA_API_KEY: Required only if RERANKER_BACKEND=nvidia
+ """
+ 
+@@ -41,17 +42,15 @@ from src.common.vectorstore_qdrant import (
+ logger = logging.getLogger(__name__)
+ 
+ # Reranker selection:
+-#   "none"   (DEFAULT) — skip reranking. The embedding model is already
+-#            strong enough for hotel-knowledge recall and reranking was
+-#            adding ~1-2 seconds of CPU-bound latency per query AND
+-#            blocking the FastAPI event loop, hurting concurrent-user
+-#            throughput. We fetch top_k_retrieval directly from Qdrant
+-#            and return the top N.
+-#   "qwen"   — local CPU CrossEncoder (legacy — very slow, single-threaded)
+-#   "nvidia" — NVIDIA NIM reranker API (legacy — requires NVIDIA_API_KEY)
+-RERANKER_BACKEND = os.getenv("RERANKER_BACKEND", "none").lower()
++#   "qwen"   (DEFAULT) — local Qwen3-0.6B CrossEncoder. Reranks top-30
++#            vector candidates -> top-5. Runs on CPU in a worker thread
++#            (document_search is sync and called from LangChain's @tool
++#            executor), so it does NOT block the FastAPI event loop.
++#            Adds ~600-900ms of CPU time per query but materially
++#            improves Top-1 precision on bilingual Thai/English queries.
++#   "none"   — skip reranking, return top-N vector-search results directly.
++#   "nvidia" — NVIDIA NIM reranker API (requires NVIDIA_API_KEY).
++RERANKER_BACKEND = os.getenv("RERANKER_BACKEND", "qwen").lower()
+ 
+ 
+ def get_reranker(top_n: int = 4):
+@@ -187,27 +186,87 @@ class HotelKnowledgeRetriever(BaseExample):
+         self.text_splitter = self._get_text_splitter()
+ 
+     def _get_text_splitter(self):
+-        """Get text splitter for document chunking."""
+-        from langchain_text_splitters import RecursiveCharacterTextSplitter
+-
+-        # Use markdown-aware separators to keep sections together
+-        # Priority: section breaks > paragraphs > sentences > words
+-        return RecursiveCharacterTextSplitter(
++        """Fallback character splitter for chunks that are still >CHUNK_SIZE
++        after the MarkdownHeaderTextSplitter pass (see
++        _split_markdown_with_breadcrumbs).
++        """
++        from langchain_text_splitters import RecursiveCharacterTextSplitter
++
++        return RecursiveCharacterTextSplitter(
+             chunk_size=self.chunk_size,
+             chunk_overlap=self.chunk_overlap,
+             separators=[
+-                "\n## ",      # H2 headers - major sections
+-                "\n### ",     # H3 headers - subsections
+                 "\n\n",       # Paragraphs
+                 "\n",         # Lines
+                 ". ",         # Sentences (English)
+                 "。",          # Sentences (Thai period alternative)
+                 " ",          # Words
+                 "",           # Characters
+             ],
+             length_function=len,
+         )
+ 
++    def _split_markdown_with_breadcrumbs(
++        self, text: str, source: str
++    ) -> List[Document]:
++        """Split markdown on H1/H2/H3 headers, fall back to the character
++        splitter for chunks still >CHUNK_SIZE, and prepend a
++        `Hotel > {h1} > {h2} > {h3}:\\n` breadcrumb to every chunk's
++        page_content BEFORE vectorisation.
++
++        The breadcrumb gives the embedding model the section context that
++        a plain mid-section chunk would otherwise lack (e.g. a chunk that
++        contains only "500 THB per night" becomes
++        "Hotel > Hotel Policies & Rules > Pet Policy:\\n500 THB per night").
++        """
++        from langchain_text_splitters import MarkdownHeaderTextSplitter
++
++        headers_to_split_on = [
++            ("#", "h1"),
++            ("##", "h2"),
++            ("###", "h3"),
++        ]
++        header_splitter = MarkdownHeaderTextSplitter(
++            headers_to_split_on=headers_to_split_on,
++            strip_headers=True,
++        )
++        header_chunks = header_splitter.split_text(text)
++
++        out: List[Document] = []
++        for hc in header_chunks:
++            meta = dict(hc.metadata or {})
++            h1 = meta.get("h1", "").strip()
++            h2 = meta.get("h2", "").strip()
++            h3 = meta.get("h3", "").strip()
++            crumb_parts = ["Hotel"]
++            if h1:
++                crumb_parts.append(h1)
++            if h2:
++                crumb_parts.append(h2)
++            if h3:
++                crumb_parts.append(h3)
++            breadcrumb = " > ".join(crumb_parts) + ":\n"
++
++            body = hc.page_content.strip()
++            if not body:
++                continue
++
++            base_meta = {**meta, "source": source,
++                         "breadcrumb": breadcrumb.rstrip(":\n")}
++
++            # Fall back to char splitter only if the header chunk is
++            # still too large for the embedding window.
++            if len(body) > self.chunk_size:
++                sub_docs = self.text_splitter.split_documents(
++                    [Document(page_content=body, metadata=base_meta)]
++                )
++                for sd in sub_docs:
++                    sd.page_content = breadcrumb + sd.page_content.strip()
++                    sd.metadata = dict(base_meta)
++                    out.append(sd)
++            else:
++                out.append(Document(page_content=breadcrumb + body,
++                                    metadata=base_meta))
++        return out
++
+     def ingest_docs(self, filepath: str, filename: str) -> int:
+         """
+@@ -252,13 +311,15 @@ class HotelKnowledgeRetriever(BaseExample):
+             if not raw_docs:
+                 logger.warning(f"No content found in {filename}")
+                 return 0
+ 
+-            # Split into chunks
+-            chunks = self.text_splitter.split_documents(raw_docs)
+-
+-            # Add source metadata
+-            for chunk in chunks:
+-                chunk.metadata["source"] = filename
++            # Markdown-aware split with breadcrumb prepend.
++            # For .md/.txt we have a single raw_doc; PDFs we concatenate
++            # all page texts before header-splitting.
++            full_text = "\n\n".join(d.page_content for d in raw_docs)
++            chunks = self._split_markdown_with_breadcrumbs(full_text, filename)
++
++            if not chunks:
++                logger.warning(f"No chunks produced from {filename}")
++                return 0
+ 
+             # Add to Qdrant
+             self.vectorstore.add_documents(chunks)
+@@ -284,13 +345,11 @@ class HotelKnowledgeRetriever(BaseExample):
+             Number of chunks ingested
+         """
+         try:
+-            # Create document from text
+-            doc = Document(page_content=text, metadata={"source": source})
+-
+-            # Split into chunks
+-            chunks = self.text_splitter.split_documents([doc])
++            # Markdown-aware split with breadcrumb prepend.
++            chunks = self._split_markdown_with_breadcrumbs(text, source)
+ 
+-            # Add to Qdrant
++            if not chunks:
++                logger.warning(f"No chunks produced from {source}")
++                return 0
+             self.vectorstore.add_documents(chunks)
+ 
+             logger.info(f"Ingested {len(chunks)} chunks from {source}")

@@ -1,0 +1,7 @@
+defect,count
+empty_response,32
+over_refuse,3
+spec_wrong,3
+incomplete,3
+hallucination,2
+rag_miss,1

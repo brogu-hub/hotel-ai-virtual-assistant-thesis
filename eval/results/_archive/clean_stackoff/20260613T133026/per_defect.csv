@@ -1,0 +1,8 @@
+defect,count
+incomplete,40
+hallucination,31
+rag_miss,16
+spec_wrong,15
+over_refuse,13
+tool_not_called,12
+empty_response,1
