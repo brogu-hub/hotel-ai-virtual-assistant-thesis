@@ -173,6 +173,12 @@ Each row also carries a change type so you know what action to take in the docx:
 
 ### Chapter 7 — Discussion
 
+- [ ] **APPEND §7.6.5 Adaptive escalation via per-model prompt registry (side-channel, not backend swap)** (~700 w) — 2026-06-19, this session — change-type APPEND (new subsection inside existing §7.6)
+  - Phase N negative result framing (one prompt fits all FAILS even within same family)
+  - 4-piece transferable architecture: per-model prompt registry + layered hard-case detection + tool-envelope synthesis + forensic instrumentation
+  - Economics: ~$30-40/mo vs ~$3,500 (~85-100× cheaper) at observed 3% escalation rate
+  - +2.82 pp quality gain over pure-local floor (80.83% → 98.31%)
+  - Transferability scope (cost-asymmetric model pair + per-case rubric + observable signal → applies to customer-support triage, RAG-grounded transactional assistants)
 - [ ] **INSERT §7.6 Transferable Techniques** (~970 w, 4 subsections) — commit pending
   - 7.6.1 Adversarial-verification workflow for regression attribution
   - 7.6.2 Eval-infrastructure reliability protocol (cross-ref CH3 §3.4.9)
