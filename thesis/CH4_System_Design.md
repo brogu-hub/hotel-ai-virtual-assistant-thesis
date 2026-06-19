@@ -335,11 +335,19 @@ Q8_0 at 12 B parameters occupies ~12 GB on disk. With the KV cache loaded, peak 
 - **Eval driver concurrency pins to 1.** The `backtest_runner.py --max-chat-parallel` flag was previously defaulted to 2 for localhost endpoints. Phase I.B (§6.5.8.5) documented the queue-artifact regression this caused once the model swap forced `MAX_CONCURRENT_LLM_CALLS=1`: every second concurrent eval `/chat` waited 45 s on the FastAPI semaphore, timed out, and was recorded as `empty_response`. The fix pinned `--max-chat-parallel=1` for the local stack and raised `LLM_QUEUE_TIMEOUT_SEC` from 30 to 240 defensively.
 - **`OLLAMA_FLASH_ATTENTION=1` stays on but Q8 KV-cache quantisation stays off.** Flash attention itself accelerates attention compute losslessly. KV-cache quantisation at q8_0 was tested but triggered the same CPU-offload path as a second concurrent inference, slowing the model ~10× — disabled (`OLLAMA_KV_CACHE_TYPE` unset).
 
-### 4.9.4 Canary smoke verification
+### 4.9.4 Quantisation choice: why Q8_0 over Q4_K_M for the 12B
+
+The 12B model exposes two viable quant levels for a 16 GB VRAM budget, and the choice between them is not the obvious "pick the smaller one and bank the headroom." Q4_K_M packs the weights to roughly 7.5 GB on disk and leaves on the order of 6 GB of KV-cache headroom after the `bge-reranker-v2-m3` cross-encoder (~1.3 GB) is loaded; Q8_0 packs the weights to roughly 12 GB and leaves on the order of 3 GB of KV-cache headroom. On paper the Q4_K_M option looks strictly better: more concurrent slots, comfortably below the layer-offload cliff, lower keep-alive cost. The 5-case TH-particle smoke run on 2026-06-12 — the same canary set described in §4.9.5 — settled it empirically. Q4_K_M produced 4/5 TH replies that mixed the masculine ครับ with the feminine ค่ะ inside a single response, violating the female-persona policy that fixes the speaker as ค่ะ-only. Q8_0 produced 0/5 such mixes on the identical prompts. The per-stay WiFi-decline TH phrasing — a short refusal sentence the bot must deliver politely when a guest asks for a second device's voucher outside the per-stay quota — degraded similarly at Q4_K_M: the refusal landed grammatically but the politeness register slipped.
+
+The mechanism is well-understood at this point in the open-weight literature. Q4 quants compress the embedding lookup and the attention projection matrices substantially more aggressively than Q8, and for instruction-following nuances that depend on rare-token discipline — Thai particles and Chinese honorifics being the canonical examples — the lossy compression degrades behaviour non-linearly rather than smoothly. Single-intent EN factual turns are roughly indistinguishable between Q4 and Q8 on this bot; the gap opens specifically where the policy depends on a small number of high-information tokens being preserved through the forward pass.
+
+The net decision is Q8_0 for production despite the tighter VRAM budget. `OLLAMA_NUM_PARALLEL` dropping from 2 (at Q5/Q4 on the 9B) to 1 (at Q8 on the 12B) is the explicit concurrency compromise; the resulting throughput loss is absorbed by the adaptive escalation side-channel introduced in Phase O (CH6 §6.5.17), which keeps tail-latency budgets honest by routing the rare cold-cache request to cloud Qwen3-max. The full decision banner — including the 14/14 canary tally that gated promotion — is recorded verbatim at `.env` Phase H.D lines 11-15.
+
+### 4.9.5 Canary smoke verification
 
 The model swap landed on 2026-06-12 with a 14-question canary smoke that exercised the highest-traffic intents — bilingual greeting, room availability, dynamic pricing, EN/TH/CN language match, refusal patterns, and basic memory recall. The result was **14/14 effective pass** on `gemma4:12b-it-q8_0` (one item required a one-line prompt tweak; the underlying behaviour was correct). The 14/14 figure is recorded verbatim in `.env` lines 11-16 and gated promotion of the swap to the production `OLLAMA_MODEL` env value.
 
-### 4.9.5 Quantitative comparison
+### 4.9.6 Quantitative comparison
 
 | Metric                                                           | Qwen3.5-Opus-9B (Q5_K_M)                  | Gemma 4 12B IT (Q8_0)                   |
 | ---------------------------------------------------------------- | ----------------------------------------- | --------------------------------------- |
@@ -353,13 +361,13 @@ The model swap landed on 2026-06-12 with a 14-question canary smoke that exercis
 | Multi-intent (WiFi+breakfast) drop rate                          | ~30 %                                     | ~12 % (still imperfect, Gemma floor)     |
 | Tool-call discipline (`calculate_dynamic_price`)               | high false-emission (calls when not asked)| high false-omission (skips when needed) |
 
-### 4.9.6 Why "better" is nuanced
+### 4.9.7 Why "better" is nuanced
 
 Gemma 4 12B Q8_0 is decisively better on TH/CN politeness, instruction-following depth, multi-intent retention, and adversarial refusal phrasing. It is decisively worse on tool-call discipline: where the 9B over-invoked `calculate_dynamic_price` (a "false emission" defect class) the 12B sometimes computes the right per-night and total prices entirely in natural language without emitting the tool call at all — a "false omission" the eval rubric counts as `tool_not_called`. Phase J.4 (§6.5.11) is the engineering response to this regression: a deterministic pricing shortcut that synthesises the missing tool envelope outside the LLM, so the bot's natural-language answer surfaces alongside a real `calculate_dynamic_price` invocation.
 
 The net aggregate is still well above the Phase F variance baseline (80.83 % on the 9B + iter3 retrieval, §6.5.5d) because the politeness and multi-intent gains dominate the tool-call regression in the case mix. Where the 9B was strong (single-intent EN factuals), the 12B is equally strong. Where the 9B was weak (TH multi-intent, pronoun resolution, refusal phrasing), the 12B is substantially better.
 
-### 4.9.7 Production migration steps
+### 4.9.8 Production migration steps
 
 The cutover required no application code changes — only environment knobs and one operational change in the eval driver:
 

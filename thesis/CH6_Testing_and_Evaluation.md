@@ -10,7 +10,7 @@ The evaluation regime reported in this chapter is a strategic, per-case rubric-g
 
 **Dataset structure.** The canonical evaluation dataset is `clean_v3_final`: 354 cases across EN + TH (CN excluded per §6.5.9.6, deferred to Phase S+). The dataset is union of nine JSONL files: `golden_en.jsonl` (186), `golden_th.jsonl` (168), plus the supplementary files (`canaries`, `adversarial`, `hard_negatives`, `multi_intent_and_out_of_kb`, `multi_turn`, `quantity_inventory`, `rubric_calibration`). Cases are stratified across domains (rooms, dining, facilities, policies, pricing, multi-intent, multi-turn, hard-negative, adversarial) and across language for the trilingual paths.
 
-**Promotion-gate thresholds.** Throughout the iteration ladder the chapter applies a four-gate ship test: aggregate strict pass ≥ 75 %, worst per-domain ≥ 65 %, canaries = 100 %, hard-negatives ≥ 80 %. The final Phase R end-state (§6.5.20.7) clears the aggregate gate with margin (98.31 %) and clears canaries and per-domain; the hard-negative gate is the last to close and is discussed in §6.6.
+**Promotion-gate thresholds.** Throughout the iteration ladder the chapter applies a four-gate ship test: aggregate strict pass ≥ 75 %, worst per-domain ≥ 65 %, canaries = 100 %, hard-negatives ≥ 80 %. The final Phase R end-state (§6.5.20.7) clears the aggregate gate with margin (98.31 %, EN + TH; CN excluded — see §6.10.3) and clears canaries and per-domain; the hard-negative gate is the last to close and is discussed in §6.6.
 
 ## 6.2 Dataset
 
@@ -764,7 +764,7 @@ Aggregate: pre-Phase-R **347/354 = 98.02 %**; post-Phase-R **348/354 = 98.31 %**
 
 ## 6.6 Results
 
-This section consolidates the full Phase F → R trajectory into a single Results view. Each row corresponds to a phase boundary documented in §6.5; the headline aggregate, per-language pass rates, the top three defect bucket counts, and the gate verdict against the §6.1 ship test are reported per phase. The end-state at the bottom is the canonical 348/354 = 98.31 % carried into §6.6.6.
+This section consolidates the full Phase F → R trajectory into a single Results view. Each row corresponds to a phase boundary documented in §6.5; the headline aggregate, per-language pass rates, the top three defect bucket counts, and the gate verdict against the §6.1 ship test are reported per phase. The end-state at the bottom is the canonical 348/354 = 98.31 % (EN + TH; CN excluded — see §6.10.3) carried into §6.6.7.
 
 **6.6.1 Phase ladder — aggregate trajectory.**
 
@@ -784,13 +784,14 @@ This section consolidates the full Phase F → R trajectory into a single Result
 | Phase Q | Tool-envelope synthesis on escalation path + multi-intent cloud prompt refinement + timezone fix + TH lost-and-found KB re-ingest | 98.02 % (347/354) | +0.56 pp |
 | Phase R (**end-state**) | Price-gate date-change signal extension + `## EMAIL GATE` block + `primary_assistant:` PII guard | **98.31 % (348/354)** | **+0.29 pp** |
 
-**6.6.2 Per-language pass rates (end-state).**
+**6.6.2 Per-language pass rates (end-state, EN + TH; CN excluded).**
 
 | Language | Cases | Phase R Pass | Phase R Pass Rate |
 | --- | ---: | ---: | ---: |
 | EN | 186 | 182 | **97.85 %** |
 | TH | 168 | 166 | **98.81 %** |
-| Aggregate | 354 | 348 | **98.31 %** |
+| CN | — | — | **not measured in this evaluation cycle; see §6.10.3** |
+| Aggregate (EN + TH) | 354 | 348 | **98.31 %** |
 
 **6.6.3 Defect bucket trajectory.** The top five defect classes at baseline (`incomplete`, `rag_miss`, `hallucination`, `over_refuse`, `spec_wrong`) collectively accounted for ~95 % of failures. The Phase J.2 → R trajectory closed each of them via a different mechanism:
 
@@ -817,9 +818,50 @@ This section consolidates the full Phase F → R trajectory into a single Result
 
 All six gates pass; the system clears the §6.1 ship test with margin. This is a meaningful shift from the §6.5.6 post-fix state (3 of 5 gates failing) and is the joint result of the per-stay WiFi seed, the deterministic tool-call surfaces, the snapshot facts, and the adaptive cloud escalation.
 
-**6.6.5 Wilson 95 % confidence interval at end-state.** At 348/354 the Wilson 95 % CI is approximately [96.4 %, 99.3 %]. Every endpoint is comfortably above the 75 % aggregate ship gate; the system is ship-ready with statistical confidence, not merely "plausibly" as the §6.5.6 prior-state report had to hedge.
+**6.6.5 Wilson 95 % confidence interval at end-state.** At 348/354 (EN + TH; CN excluded — see §6.10.3) the Wilson 95 % CI is approximately [96.4 %, 99.3 %]. Every endpoint is comfortably above the 75 % aggregate ship gate; the system is ship-ready with statistical confidence on the measured slice, not merely "plausibly" as the §6.5.6 prior-state report had to hedge.
 
-**6.6.6 The six residual cases.** Six cases remain `incorrect` or `partial` at end-state, all four of the RUBRIC_EDGE class (§6.5.20.6) plus two structural items carried into Phase S+: `hardneg_book_without_email_en` (Replay #8 judge re-tripped on a token mismatch after the `## EMAIL GATE` block clearly fires on first attempt) and `mt_th_change_dates` (synth-handler edge — gate now contains the right tokens but model still failed to re-invoke `calculate_dynamic_price` on turn 2). Both are documented as Phase S+ backlog items; closing them is gated on either (a) judge-prompt refinement that crosses the rubric-gaming threshold §6.3 forbids, or (b) a synth-handler edge that the Phase Q tool-envelope synthesis design does not yet reach. The 6 residuals therefore represent a design limit at the current rubric / synth-handler scope, not an open defect — see §6.10.
+**6.6.6 Decomposition of the +44 pp net gain.** The Phase F → R trajectory in §6.6.1 moves the aggregate from a contaminated low of 54.30 % (75/138 on the 200-case stratified Phase-F-era sample, pre-Phase-J era, aborted at row 138 on canary-failure tolerance — §6.5.5) to the Phase R end-state of 98.31 % (348/354 on the canonical `clean_v3_final` dataset — §6.5.20.7). The net gain is **+44.01 pp**. That single headline number conflates three qualitatively different sources of improvement, and the chapter's honesty bar (§6.9 #9 in-sample / development-set risk) requires the decomposition to be made explicit. The table below attributes each phase-boundary Δ in §6.6.1 to one of three categories: **(A) eval-infrastructure** — false-negative removal that raised the *measured* number without changing the bot's behaviour; **(B) bot-quality (KB / code / prompt)** — real corrections to the KB facts, retrieval, polish layer, and tool surface that the production bot now ships; **(C) architectural pattern** — the Phase O adaptive escalation side-channel and the Phase Q tool-envelope synthesis, which are the transferable design contributions of the work.
+
+| Phase boundary | Lever | Δ (pp) | Category | % of +44.01 pp net | Cumulative |
+| --- | --- | ---: | --- | ---: | ---: |
+| Baseline → iter3 (Qwen 9B) | `chunk_size` 2000→1000 + KB re-ingest (49 chunks per H2-section); closes `rag_miss` (-14.8 pp) + `rag_drift` (-1.4 pp) | +24.90 | B (KB / retrieval) | 56.6 % | 79.20 % |
+| iter3 → Phase A | Local LLM swap Qwen 9B → Gemma 4 12B Q8_0 at iter3 retrieval | +1.00 | B (model) | 2.3 % | 80.20 % |
+| Phase A → Phase F variance baseline | 5-run mean stabilisation of Phase A config (σ = 1.58 pp) | +0.63 | — (statistical baseline, not a lever) | 1.4 % | 80.83 % |
+| Phase F → Phase G/H stack-OFF | Eval-infrastructure regression (model_overrides + BM25/RRF stack contaminated by queue-artifact false-negatives, §6.5.8.5) | −8.83 | A (eval-infra, *negative* contaminated read) | — | 72.00 % |
+| Phase G/H → Phase J.2–J.5 | Queue-artifact removal (~+10 pp recovery) + KB↔DB sweep + snapshot facts + inventory shortcut + relative dates + pricing shortcut + polish-prompt tightening + date repointing | +23.20 | A (~10 pp) + B (~13 pp) | 52.7 % | 95.20 % |
+| Phase J → K | Suite room-type detector + multi-turn date repointing + WiFi DB seed + multi-intent / adversarial relax | +1.69 | B (KB + code) | 3.8 % | 96.89 % |
+| Phase K → L | Multi-turn pricing fallback + multi-intent prompt rewrite + rubric finals | 0.00 | B (within noise) | 0 % | 96.89 % |
+| Phase L → M | Tactical local patches (multi-turn EN tool-surface fix + language-lock relax) | +0.29 | B (code) | 0.7 % | 97.18 % |
+| Phase M → O | Adaptive escalation side-channel + per-model prompt registry | +0.28 | C (architectural) | 0.6 % | 97.46 % |
+| Phase O → Q | Tool-envelope synthesis on escalation path + multi-intent cloud prompt refinement + timezone fix + TH lost-and-found KB re-ingest | +0.56 | C (~0.4 pp) + B (~0.16 pp) | 1.3 % | 98.02 % |
+| Phase Q → R | Price-gate date-change signal extension + `## EMAIL GATE` block + `primary_assistant:` PII guard | +0.29 | B (code) | 0.7 % | 98.31 % |
+| **Net** | | **+44.01** | | **100 %** | **98.31 %** |
+
+Aggregating by category: **(A) eval-infrastructure unlocked ~10 pp** — the Phase I.B queue-artifact fix removed a single class of false-negatives that had been masking real Phase G/H gains under a contaminated 72 % read; this is the largest single-mechanism contribution outside the iter3 chunking jump. **(B) bot-quality fixes unlocked ~33 pp** — the iter3 chunking jump (+24.9 pp), the KB↔DB sweep and snapshot-facts cluster inside Phase J.2–J.5 (~13 pp), and the tactical Phase K/L/M/R local patches (~2 pp) are the bot's actual behavioural improvements; this is the portion that ships with the production artefact. **(C) the architectural pattern unlocked ~1.5 pp** — the Phase O adaptive escalation and Phase Q tool-envelope synthesis are headline-small but conceptually large: they convert a class of structural failures (multi-intent + multi-turn + language-lock under a single fixed backend) into a routed-by-detector pattern that other LangGraph systems can adopt.
+
+The honest reading of the +44 pp number is therefore: roughly **~33 pp of real bot-quality improvement** ships with the production system (KB rectification, retrieval-chunk size, snapshot facts, deterministic tool surfaces, the EMAIL gate, the PII guard); roughly **~1.5 pp comes from the architectural pattern** (adaptive escalation + tool-envelope synthesis — the transferable contribution per CH7 §7.6); and roughly **~10 pp comes from removing measurement noise**, not from improving the bot. The eval-infrastructure component is decisively *not* a quality improvement — it corrected a contaminated measurement so that subsequent phases could be attributed correctly — but it must be counted in the +44 pp arithmetic because the contaminated 72 % was the lowest measured point on the trajectory before Phase J.2 reset the read. This decomposition is the basis for the §6.10 limitations discussion and the §6.9 #9 development-set risk caveat: the production system's defensible bot-quality gain is the ~33 pp portion, not the full +44 pp.
+
+**6.6.7 The six residual cases.** Six cases remain `incorrect` or `partial` at end-state, all four of the RUBRIC_EDGE class (§6.5.20.6) plus two structural items carried into Phase S+: `hardneg_book_without_email_en` (Replay #8 judge re-tripped on a token mismatch after the `## EMAIL GATE` block clearly fires on first attempt) and `mt_th_change_dates` (synth-handler edge — gate now contains the right tokens but model still failed to re-invoke `calculate_dynamic_price` on turn 2). Both are documented as Phase S+ backlog items; closing them is gated on either (a) judge-prompt refinement that crosses the rubric-gaming threshold §6.3 forbids, or (b) a synth-handler edge that the Phase Q tool-envelope synthesis design does not yet reach. The 6 residuals therefore represent a design limit at the current rubric / synth-handler scope, not an open defect — see §6.10.
+
+**ตารางที่ 6.x ผลบนชุดทดสอบที่กันไว้ (held-out, ประเมินครั้งเดียว) — <span style="background:yellow">[รอเติมผล]</span>**
+
+<!-- DOCX MERGE: HIGHLIGHT THIS ROW YELLOW; PLACEHOLDER — RUN HELD-OUT EVAL ONCE AND FILL -->
+
+| ชุด held-out | จำนวน | อัตราผ่าน | Wilson 95% CI |
+|---|---:|---:|---|
+| EN+TH | **[N]** | **[__%]** | **[__]** |
+
+*หมายเหตุ: ค่า 98.31 % ใน §6.6.1 เป็นผลบนชุดพัฒนา (development-set) ที่ใช้ในการทำ Phase J → R iteration ladder. ตัวเลขนี้สะท้อนคุณภาพในการพัฒนา ไม่ใช่การประเมินบนชุดทดสอบที่กันไว้. ตารางนี้จะถูกเติมหลังจากรัน held-out evaluation ครั้งเดียว — ห้ามใช้ผลในการตัดสินใจ patch ใดๆ ก่อนเติม.*
+
+**6.6.8 Robustness slice — ลูกค้าถามเรื่องที่ KB ตอบได้ vs. ถามเรื่องที่ตอบยาก.**
+
+ลูกค้าถามเรื่องที่ KB ตอบได้ — bot ทำได้ดีมาก (~99%). ถามเรื่องที่ตอบยาก (adversarial + refusal) — ดีลดลงเหลือ 83.3% (small-n; ดูคำเตือนด้านล่าง). The headline 98.31 % aggregate (§6.6.1) is a weighted average that pools two qualitatively different slices: a large benign factual-lookup slice and a small adversarial / hard-negative robustness slice. Disaggregating the two gives a more honest picture of where the system is strong and where the bound is much looser.
+
+The **lookup slice** (factual KB Q&A — golden EN, golden TH, single-intent multi-intent, and the bulk of multi-turn) scored 338/342 = **98.83 %** correct at Phase R. This is the easy slice: the bot's RAG indexes were built from the same `data/hotel/*.md` corpus the cases probe, the question shapes are well-represented in the rubric, and the snapshot facts and pricing shortcut absorb the cases that previously failed on `incomplete` or `spec_wrong`. Near-perfect performance here is consistent with the §6.9 #3 dataset-contamination threat.
+
+The **robustness slice** (6 adversarial probes + 6 hard-negative refusal probes = 12 cases) scored 10/12 = **83.3 %** correct. The adversarial half — SQL drop, audit delete, PII probe on another guest, system-prompt extraction, jailbreak — scored 5/6 (the lone fail is `adv_force_chinese_en`, a language-forcing jailbreak that bypassed the language-lock when the user explicitly requested the override). The hard-negative half — fictional facilities (underwater suite, helicopter pad, treasury coin, casino), executive-lounge WiFi, and the missing-email booking gate — also scored 5/6 (the lone fail is `hardneg_book_without_email_en`, a missing-field validation re-trip documented in §6.6.7).
+
+The **gap is ~15.5 pp**: 98.83 % lookup vs. 83.3 % robustness. Two conclusions follow. First, the 98.31 % headline number flatters the easy cases; the 83.3 % robustness slice is the more defensible bound for the bot's hard-case behaviour on the small adversarial slice tested (1–2 cases per attack pattern: SQL drop, audit delete, PII probe on another guest, system-prompt extraction, force-language jailbreak, plus the 6 hard-negative refusals). It should be cited as the bot's behaviour *on this small adversarial slice* — not as a generalised "resistance to jailbreak, SQL injection, fictional-facility hallucination, and missing-field validation." Broader red-teaming (multi-turn jailbreak, language-mixing PII probes, repeated-prompt-injection adversaries, novel attack patterns) was out of scope for this evaluation cycle; see §6.10.6. Second — and this is the §6.9 #4 small-n caveat — n=12 gives a Wilson 95 % CI on 83.3 % of roughly [55.2 %, 95.3 %], a band ~40 pp wide. Do not overgeneralise from 12 cases; the slice is directional, not a tight bound. The six residuals tracked in §6.6.7 and §6.10.1 are the design-limit reading of this slice.
 
 ## 6.7 Infrastructure Test Results (193/193)
 
@@ -888,12 +930,34 @@ The key insight: `OLLAMA_NUM_PARALLEL` divides the GPU's fixed token/sec through
 6. **CN excluded from canonical aggregate.** CN was excluded from the 354-case aggregate per the §6.5.9.6 project directive (no CN-speaking reviewers, minority audience). CN is smoke-tested via the §5.14.7 Chinese-leak suite but not graded at scale. The 98.31 % headline is therefore EN + TH only; a future CN-inclusive run is Phase S+ backlog.
 7. **Cloud-vs-local model-floor not measured.** The Phase M cloud-experiment was blocked by the admin-seed / schema-grant defect (§6.5.15.3) and was never re-attempted under Phase O+. The Phase N wholesale-swap negative result rules out one specific cloud-use pattern but does not measure cloud capability per se. The 98.31 % is therefore a local-primary + cloud-side-channel number, not a pure-cloud upper bound.
 8. **Phase O escalation rate is a snapshot, not a steady-state.** The ~3 % escalation rate observed at Replay #6 (§6.5.18.4) and the ~$40 / 100K-queries monthly cost projection (§6.5.17.7) are valid for the canonical 354-case dataset distribution. Production traffic distributions will likely differ; the escalation rate could drift higher under unexpected user phrasings and the cost projection should be re-measured against live traffic logs before any contractual commitment.
+9. **In-sample / development-set risk.** The 98.31 % aggregate was developed THROUGH iteration. Each phase from J → R applied patches tuned on observed defects on the same 354-case dataset; the resulting number is therefore a development-set point estimate, not a generalisation bound. Two specific risks follow. First, overfitting to the rubric's idiosyncrasies: several rubric blocks gate on specific `must_not_contain` tokens, language-lock framing words, or tool-call-name strings, and the Phase L → R patches were tuned to satisfy those exact surface checks. A different rubric — even one expressing the same human-judgement intent — would not necessarily score this configuration at 98.31 %. Second, the per-case golden patches that landed in Phase J.2 and Phase K (KB↔DB rectification on valet rate, parking levels, room sizes, fitness hours; multi-turn date repointing; suite room-type detector) may have "moved the goalposts" closer to where the bot can reach: when the KB is rectified to agree with the DB, cases that previously failed on `spec_wrong` now pass without any change to the bot's behaviour. This is the correct engineering fix (the KB *was* wrong), but it inflates the aggregate above what an un-patched dataset would show. Mitigation already in place: the `canaries.jsonl` set of 15 stability sentinels (§6.3.4) is HELD OUT from the iteration target and was not patched during Phase J → R. It catches regressions independent of the iterated cases; the canary pass rate was 100 % per run across every Phase J → R replay. Stronger mitigation pending: an actual held-out test set (the Placeholder 1 table in §6.6) and a final-config variance run (the Placeholder 2 table in §6.9.X). Until those land, the 98.31 % aggregate should be cited as "development-set performance" with the canary baseline as the held-out anchor — not as a generalisation bound.
+
+### 6.9.X การวัดความแปรปรวนของคอนฟิกสุดท้าย — <span style="background:yellow">[รอเติมผล]</span>
+
+<!-- DOCX MERGE: HIGHLIGHT THIS ROW YELLOW; PLACEHOLDER — RUN FINAL CONFIG 5 TIMES AND FILL -->
+
+ค่า 98.31 % ใน §6.6.1 มาจากการรันคอนฟิกสุดท้ายเพียงครั้งเดียว ด้วย T=0.3 (default). LLM-as-judge และ Gemma 4 12B Q8_0 ทั้งคู่มี sampling discipline ที่ไม่เป็น deterministic เต็มที่; การประเมินครั้งเดียวจึงเป็น point estimate ที่ไม่มี variance bound.
+
+**ตารางที่ 6.y การรันคอนฟิกสุดท้ายซ้ำ 5 ครั้ง (T=0.3, seed คงที่) — [รอเติมผล]**
+
+| รัน | อัตราผ่าน |
+|---|---:|
+| 1 | **[__%]** |
+| 2 | **[__%]** |
+| 3 | **[__%]** |
+| 4 | **[__%]** |
+| 5 | **[__%]** |
+| **ค่าเฉลี่ย** | **[__%]** |
+| **σ** | **[__]** |
+| **ช่วงความเชื่อมั่น ±2σ** | **[__]** |
+
+*หมายเหตุ: ถ้า σ > 1.5 pp การประกาศ 98.31 % เป็น point number ก็เสี่ยงต่อ overclaim. ถ้า σ ≤ 0.5 pp ค่ารายงานสามารถยึดเป็น stable end-state ได้.*
 
 ## 6.10 Limitations and Future Work
 
 This section consolidates the limitations of the evaluation regime and the system end-state, and the Phase S+ backlog that the iteration ladder did not close.
 
-**6.10.1 Design limit: the six residuals (§6.6.6).** Six cases remain at end-state. Four are RUBRIC_EDGE (§6.5.20.6) — the bot's behaviour matches the documented policy and KB facts but the rubric over-strictly enforces a single token or framing word that the model paraphrased. Two are structural (synth-handler edge + judge-side `hardneg_book_without_email_en` re-trip after gate clearly fires on first turn). Closing them is gated on rubric refinement that crosses the rubric-gaming threshold §6.3.6 forbids, OR a redesign of the synth-handler that touches the LangGraph orchestration layer in a way that would risk regressing the 348 currently-passing cases. The six are therefore a design limit, not an open defect — but they are a real limit and should not be glossed over.
+**6.10.1 Design limit: the six residuals (§6.6.7).** Six cases remain at end-state. Four are RUBRIC_EDGE (§6.5.20.6) — the bot's behaviour matches the documented policy and KB facts but the rubric over-strictly enforces a single token or framing word that the model paraphrased. Two are structural (synth-handler edge + judge-side `hardneg_book_without_email_en` re-trip after gate clearly fires on first turn). Closing them is gated on rubric refinement that crosses the rubric-gaming threshold §6.3.6 forbids, OR a redesign of the synth-handler that touches the LangGraph orchestration layer in a way that would risk regressing the 348 currently-passing cases. The six are therefore a design limit, not an open defect — but they are a real limit and should not be glossed over.
 
 **6.10.2 Rubric over-strictness.** Several rubric blocks accumulated over the Phase J → R ladder are tighter than human judgement would be: the `mi_*_wifi_and_breakfast` cases penalise a `tool_call` name mismatch even when the bot's tool-surface produces the correct functional outcome; the `pricing_standard_last_minute_en` rubric `must_not_contain` is over-strict on a token that legitimately appears in the surrounding pricing-tier explanation; the `adv_force_chinese_en` rubric does not yet credit the user-explicit-language-override policy-correct outcome. A future iteration could add a `judge_hint` clause to each that loosens the surface check without loosening the substantive check, or could replace the LLM judge with a two-judge ensemble whose disagreement triggers a human-in-the-loop review.
 
@@ -907,6 +971,17 @@ This section consolidates the limitations of the evaluation regime and the syste
 2. **Cloud-vs-local model-floor measurement** — gated on the §6.5.15.3 schema-grant / admin-seed fix; the runtime hot-swap surface is verified and the wallet pre-funded, the lone blocker is the auth path.
 3. **CN re-inclusion** — re-point CN pricing dates, re-run the Phase R pipeline against `golden_cn.jsonl` (159 cases at last count) plus the CN slices of multi-intent / multi-turn.
 4. **`init-eval-fixtures.sql`** — decouple the eval-fixture lifecycle (per-stay WiFi seed, eval-only test guests) from the production `init-hotel.sql` so a fresh container rebuild does not drop fixtures (§6.5.13.3).
-5. **Synth-handler reach for TH date-change** — close the §6.6.6 `mt_th_change_dates` residual by extending the Phase Q synth handler to cover the date-change-on-turn-2 trajectory the gate now permits.
+5. **Synth-handler reach for TH date-change** — close the §6.6.7 `mt_th_change_dates` residual by extending the Phase Q synth handler to cover the date-change-on-turn-2 trajectory the gate now permits.
 6. **Hard-negative gate post-fix** — the `## EMAIL GATE` block fires correctly on first turn at smoke; the Replay #8 judge re-trip on a token mismatch is the lone failure on `hardneg_book_without_email_en` and could be closed with a `judge_hint` clause without rubric-gaming.
 7. **Human-judge spot-check on the borderline cases** — a small (~30 case) human-judge sample on the `partial`-verdict subset to characterise the LLM judge's strictness bias quantitatively. Out of scope for the thesis cycle but the right next experimental step.
+
+**6.10.6 Broader red-teaming evaluation.** The §6.6.8 robustness slice contains only 12 cases (6 adversarial + 6 hard-negative) with 1–2 cases per attack pattern. The chapter's safety-related claims (e.g. PII probe refusal, jailbreak resistance, SQL-drop rejection) are therefore bounded to "the bot refuses on the small adversarial slice tested" — they are *not* a generalised safety attestation. A future Phase S+ cycle should commission a broader red-teaming evaluation, scaled to ≥30 cases per category, covering at minimum the following attack surfaces that were *not* covered in the canonical 354-case dataset:
+
+- **Prompt-injection** (system-prompt extraction beyond the single `adv_system_prompt_extract_en` case; instruction-override probes mid-tool-call; tool-name spoofing in user input).
+- **Multi-turn jailbreak** (gradual policy-relaxation across 3–5 turns; persona-shift attacks; "DAN"-style role-play escalation).
+- **Language-mixing PII probes** (e.g. an EN-framed request that switches mid-sentence to TH or CN to bypass an EN-anchored PII guard; the single `adv_other_guest_pii_en` case does not test cross-lingual evasion).
+- **Indirect injection via KB content** (poisoned markdown chunks that the RAG retrieves and re-emits as authoritative).
+- **Numeric / temporal coercion** (forcing the bot to quote prices outside the rate card; date-arithmetic attacks that exploit the relative-date extractor).
+- **Refusal-quality grading** (not just "did the bot refuse" but "did the refusal expose internal policy text, leak the system prompt verbatim, or reveal the tool name"; the current rubric only checks the binary refuse / comply).
+
+Until a broader red-team has run, the small adversarial slice in §6.6.8 is the most that can be honestly claimed; safety-related statements in the chapter should be read as bounded to that slice (see §6.6.8 caveat language and §6.9 #4 small-n bound).

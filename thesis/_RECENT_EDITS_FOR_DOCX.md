@@ -28,6 +28,21 @@ Each row also carries a change type so you know what action to take in the docx:
 
 ## What landed since 2026-06-12
 
+### Phase U — Honesty Pass (2026-06-20)
+
+- [ ] **INSERT §6.6.5 +44 pp decomposition table** — change-type INSERT (yellow-highlight NOT required, but emphasize that the eval-infra fixes are NOT quality improvements)
+- [ ] **INSERT §6.6.7 Robustness slice (adversarial 4/6 + hardneg 5/6 = 9/12 = 75%)** — change-type INSERT (the sobering number)
+- [ ] **INSERT §6.6 Placeholder 1 — held-out test table** — change-type INSERT with **YELLOW HIGHLIGHT** marker (placeholder for user to fill after held-out run)
+- [ ] **INSERT §6.9 Placeholder 2 — final-config variance table** — change-type INSERT with **YELLOW HIGHLIGHT** marker (placeholder for 5-run replication)
+- [ ] **INSERT §6.9 new threat — In-sample / development-set risk** — change-type INSERT (frames 98.31% as dev-set, cites canaries as held-out anchor)
+- [ ] **UPDATE §7.3.2 Reranker reconciliation** — change-type UPDATE (scopes "unnecessary" claim to dense-only EN/TH; documents BM25+RRF+bge re-added for CN in Phase H.C)
+- [ ] **INSERT CH4 §4.9.X Quantization Choice (Q8_0 over Q4_K_M)** — change-type INSERT (TH particle discipline 4/5 vs 0/5 mixing; NUM_PARALLEL 2→1 trade-off)
+- [ ] **UPDATE parity wording across CH3/CH4/CH6/CH7** — change-type UPDATE (standardise to "feature parity with the upstream NVIDIA AI Blueprint")
+- [ ] **UPDATE CN scoping notes wherever 354-case aggregate is cited** — change-type UPDATE (append "(EN + TH; CN excluded)" where missing)
+- [ ] **UPDATE safety-claim bounds (PII refusal scoped to n=1-2 per pattern)** — change-type UPDATE
+- [ ] **INSERT §6.10 future-work item: broader red-teaming evaluation** — change-type INSERT
+- [ ] **CLEANUP seams from Phase S rewrite** — change-type UPDATE (orphan §X.X refs, double numbering, stale TBDs)
+
 ### Chapter 6 — Testing & Evaluation (ROOT REWRITE Phase S)
 
 - [ ] **REPLACE §6.1 Evaluation Approach (~500 w)** — 2026-06-19 — change-type REPLACE — was old 25-case Evaluation Methodology

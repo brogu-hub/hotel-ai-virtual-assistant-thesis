@@ -47,14 +47,18 @@ The RAG pipeline achieves **100% accuracy on all 8 knowledge test cases** with b
 - Embedding model (qwen3-embedding-8b, 4096 dimensions) handles bilingual Thai/English effectively
 - Auto-calculated chunk size (80% of model's token limit) prevents information loss
 
-### 7.3.2 Impact of Removing the Reranker
+### 7.3.2 Impact of Removing the Reranker (Scoped Finding)
 
-Disabling the CrossEncoder reranker had **zero impact on retrieval accuracy** but **3.6× reduction in latency**. This finding contradicts the general RAG literature recommendation to always rerank — but is explained by the domain characteristics:
-- Only 10 documents in the knowledge base (not thousands)
-- Documents are topically distinct (spa ≠ dining ≠ policies)
-- The embedding model is already bilingual-optimized
+The Phase 5 baseline finding that disabling the CrossEncoder reranker yielded **zero impact on retrieval accuracy** but a **3.6× reduction in latency** holds — but only for **dense-only EN/TH retrieval**. In that regime, qwen3-embedding-8b (4096-dim) embeddings are strong enough that bge-reranker-v2-m3 adds latency (~1 ms/query overhead saved when omitted) without measurable accuracy gain, because the dense vectors already separate topically distinct hotel documents (spa ≠ dining ≠ policies) across the bilingual EN/TH surface.
 
-For larger or less-structured knowledge bases, reranking would likely be necessary.
+The original §7.3.2 conclusion overgeneralized this result into a universal "reranker is unnecessary" claim. Phase H.C falsified that universal claim for CN scope and forced a reconciliation. The production stack **re-added BM25 + Reciprocal Rank Fusion (RRF) + bge-reranker-v2-m3** specifically for **CN exact-token recall**, because Qwen's hanzi tokenization underweights rare CJK tokens — addresses, phone numbers, time ranges — that BM25 surfaces directly via exact-token match. The reranker then tightens the BM25 hits before they reach the synthesis prompt, recovering recall that dense-only retrieval lost on CN queries.
+
+**Net production architecture:**
+
+- **EN/TH:** dense-only retrieval (qwen3-embedding-8b), no reranker — saves ~1 ms/query, no measurable recall loss.
+- **CN:** hybrid dense + BM25 + RRF + bge-reranker-v2-m3 — adds ~250 ms/query but yields a measurable recall gain on rare-token CJK queries.
+
+The §7.3.2 headline that the reranker is **neutral on EN/TH dense retrieval** stands. Only the universal "unnecessary" claim was wrong; for larger or less-structured knowledge bases, and specifically for CN exact-token recall, hybrid retrieval with reranking remains necessary.
 
 ### 7.3.3 Knowledge Cache Effectiveness
 
