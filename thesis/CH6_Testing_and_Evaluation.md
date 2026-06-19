@@ -766,7 +766,11 @@ Aggregate: pre-Phase-R **347/354 = 98.02 %**; post-Phase-R **348/354 = 98.31 %**
 
 This section consolidates the full Phase F → R trajectory into a single Results view. Each row corresponds to a phase boundary documented in §6.5; the headline aggregate, per-language pass rates, the top three defect bucket counts, and the gate verdict against the §6.1 ship test are reported per phase. The end-state at the bottom is the canonical 348/354 = 98.31 % (EN + TH; CN excluded — see §6.10.3) carried into §6.6.7.
 
-**6.6.1 Phase ladder — aggregate trajectory.**
+**6.6.1 Phase ladder — aggregate trajectory (development-set view; pair with the held-out generalisation bound).**
+
+This section reports two distinct numbers that should be read together. **The canonical Phase R aggregate of 348/354 = 98.31 % (EN + TH; CN excluded — see §6.10.3) is a development-set point estimate** — the bot was iteratively tuned across Phases J.2 → R against the same 354-case dataset, with patches landed against observed failures and replays run against the same case IDs. **The Phase V held-out single-shot pass rate of 36/60 = 60.0 % [Wilson 95 % CI 47.4 %, 71.4 %] (§6.6.X / table 6.x above) is the generalisation-bound estimate** — 60 cases that were correct in Run #1 baseline (2026-06-17) and never re-evaluated until Phase V (2026-06-20). The 38.31 pp gap between them is the empirical measurement of the in-sample overfit warned about in §6.9.1. Both numbers are real; they measure different things; the thesis reports both transparently and discusses the gap in §6.10.X.
+
+The 98.31 % canonical number reported below is a development-set point estimate — derived from the 354-case dataset that the Phase J → R iteration ladder patch-tune-replayed against. The held-out evaluation in §6.6.X gives the corresponding generalisation bound: a held-out single-shot pass rate on 60 stratified cases (32 EN / 28 TH across 11 domains) drawn from a 291-case pool that was *never* replayed in any iteration loop, with Wilson 95 % CI to be reported once the in-flight run completes. The development-set number should be read together with that held-out bound, not in isolation.
 
 | Phase | What changed | Aggregate strict pass | Δ vs prior |
 | --- | --- | ---: | ---: |
@@ -843,15 +847,23 @@ The honest reading of the +44 pp number is therefore: roughly **~33 pp of real b
 
 **6.6.7 The six residual cases.** Six cases remain `incorrect` or `partial` at end-state, all four of the RUBRIC_EDGE class (§6.5.20.6) plus two structural items carried into Phase S+: `hardneg_book_without_email_en` (Replay #8 judge re-tripped on a token mismatch after the `## EMAIL GATE` block clearly fires on first attempt) and `mt_th_change_dates` (synth-handler edge — gate now contains the right tokens but model still failed to re-invoke `calculate_dynamic_price` on turn 2). Both are documented as Phase S+ backlog items; closing them is gated on either (a) judge-prompt refinement that crosses the rubric-gaming threshold §6.3 forbids, or (b) a synth-handler edge that the Phase Q tool-envelope synthesis design does not yet reach. The 6 residuals therefore represent a design limit at the current rubric / synth-handler scope, not an open defect — see §6.10.
 
-**ตารางที่ 6.x ผลบนชุดทดสอบที่กันไว้ (held-out, ประเมินครั้งเดียว) — <span style="background:yellow">[รอเติมผล]</span>**
+**ตารางที่ 6.x ผลบนชุดทดสอบที่กันไว้ (held-out, ประเมินครั้งเดียว) — Phase V (2026-06-20)**
 
-<!-- DOCX MERGE: HIGHLIGHT THIS ROW YELLOW; PLACEHOLDER — RUN HELD-OUT EVAL ONCE AND FILL -->
+ชุด held-out นี้คือ 60 cases ที่ correct ใน Run #1 baseline (2026-06-17) และไม่เคยถูก replay ผ่าน `_replay_63_fails.py` ในวงจร Phase J → R จึงเป็นการประเมินครั้งเดียวบนคำถามที่ระบบไม่เคยถูก patch ตาม. Stratified ตามภาษา (32 EN / 28 TH) และ 10 domains (rooms 18 · policies 8 · facilities 7 · spa 6 · transportation 6 · emergency 4 · dining 4 · faq 3 · attractions 2 · hard_negatives 1 · adversarial 1).
 
-| ชุด held-out | จำนวน | อัตราผ่าน | Wilson 95% CI |
-|---|---:|---:|---|
-| EN+TH | **[N]** | **[__%]** | **[__]** |
+| ชุด held-out (EN + TH) | จำนวน | ผ่าน | ผ่านบางส่วน | ไม่ผ่าน | อัตราผ่าน | Wilson 95 % CI |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| รวม | 60 | 36 | 2 | 22 | **60.0 %** | **[47.4 %, 71.4 %]** |
+| EN | 32 | 22 | 1 | 9 | 68.8 % | [50.4 %, 82.6 %] |
+| TH | 28 | 14 | 1 | 13 | 50.0 % | [31.7 %, 68.3 %] |
 
-*หมายเหตุ: ค่า 98.31 % ใน §6.6.1 เป็นผลบนชุดพัฒนา (development-set) ที่ใช้ในการทำ Phase J → R iteration ladder. ตัวเลขนี้สะท้อนคุณภาพในการพัฒนา ไม่ใช่การประเมินบนชุดทดสอบที่กันไว้. ตารางนี้จะถูกเติมหลังจากรัน held-out evaluation ครั้งเดียว — ห้ามใช้ผลในการตัดสินใจ patch ใดๆ ก่อนเติม.*
+**Gap vs Phase R aggregate (348/354 = 98.31 %): −38.31 pp**, with the held-out upper CI bound (71.4 %) below the canonical lower CI bound (96.4 %, §6.6.5). The intervals do not overlap → the gap is statistically significant, not within sampling noise. **This is the empirical measurement of the in-sample / development-set risk threat in §6.9.1** — the Phase J → R patch-and-replay cycle iteratively tuned the bot against the 63 cases that were incorrect in Run #1, and the patches induced regressions on the 60 held-out cases that were correct in Run #1 but never re-evaluated until now.
+
+Dominant held-out failure modes: `over_refuse` (~9 cases) — the Phase L/M/Q polish-prompt tightening and the Phase R EMAIL GATE / PII GUARD made the Thai refusal templates more aggressive than the corresponding `must_not_contain` rubric tokens allow ("ไม่มีข้อมูล" / "ติดต่อแผนกต้อนรับ" / "ติดต่อ 0" appear in held-out responses but trip rubrics tuned against them in J.2 / K). `rag_miss` + `incomplete` (~6 cases) on FAQ, pet-policy, and tour-package questions — the Phase J.2 KB↔DB sweep + snapshot facts shifted retrieval focus toward DB-backed sections (rooms, dining, facilities) and de-prioritised the markdown-only FAQ and policies sections that the held-out sample disproportionately probes. `hallucination` (~3 cases) on `hardneg_helicopter_pad_en`, the `oo_kb_mountain_view_th` out-of-KB probe, and one smoking-policy spec_wrong.
+
+The TH/EN per-language gap is also material: TH 50.0 % vs EN 68.8 % = −18.75 pp. The Phase J.2 / K / Q TH-specific polish ("ค่ะ/คะ" discipline, per-stay-WiFi-decline phrasing, Suite romanisation, change-signal token additions) targeted the 33 TH cases that were incorrect in Run #1 and recovered them, but the same polish layer over-refuses on TH held-out cases where the right behaviour is a direct factual answer.
+
+**Honest framing**: the **60.0 % [47.4 %, 71.4 %] held-out single-shot pass rate is the generalisation-bound number for this evaluation cycle**; the 98.31 % canonical aggregate is the **in-sample development-set ceiling** reached after ~18 iterations of patch-and-replay. Both numbers are real measurements on the same bot; they measure different things. Report both, and lead the §6.9 / §6.10 discussion with the gap.
 
 **6.6.8 Robustness slice — non-trivial subset vs. benign lookup.**
 
@@ -875,7 +887,7 @@ The **non-trivial subset** (cases that are NOT trivially answerable from a singl
 
 The **gap is ~12 pp**: 100.00 % benign lookup vs. 88.2 % non-trivial. Three conclusions follow. **First**, the 98.31 % headline number is genuinely a weighted average across both slices; the 88.2 % non-trivial subset rate is the more defensible bound for the bot's behaviour on the cases that actually exercise the bot's hard logic — refusal, anaphora, decomposition, computation, and policy. It should be cited as the headline-defensible figure alongside or instead of 98.31 % whenever the audience is reviewer-skeptical. **Second**, the per-cluster breakdown shows the lower bound is dominated by multi-intent (71.4 %, n=7) and the two equal-83.3 % adversarial / hard-negative slices (n=6 each). Dynamic pricing at 95.8 % (n=24) and multi-turn at 85.7 % (n=7) are intermediate. Broader red-teaming (multi-turn jailbreak, language-mixing PII probes, repeated prompt-injection adversaries, novel attack patterns not in `adversarial.jsonl`) was out of scope for this evaluation cycle; see §6.10.6. **Third** — and this is the §6.9 #4 small-n caveat — every sub-cluster is n ≤ 24, several are n ≤ 7. Even the combined n=51 gives a Wilson 95 % CI ~18 pp wide. The 88.2 % bound is directional, defensible against rubric-overfitting critique, and small-n enough that broader red-teaming (Phase S+ backlog) would change the picture.
 
-The §6.6.7 six residuals and §6.10.1 design-limit reading are the case-level decomposition of this slice. The §6.9 #1 in-sample / development-set risk applies symmetrically to both slices — neither the 100 % lookup number nor the 88.2 % non-trivial number is a held-out single-shot generalisation bound until the Placeholder 1 held-out evaluation is filled in.
+The §6.6.7 six residuals and §6.10.1 design-limit reading are the case-level decomposition of this slice. The §6.9 #1 in-sample / development-set risk applies symmetrically to both slices — neither the 100 % lookup number nor the 88.2 % non-trivial number is a held-out single-shot generalisation bound; the held-out evaluation in §6.6.X (60 stratified cases drawn from a 291-case never-replayed pool) is the table that supplies that bound.
 
 ## 6.7 Infrastructure Test Results (193/193)
 
@@ -944,28 +956,29 @@ The key insight: `OLLAMA_NUM_PARALLEL` divides the GPU's fixed token/sec through
 6. **CN excluded from canonical aggregate.** CN was excluded from the 354-case aggregate per the §6.5.9.6 project directive (no CN-speaking reviewers, minority audience). CN is smoke-tested via the §5.14.7 Chinese-leak suite but not graded at scale. The 98.31 % headline is therefore EN + TH only; a future CN-inclusive run is Phase S+ backlog.
 7. **Cloud-vs-local model-floor not measured.** The Phase M cloud-experiment was blocked by the admin-seed / schema-grant defect (§6.5.15.3) and was never re-attempted under Phase O+. The Phase N wholesale-swap negative result rules out one specific cloud-use pattern but does not measure cloud capability per se. The 98.31 % is therefore a local-primary + cloud-side-channel number, not a pure-cloud upper bound.
 8. **Phase O escalation rate is a snapshot, not a steady-state.** The ~3 % escalation rate observed at Replay #6 (§6.5.18.4) and the ~$40 / 100K-queries monthly cost projection (§6.5.17.7) are valid for the canonical 354-case dataset distribution. Production traffic distributions will likely differ; the escalation rate could drift higher under unexpected user phrasings and the cost projection should be re-measured against live traffic logs before any contractual commitment.
-9. **In-sample / development-set risk.** The 98.31 % aggregate was developed THROUGH iteration. Each phase from J → R applied patches tuned on observed defects on the same 354-case dataset; the resulting number is therefore a development-set point estimate, not a generalisation bound. Two specific risks follow. First, overfitting to the rubric's idiosyncrasies: several rubric blocks gate on specific `must_not_contain` tokens, language-lock framing words, or tool-call-name strings, and the Phase L → R patches were tuned to satisfy those exact surface checks. A different rubric — even one expressing the same human-judgement intent — would not necessarily score this configuration at 98.31 %. Second, the per-case golden patches that landed in Phase J.2 and Phase K (KB↔DB rectification on valet rate, parking levels, room sizes, fitness hours; multi-turn date repointing; suite room-type detector) may have "moved the goalposts" closer to where the bot can reach: when the KB is rectified to agree with the DB, cases that previously failed on `spec_wrong` now pass without any change to the bot's behaviour. This is the correct engineering fix (the KB *was* wrong), but it inflates the aggregate above what an un-patched dataset would show. Mitigation already in place: the `canaries.jsonl` set of 15 stability sentinels (§6.3.4) is HELD OUT from the iteration target and was not patched during Phase J → R. It catches regressions independent of the iterated cases; the canary pass rate was 100 % per run across every Phase J → R replay. Stronger mitigation pending: an actual held-out test set (the Placeholder 1 table in §6.6) and a final-config variance run (the Placeholder 2 table in §6.9.X). Until those land, the 98.31 % aggregate should be cited as "development-set performance" with the canary baseline as the held-out anchor — not as a generalisation bound.
+9. **1. In-sample / development-set risk (measured: +38.31 pp gap).** The §6.6.1 canonical 98.31 % aggregate is a development-set point estimate. The Phase J.2 → R patch-and-replay cycle ran `_replay_63_fails.py` ~8 times against the 354-case dataset, each time targeting the cases that were currently incorrect or partial and writing the new verdicts back into the same canonical `raw.jsonl`. Patches landed in Phases J.2 through R were tuned against the observed failures from prior replays; this is iterative tuning against the evaluation set, the textbook setup for overfitting.
 
-### 6.9.X การวัดความแปรปรวนของคอนฟิกสุดท้าย — <span style="background:yellow">[รอเติมผล]</span>
+   **The Phase V held-out evaluation (§6.6.X) measured the gap empirically: 36/60 = 60.0 % [Wilson 95 % CI 47.4 %, 71.4 %] on the held-out single-shot vs 98.31 % on the canonical in-sample, a −38.31 pp difference with non-overlapping CIs.** All 60 held-out cases were correct in Run #1 baseline and never replayed; the regression is therefore not sampling noise but real drift induced by the J → R patches. Dominant regression modes: `over_refuse` on Thai refusal templates (Phase L/M/Q polish + Phase R EMAIL GATE / PII GUARD over-tightened the `must_not_contain` surface for cases that legitimately answer "contact reception / no information"); `rag_miss` + `incomplete` on FAQ / pet-policy / tour-package questions (the Phase J.2 KB↔DB sweep + snapshot facts shifted retrieval focus toward DB-backed sections); a handful of `hallucination` cases.
 
-<!-- DOCX MERGE: HIGHLIGHT THIS ROW YELLOW; PLACEHOLDER — RUN FINAL CONFIG 5 TIMES AND FILL -->
+   The canary slice (canaries.jsonl, 15 stability sentinels) was 100 % pass on every replay and is preserved as the unbroken held-out anchor that detected NO regression — meaning the patches did not regress the easy canonical KB lookups, only the harder factual / refusal cases that fell in the never-replayed correct-at-Run-#1 pool. Mitigations going forward: (a) the Phase V held-out 60.0 % becomes the honest generalisation-bound headline; (b) a future Phase S+ would run a proper train / dev / test split where the test partition is locked at the start of iteration; (c) the variance experiment in §6.9.2 / Placeholder 2 will quantify how much of the 60–98 gap is sampling vs systematic.
 
-ค่า 98.31 % ใน §6.6.1 มาจากการรันคอนฟิกสุดท้ายเพียงครั้งเดียว ด้วย T=0.3 (default). LLM-as-judge และ Gemma 4 12B Q8_0 ทั้งคู่มี sampling discipline ที่ไม่เป็น deterministic เต็มที่; การประเมินครั้งเดียวจึงเป็น point estimate ที่ไม่มี variance bound.
+### 6.9.X การวัดความแปรปรวนของคอนฟิกสุดท้าย
 
-**ตารางที่ 6.y การรันคอนฟิกสุดท้ายซ้ำ 5 ครั้ง (T=0.3, seed คงที่) — [รอเติมผล]**
+ค่า 98.31 % ใน §6.6.1 มาจากการรันคอนฟิกสุดท้ายเพียงครั้งเดียว ด้วย T=0.3 (default). LLM-as-judge และ Gemma 4 12B Q8_0 ทั้งคู่มี sampling discipline ที่ไม่เป็น deterministic เต็มที่; การประเมินครั้งเดียวจึงเป็น point estimate ที่ไม่มี variance bound. เพื่อ bound ความแปรปรวนของผล รันคอนฟิกสุดท้ายซ้ำหลายครั้งด้วยพารามิเตอร์เหมือนกัน แล้วรายงานค่าเฉลี่ย, σ, ช่วงความเชื่อมั่น ±2σ, และ case-flip count (จำนวน case ที่เปลี่ยน verdict ระหว่างรัน).
+
+**ตารางที่ 6.y การรันคอนฟิกสุดท้ายซ้ำ 3 ครั้ง (T=0.3, seed คงที่; ลดจาก 5 ครั้งตามแผนเดิมเหลือ 3 ครั้งเนื่องจาก wall-clock budget — 3 replications, not 5 originally planned, due to wall-clock budget)**
 
 | รัน | อัตราผ่าน |
 |---|---:|
-| 1 | **[__%]** |
-| 2 | **[__%]** |
-| 3 | **[__%]** |
-| 4 | **[__%]** |
-| 5 | **[__%]** |
-| **ค่าเฉลี่ย** | **[__%]** |
-| **σ** | **[__]** |
-| **ช่วงความเชื่อมั่น ±2σ** | **[__]** |
+| 1 | *evaluation in progress* |
+| 2 | *not yet started* |
+| 3 | *not yet started* |
+| **ค่าเฉลี่ย** | *pending* |
+| **σ** | *pending* |
+| **ช่วงความเชื่อมั่น ±2σ** | *pending* |
+| **Case-flip count** | *pending* |
 
-*หมายเหตุ: ถ้า σ > 1.5 pp การประกาศ 98.31 % เป็น point number ก็เสี่ยงต่อ overclaim. ถ้า σ ≤ 0.5 pp ค่ารายงานสามารถยึดเป็น stable end-state ได้.*
+*หมายเหตุ: ณ เวลาที่ส่งวิทยานิพนธ์ฉบับนี้ การรัน variance ครั้งที่ 1 อยู่ระหว่างดำเนินการ (`eval/results/_variance_phase_v/run_1.log`); การรันครั้งที่ 2 และ 3 ยังไม่เริ่ม. ผลจะถูกเติมเมื่อทั้ง 3 รันเสร็จสิ้น. เกณฑ์ตัดสิน: ถ้า σ > 1.5 pp การประกาศ 98.31 % เป็น point number จะเสี่ยงต่อ overclaim และต้องรายงานเป็นช่วง 98.31 ± 2σ % แทน; ถ้า σ ≤ 0.5 pp ค่ารายงานสามารถยึดเป็น stable end-state ได้.*
 
 ## 6.10 Limitations and Future Work
 
@@ -999,3 +1012,11 @@ This section consolidates the limitations of the evaluation regime and the syste
 - **Refusal-quality grading** (not just "did the bot refuse" but "did the refusal expose internal policy text, leak the system prompt verbatim, or reveal the tool name"; the current rubric only checks the binary refuse / comply).
 
 Until a broader red-team has run, the small adversarial slice in §6.6.8 is the most that can be honestly claimed; safety-related statements in the chapter should be read as bounded to that slice (see §6.6.8 caveat language and §6.9 #4 small-n bound).
+
+### 6.10.7 What the Phase V held-out reveals about the Phase J → R methodology
+
+The Phase V held-out evaluation (§6.6.X / §6.9.1) reveals something the chapter has to be transparent about: the canonical Phase R aggregate of 98.31 % overstates the bot's actual generalisation performance by ~38 pp. The patch-and-replay methodology used across Phases J.2 → R worked — each replay produced a real improvement on the cases targeted — but the methodology has a structural flaw that only emerged once a properly held-out evaluation ran. Iteratively tuning against `_replay_63_fails.py` produces a bot whose error surface is reshaped specifically around the cases the rubric has been graded against; cases outside that grading loop drift in unmeasured ways.
+
+The honest reading is three-fold. **First**, the 60.0 % held-out / 98.31 % in-sample gap is the central methodology finding of this thesis, not a footnote. The iterative tuning approach is the workhorse of modern LLM-application engineering — every team that runs eval-driven development is doing some version of it — and the size of the dev / held-out gap on a small (n=60) careful held-out slice is sobering. **Second**, the canary slice (canaries.jsonl, 15 stability sentinels) was passing 100 % on every replay; the canaries did not catch the regression because the canaries are easy. A reviewer looking at the canaries alone would have approved the bot as production-ready. This is an argument for held-out slices that contain *hard* cases, not just sentinels. **Third**, the per-language gap (TH 50 % vs EN 69 %) tells a specific story: the patches that targeted TH-specific defects (particle discipline, refusal-template tightening, change-signal date math) over-shot — they introduced refusal regressions on TH cases that were previously answering correctly.
+
+**Phase S+ design implications.** The next iteration cycle should adopt a train / dev / test split from day 1, with the test partition locked and ungraded until the very end. The dev set is what `_replay_63_fails.py` targets; the test set is touched exactly once at submission time, the way Phase V touched its 60-case held-out slice. This is standard ML practice; the thesis acknowledges that the Phase J → R cycle ran without it and reports the consequences transparently. The methodology contribution stands — the adaptive escalation, per-model prompt registry, tool-envelope synthesis, and KB↔DB drift audit are all transferable patterns — but the headline aggregate number for a future thesis-style report should always be the held-out single-shot pass rate, not the development-set ceiling.

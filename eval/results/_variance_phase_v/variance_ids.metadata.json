@@ -1,0 +1,62 @@
+{
+  "counts_by_lang": {
+    "en": 31,
+    "th": 29
+  },
+  "counts_by_rubric_type": {
+    "refusal_correct": 6,
+    "language_match": 1,
+    "set_match": 12,
+    "exact_match_with_unit": 20,
+    "exact_match": 11,
+    "semantic_match": 9,
+    "unknown": 1
+  },
+  "residuals_included": [
+    "adv_force_chinese_en",
+    "hardneg_book_without_email_en",
+    "mi_th_wifi_and_breakfast",
+    "mi_wifi_and_breakfast_en",
+    "mt_th_change_dates",
+    "pricing_standard_last_minute_en"
+  ],
+  "rationale": "Stratified by language (31 EN / 29 TH) to mirror the 354-case canonical split (EN 52.5% / TH 47.5%; CN deferred per Phase J.2). Stratified by rubric_type with target ~30 exact-style (19 exact_match_with_unit + 11 exact_match, proportional to canonical 100:57), ~10 semantic_match, ~10 set_match, ~5 refusal_correct, ~5 tool_invocation (cases with non-empty expected_tool_calls, drawn cross-rubric). Realized counts: 20 exact_match_with_unit, 11 exact_match, 9 semantic_match, 12 set_match, 6 refusal_correct, 1 language_match, 1 unknown; 5 tool_invocation cross-cuts. The +1-2 drift on individual rubric buckets is the cost of also including all 6 residuals and forcing every dataset-tagged active defect class to appear; deltas are within 2 cases of target. All 6 currently-failing residuals from clean_v3_final/20260616T203134 (pricing_standard_last_minute_en, hardneg_book_without_email_en, adv_force_chinese_en, mi_wifi_and_breakfast_en, mi_th_wifi_and_breakfast, mt_th_change_dates) are included by construction; this lands inside the 5-10 target band and ensures the sample disproportionately covers the pass-fail boundary where run-to-run flips are most likely. Dataset-tagged active defect classes covered: hallucination, incomplete, over_refuse, rag_drift, rag_miss, tool_not_called, wrong_routing. spec_wrong and empty_response are emergent judge labels (not pre-tagged on any dataset case) and can only be observed in the 3 replay runs; their coverage is expected to surface organically when the runs execute. Seed=42; the same 60 ids are replayed 3x back-to-back with fresh session_ids per case per run, isolating sigma to chatbot stochasticity (temperature 0.3, top_p 0.8); judge held at temperature 0.0.",
+  "metadata": {
+    "canonical_source": "eval/results/clean_v3_final/20260616T203134/raw.jsonl",
+    "canonical_n": 354,
+    "canonical_lang_split": {
+      "en": 186,
+      "th": 168
+    },
+    "canonical_rubric_distribution": {
+      "exact_match_with_unit": 100,
+      "exact_match": 57,
+      "set_match": 90,
+      "semantic_match": 81,
+      "refusal_correct": 11,
+      "language_match": 1,
+      "unknown": 14
+    },
+    "target_rubric_counts": {
+      "exact_match_with_unit": 19,
+      "exact_match": 11,
+      "semantic_match": 10,
+      "set_match": 10,
+      "refusal_correct": 5,
+      "tool_invocation_match": 5
+    },
+    "tool_invocation_cases_in_sample": 5,
+    "active_defect_classes_covered": [
+      "hallucination",
+      "incomplete",
+      "over_refuse",
+      "rag_drift",
+      "rag_miss",
+      "tool_not_called",
+      "wrong_routing"
+    ],
+    "seed": 42,
+    "n_runs_planned": 3,
+    "session_id_policy": "fresh per case per run"
+  }
+}

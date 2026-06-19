@@ -28,6 +28,14 @@ Each row also carries a change type so you know what action to take in the docx:
 
 ## What landed since 2026-06-12
 
+### Phase V.1 — Held-out filled + honest reframe (2026-06-20)
+
+- [ ] **UPDATE §6.6.X Placeholder 1 → real held-out numbers** — change-type UPDATE — 60/60 evaluated, 36 pass + 2 partial + 22 fail = **60.0 % [Wilson 95 % CI 47.4 %, 71.4 %]**, EN 68.8 % / TH 50.0 %, gap −38.31 pp vs 98.31 % canonical. Yellow-highlight marker removed.
+- [ ] **UPDATE §6.6.1 headline reframe** — change-type UPDATE — explicit distinction between dev-set 98.31 % and held-out 60.0 %; both numbers reported transparently.
+- [ ] **UPDATE §6.9.1 in-sample threat strengthened** — change-type UPDATE — replaced "pending Placeholder 1" with empirical 38.31 pp gap evidence + dominant regression modes (over_refuse on TH refusal templates, rag_miss/incomplete on FAQ/pet-policy/tour, ~3 hallucinations).
+- [ ] **INSERT §6.10.X discussion** — change-type INSERT — what the Phase V held-out reveals about the Phase J → R patch-and-replay methodology, with Phase S+ design implications (train/dev/test split adoption from day 1).
+- [ ] **Variance pending** — background bfgejh60i (~3 hr); second commit lands when variance task-notification fires.
+
 ### Phase U.1 — Expanded non-trivial subset + AP_C Q-level reconciliation (2026-06-20)
 
 - [ ] **UPDATE §6.6.8 Robustness slice** — change-type UPDATE — expanded from n=12 (adv+hardneg only) to **n=51** (adv + hardneg + multi-turn + multi-intent + out-of-KB + dynamic-pricing). New numbers: **303/303 = 100.00 % benign lookup, 45/51 = 88.2 % non-trivial [Wilson 95 % CI 76.6 %, 94.5 %]**. Per-cluster breakdown table replaces the 12-case version. Defensible against rubric-overfitting critique at n=51 vs n=12.
