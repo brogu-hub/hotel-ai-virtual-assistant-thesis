@@ -77,7 +77,7 @@ Thumbs.db
 Untitled.base
 
 # Phase W root cleanup (2026-06-21): test artifacts go in eval/results/_archive/
-test_chinese_leak_*.json
-test_results_*.json
-test_knowledge.json
-Untitled.base
+/test_chinese_leak_*.json
+/test_results_*.json
+/test_knowledge.json
+/Untitled.base
