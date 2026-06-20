@@ -142,6 +142,63 @@ Each sub-agent has:
 | Knowledge | RAG search (not a tool call — direct invocation) | 1024 | Hotel information Q&A |
 | Other Talk | None (direct LLM response) | 512 | Greetings, thanks, off-topic |
 
+### 4.3.4 Tools Reference
+
+The agent exposes two structurally different classes of "tools" to the LLM, and the distinction matters when reading the binding tables below. **Routing primitives** (`ToHotelBooking`, `ToHotelService`, `ToHotelKnowledge`, `HandleOtherTalk`) are Pydantic `BaseModel` schemas defined at `src/hotel_guardrails/hotel_langgraph.py` lines 85-99; the primary assistant emits them as `tool_calls` but they do **not** touch the database, Qdrant, or any external API — they carry a single `query: str` field and are consumed by `route_primary_assistant` (L1787) to dispatch the conversation to a specialised sub-agent via `tools_condition`. **Data tools** are the real, side-effecting tools each sub-agent's LLM can invoke; they hit PostgreSQL (rooms, reservations, guests, services), Qdrant (RAG over the hotel knowledge base), or compute pricing locally before returning a bilingual Thai/English string.
+
+**Table 4.3.4: Tools bound per sub-agent (live binding from `hotel_langgraph.py`)**
+
+| Sub-agent | Tool name | Signature | Purpose | Touches | Sync/Async | Returns |
+|---|---|---|---|---|---|---|
+| Primary Assistant | `ToHotelBooking` | `ToHotelBooking(query: str)` | Route to booking sub-agent | None (routing primitive) | sync | Pydantic schema |
+| Primary Assistant | `ToHotelService` | `ToHotelService(query: str)` | Route to service sub-agent | None (routing primitive) | sync | Pydantic schema |
+| Primary Assistant | `ToHotelKnowledge` | `ToHotelKnowledge(query: str)` | Route to knowledge sub-agent | None (routing primitive) | sync | Pydantic schema |
+| Primary Assistant | `HandleOtherTalk` | `HandleOtherTalk(query: str)` | Route to greetings / off-topic node | None (routing primitive) | sync | Pydantic schema |
+| Booking | `check_room_availability` | `(check_in_date, check_out_date, room_type=None)` | List bookable rooms across dates | PMS DB: `rooms` JOIN `room_types`, anti-join `reservations` | sync | TH/EN string |
+| Booking | `calculate_dynamic_price` | `(room_type, check_in_date, check_out_date)` | Apply tier multiplier and return per-night + total | PMS DB: `room_types`; local multiplier | sync | TH/EN string |
+| Booking | `create_reservation` | `(guest_email, room_number, check_in_date, check_out_date, num_guests=1, special_requests=None)` | Insert reservation, auto-register guest | PMS DB: `guests` (UPSERT), `rooms`, `reservations`; `sync_audit(CHAT_BOOKING_CREATED)` | sync | TH/EN confirmation |
+| Booking | `confirm_reservation` | `(reservation_id)` | Transition `pending → confirmed` | PMS DB: `reservations` UPDATE; audit | sync | TH/EN status |
+| Booking | `update_reservation` | `(reservation_id, check_in_date?, check_out_date?, room_number?, num_guests?, special_requests?)` | Modify dates, room, guest count, requests; recompute total | PMS DB: `reservations`, `rooms`, `room_types`; audit | sync | TH/EN updated block |
+| Booking | `cancel_reservation` | `(reservation_id, reason)` | Transition `pending` or `confirmed` → `cancelled` | PMS DB: `reservations` UPDATE; `sync_audit(CHAT_BOOKING_CANCELLED)` | sync | TH/EN cancellation |
+| Booking | `check_in_guest` | `(reservation_id)` | Transition `confirmed → checked_in` | PMS DB: `reservations` UPDATE | sync | TH/EN check-in block |
+| Booking | `check_out_guest` | `(reservation_id)` | Transition `checked_in → checked_out` | PMS DB: `reservations` UPDATE | sync | TH/EN check-out block |
+| Booking | `get_reservation_details` | `(reservation_id)` | Fetch single reservation by id or confirmation no. | PMS DB: `reservations` JOIN `rooms` JOIN `room_types` JOIN `guests` | sync | TH/EN reservation block |
+| Booking | `get_guest_reservations` | `(guest_email)` | Fetch last 10 reservations for a guest | PMS DB: same joins, `ORDER BY check_in_date DESC LIMIT 10`; WiFi password only on `checked_in` | sync | TH/EN list |
+| Service | `get_hotel_services` | `()` | List active hotel services, grouped by category | PMS DB: `hotel_services WHERE is_active=true` | sync | TH/EN catalogue |
+| Service | `create_service_request` | `(reservation_id, request_type, description)` | File a service ticket against a booking | PMS DB: `service_requests` INSERT | sync | TH/EN ticket id |
+| Knowledge | `search_hotel_knowledge` (direct, not bound) | `(query)` | RAG over hotel KB markdown via Qdrant | Qdrant: `hotel_knowledge` collection (k=30 → top 3); no LLM tool-call round-trip | sync | TH/EN grounded context |
+| Other Talk | — (no tools) | — | Greetings, thanks, off-topic chit-chat | LLM only | sync | TH/EN reply |
+
+A subtlety worth flagging for reproducibility: `build_hotel_graph` defines a *separate* `booking_tools` list at L2164-2177 with **12** entries (it adds `check_upsell_opportunity` and `generate_payment_link`) which wires the `ToolNode` that *executes* tool calls; the LLM inside `handle_booking`, however, is bound at L712 to the **10**-tool list above. The two extra tools are therefore wired into the runtime ToolNode but are unreachable from the LLM in the current `handle_booking`, and are invoked deterministically elsewhere (the Phase J.4 `_maybe_compute_pricing_context` path; see CH6 §6.5.11). Knowledge search likewise never appears in a `bind_tools` call: `handle_knowledge` invokes `search_hotel_knowledge.invoke()` directly (L1418, L1444) as a plain RAG step and then synthesises a response with an unbound LLM (`rag_prompt | llm`, L1687).
+
+**Per-tool descriptions — Booking sub-agent (10 tools).**
+
+- **`check_room_availability(check_in_date, check_out_date, room_type=None)`** — Queries `rooms` JOIN `room_types` with an anti-join on `reservations` (excluding `cancelled`, `no_show`, and `checked_out`) to find rooms free across the requested range, optionally filtered by tier (Standard / Deluxe / Suite / Penthouse). Returns a bilingual list with base price, nights, and occupancy. Called **before** quoting a price and **before** `create_reservation`.
+- **`calculate_dynamic_price(room_type, check_in_date, check_out_date)`** — Computes per-night and total pricing by applying the tier multiplier from `_calculate_dynamic_multiplier(check_in_date)`. Cutoffs (see §4.9.4): Same-Day +30 % (×1.30), Last-Minute +20 % (×1.20), Standard Rate (×1.00), Advance Booking 10 % off (×0.90), Early Bird 15 % off (×0.85). The Phase J.4 helper `_maybe_compute_pricing_context` synthesises an equivalent invocation envelope for the eval rubric (see CH6 §6.5.11).
+- **`create_reservation(guest_email, room_number, check_in_date, check_out_date, num_guests=1, special_requests=None)`** — Auto-registers a guest if `guest_email` is new, re-runs the availability anti-join to guard against double-booking, applies the dynamic multiplier, and inserts a row into `reservations` returning a `HTL…` confirmation number. Best-effort `sync_audit(CHAT_BOOKING_CREATED)` is wrapped in an inner `try/except pass` so the audit pipeline can never break the business flow.
+- **`confirm_reservation(reservation_id)`** — Transitions a `pending` reservation to `confirmed` (status-guarded UPDATE) and emits a `CHAT_BOOKING_UPDATED` audit event with the `pending->confirmed` transition tag.
+- **`update_reservation(reservation_id, check_in_date?, check_out_date?, room_number?, num_guests?, special_requests?)`** — Loads the current reservation, refuses if it is already `checked_out` or `cancelled`, optionally re-binds to a new room, recomputes `nights` and `total_amount` from the new date range, and writes the change with a `CHAT_BOOKING_UPDATED` audit row capturing the changed fields.
+- **`cancel_reservation(reservation_id, reason)`** — Status-guarded UPDATE that flips a `pending` or `confirmed` reservation to `cancelled`, stores the free-text `cancellation_reason`, and emits a `CHAT_BOOKING_CANCELLED` audit event including the refund amount (so ops can detect anomalous cancellation volume).
+- **`check_in_guest(reservation_id)`** — Transitions `confirmed → checked_in`, stamping `actual_check_in_time`. From this point `get_guest_reservations` is allowed to reveal the room WiFi password to that guest.
+- **`check_out_guest(reservation_id)`** — Transitions `checked_in → checked_out`, stamping `actual_check_out_time` and returning a bilingual farewell block.
+- **`get_reservation_details(reservation_id)`** — Reads a single reservation by either UUID or `HTL…` confirmation number, joining `rooms`, `room_types`, and `guests` to render a bilingual detail block.
+- **`get_guest_reservations(guest_email)`** — Returns up to the 10 most recent reservations for a guest (`ORDER BY check_in_date DESC LIMIT 10`). The WiFi password is only included for rows whose `status = 'checked_in'`, enforcing the in-stay disclosure rule from §4.7.
+
+**Per-tool descriptions — Service sub-agent (2 tools).**
+
+- **`get_hotel_services()`** — Reads `hotel_services WHERE is_active = true`, ordered by category and name, and renders a bilingual catalogue with price, hours, and location for each service (spa, gym, laundry, room service, etc.).
+- **`create_service_request(reservation_id, request_type, description)`** — Inserts a `service_requests` row bound to a specific reservation. The request type is free-text (e.g., *Room Service*, *Extra Towels*, *Maintenance*) and the bot is prompted to extract guest preferences (allergies, pillow preferences) from the description before calling.
+
+**Per-tool descriptions — Knowledge sub-agent (direct RAG, not LLM-bound).**
+
+- **`search_hotel_knowledge(query)`** — Embeds the guest query with `qwen3-embedding-8b`, runs a top-k Qdrant search against the `hotel_knowledge` collection (k=30 initial, top 3 returned after reranking), and returns the concatenated chunks. `handle_knowledge` invokes this directly via `.invoke()` rather than through a `bind_tools` round-trip — there is no tool-calling LLM step in the knowledge path, only a `rag_prompt | llm` synthesis. The knowledge sub-agent can also emit a *synthetic* `AIMessage(tool_calls=…)` purely so that the eval harness can score the path via the `tool_invocation_match` rubric (see CH6 §6.3.1).
+
+**Per-tool descriptions — Other Talk sub-agent.**
+
+- *(no tools)* — `handle_other` answers greetings, thanks, and off-topic small talk with an unbound LLM call capped at 512 `max_tokens`, and never reaches the DB or Qdrant.
+
+For the underlying schemas that each tool reads or writes — `rooms`, `room_types`, `reservations`, `guests`, `hotel_services`, `service_requests`, `audit_log` — see §4.4 *Database Design*. For how the eval harness verifies that the *expected* tool was called for a given utterance, see §6.3.1 *Rubric Types* (specifically the `tool_invocation_match` rubric, which asserts on `expected_tool_calls`).
+
 ## 4.4 Database Design
 
 ### 4.4.1 Entity-Relationship Diagram

@@ -28,6 +28,10 @@ Each row also carries a change type so you know what action to take in the docx:
 
 ## What landed since 2026-06-12
 
+### Phase Y — CH4 §4.3.4 Tools Reference (2026-06-21)
+
+- **INSERT §4.3.4 Tools Reference** (~800 w) — comprehensive list of every LLM-callable tool bound to each sub-agent, with signature + purpose + DB/API touched + returns shape. Distinguishes routing primitives (Pydantic schemas ToHotelBooking/Service/Knowledge/OtherTalk) from data tools (check_room_availability, calculate_dynamic_price, create_reservation, search_hotel_knowledge, etc.). Cross-refs §4.4 Database Design and §6.3.1 tool_invocation_match rubric. Builds on §4.3.3's tool-count table.
+
 ### Phase V.2 — Variance bound filled + held-out corroboration (2026-06-20)
 
 - **UPDATE §6.9.2 Placeholder 2 → real variance numbers**: 3 runs of the same config on 60-case variance sample, mean **57.78 % ± 1.571 pp σ**, ±2σ band **[54.64 %, 60.92 %]**, **19/60 cases (~32 %) flipped verdict across runs**. Yellow-highlight marker removed.
