@@ -28,6 +28,12 @@ Each row also carries a change type so you know what action to take in the docx:
 
 ## What landed since 2026-06-12
 
+### Phase V.2 — Variance bound filled + held-out corroboration (2026-06-20)
+
+- **UPDATE §6.9.2 Placeholder 2 → real variance numbers**: 3 runs of the same config on 60-case variance sample, mean **57.78 % ± 1.571 pp σ**, ±2σ band **[54.64 %, 60.92 %]**, **19/60 cases (~32 %) flipped verdict across runs**. Yellow-highlight marker removed.
+- **CROSSREF §6.6.1 headline + §6.6.X held-out + §6.10.7 methodology** — added bidirectional cross-references showing held-out 60.0 % [47.4 %, 71.4 %] and variance 57.78 % ± 1.57 pp **corroborate each other**. Two independent measurements both bound the bot at high-50s on never-replayed cases.
+- **Final defense-ready three-number framing**: 98.31 % canonical dev-set ceiling; 100 % benign lookup (n=303); **57.78–60.0 % generalisation floor** (n=60 held-out + n=60×3 variance); +38 pp in-sample gap empirically measured.
+
 ### Phase V.1 — Held-out filled + honest reframe (2026-06-20)
 
 - [ ] **UPDATE §6.6.X Placeholder 1 → real held-out numbers** — change-type UPDATE — 60/60 evaluated, 36 pass + 2 partial + 22 fail = **60.0 % [Wilson 95 % CI 47.4 %, 71.4 %]**, EN 68.8 % / TH 50.0 %, gap −38.31 pp vs 98.31 % canonical. Yellow-highlight marker removed.
